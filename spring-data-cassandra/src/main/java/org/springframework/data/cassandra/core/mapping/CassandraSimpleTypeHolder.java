@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,11 @@
  */
 package org.springframework.data.cassandra.core.mapping;
 
-import java.time.LocalTime;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -27,14 +29,15 @@ import java.util.stream.Collectors;
 import org.springframework.data.mapping.model.SimpleTypeHolder;
 import org.springframework.lang.Nullable;
 
-import com.datastax.driver.core.CodecRegistry;
-import com.datastax.driver.core.DataType;
-import com.datastax.driver.core.DataType.Name;
-import com.datastax.driver.core.Row;
-import com.datastax.driver.core.TupleValue;
-import com.datastax.driver.core.TypeCodec;
-import com.datastax.driver.core.UDTValue;
-import com.google.common.reflect.TypeToken;
+import com.datastax.oss.driver.api.core.cql.Row;
+import com.datastax.oss.driver.api.core.data.CqlDuration;
+import com.datastax.oss.driver.api.core.data.TupleValue;
+import com.datastax.oss.driver.api.core.data.UdtValue;
+import com.datastax.oss.driver.api.core.type.DataType;
+import com.datastax.oss.driver.api.core.type.DataTypes;
+import com.datastax.oss.driver.api.core.type.codec.TypeCodec;
+import com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry;
+import com.datastax.oss.driver.api.core.type.reflect.GenericType;
 
 /**
  * Simple constant holder for a {@link SimpleTypeHolder} enriched with Cassandra specific simple types.
@@ -51,13 +54,18 @@ public class CassandraSimpleTypeHolder extends SimpleTypeHolder {
 	 */
 	public static final Set<Class<?>> CASSANDRA_SIMPLE_TYPES;
 
+	private static final List<DataType> primitives = Arrays.asList(DataTypes.ASCII, DataTypes.BIGINT, DataTypes.BLOB,
+			DataTypes.BOOLEAN, DataTypes.COUNTER, DataTypes.DECIMAL, DataTypes.DOUBLE, DataTypes.FLOAT, DataTypes.INT,
+			DataTypes.TIMESTAMP, DataTypes.UUID, DataTypes.VARINT, DataTypes.TIMEUUID, DataTypes.INET, DataTypes.DATE,
+			DataTypes.TEXT, DataTypes.TIME, DataTypes.SMALLINT, DataTypes.TINYINT, DataTypes.DURATION);
+
 	private static final Map<Class<?>, DataType> classToDataType;
 
-	private static final Map<DataType.Name, DataType> nameToDataType;
+	private static final Map<CassandraType.Name, DataType> nameToDataType;
 
 	static {
 
-		CodecRegistry codecRegistry = CodecRegistry.DEFAULT_INSTANCE;
+		CodecRegistry codecRegistry = CodecRegistry.DEFAULT;
 
 		Map<Class<?>, Class<?>> primitiveWrappers = new HashMap<>(8);
 
@@ -75,7 +83,8 @@ public class CassandraSimpleTypeHolder extends SimpleTypeHolder {
 		simpleTypes.add(Number.class);
 		simpleTypes.add(Row.class);
 		simpleTypes.add(TupleValue.class);
-		simpleTypes.add(UDTValue.class);
+		simpleTypes.add(UdtValue.class);
+		simpleTypes.add(CqlDuration.class);
 
 		classToDataType = Collections.unmodifiableMap(classToDataType(codecRegistry, primitiveWrappers));
 		nameToDataType = Collections.unmodifiableMap(nameToDataType());
@@ -101,8 +110,7 @@ public class CassandraSimpleTypeHolder extends SimpleTypeHolder {
 
 		Map<Class<?>, DataType> classToDataType = new HashMap<>(16);
 
-		DataType.allPrimitiveTypes().forEach(dataType -> {
-
+		primitives.forEach(dataType -> {
 			Class<?> javaType = codecRegistry.codecFor(dataType).getJavaType().getRawType();
 
 			classToDataType.put(javaType, dataType);
@@ -111,34 +119,48 @@ public class CassandraSimpleTypeHolder extends SimpleTypeHolder {
 					.ifPresent(primitiveType -> classToDataType.put(primitiveType, dataType));
 		});
 
-		// override String to text DataType as String is used multiple times
-		classToDataType.put(String.class, DataType.text());
-
 		// map Long to bigint as counter columns (last type aver multiple overrides) are a special use case
 		// so map it to a more common type by default
-		classToDataType.put(Long.class, DataType.bigint());
-		classToDataType.put(long.class, DataType.bigint());
+		classToDataType.put(Long.class, DataTypes.BIGINT);
+		classToDataType.put(long.class, DataTypes.BIGINT);
 
 		// override UUID to timeuuid as regular uuid as the favored default
-		classToDataType.put(UUID.class, DataType.uuid());
+		classToDataType.put(UUID.class, DataTypes.UUID);
 
-		// override LocalTime to time as time columns are mapped to long by default
-		classToDataType.put(LocalTime.class, DataType.time());
+		// Add type migration support for TIMESTAMP via java.util.Date to preserve driver v3 type mapping
+		classToDataType.put(Date.class, DataTypes.TIMESTAMP);
 
 		return classToDataType;
 	}
 
 	/**
-	 * @return the map between {@link Name} and {@link DataType}.
+	 * @return the map between {@link CassandraType.Name} and {@link DataType}.
 	 */
-	private static Map<Name, DataType> nameToDataType() {
+	private static Map<CassandraType.Name, DataType> nameToDataType() {
 
-		Map<Name, DataType> nameToDataType = new HashMap<>(16);
+		Map<CassandraType.Name, DataType> nameToDataType = new HashMap<>(16);
 
-		DataType.allPrimitiveTypes().forEach(dataType -> nameToDataType.put(dataType.getName(), dataType));
-
-		nameToDataType.put(Name.VARCHAR, DataType.varchar());
-		nameToDataType.put(Name.TEXT, DataType.text());
+		nameToDataType.put(CassandraType.Name.ASCII, DataTypes.ASCII);
+		nameToDataType.put(CassandraType.Name.BIGINT, DataTypes.BIGINT);
+		nameToDataType.put(CassandraType.Name.BLOB, DataTypes.BLOB);
+		nameToDataType.put(CassandraType.Name.BOOLEAN, DataTypes.BOOLEAN);
+		nameToDataType.put(CassandraType.Name.COUNTER, DataTypes.COUNTER);
+		nameToDataType.put(CassandraType.Name.DECIMAL, DataTypes.DECIMAL);
+		nameToDataType.put(CassandraType.Name.DOUBLE, DataTypes.DOUBLE);
+		nameToDataType.put(CassandraType.Name.FLOAT, DataTypes.FLOAT);
+		nameToDataType.put(CassandraType.Name.INT, DataTypes.INT);
+		nameToDataType.put(CassandraType.Name.TIMESTAMP, DataTypes.TIMESTAMP);
+		nameToDataType.put(CassandraType.Name.UUID, DataTypes.UUID);
+		nameToDataType.put(CassandraType.Name.VARCHAR, DataTypes.TEXT);
+		nameToDataType.put(CassandraType.Name.TEXT, DataTypes.TEXT);
+		nameToDataType.put(CassandraType.Name.TIMEUUID, DataTypes.TIMEUUID);
+		nameToDataType.put(CassandraType.Name.INET, DataTypes.INET);
+		nameToDataType.put(CassandraType.Name.DATE, DataTypes.DATE);
+		nameToDataType.put(CassandraType.Name.SMALLINT, DataTypes.SMALLINT);
+		nameToDataType.put(CassandraType.Name.TINYINT, DataTypes.TINYINT);
+		nameToDataType.put(CassandraType.Name.VARINT, DataTypes.VARINT);
+		nameToDataType.put(CassandraType.Name.TIME, DataTypes.TIME);
+		nameToDataType.put(CassandraType.Name.DURATION, DataTypes.DURATION);
 
 		return nameToDataType;
 	}
@@ -151,8 +173,8 @@ public class CassandraSimpleTypeHolder extends SimpleTypeHolder {
 	 */
 	private static Set<Class<?>> getCassandraPrimitiveTypes(CodecRegistry codecRegistry) {
 
-		return DataType.allPrimitiveTypes().stream().map(codecRegistry::codecFor).map(TypeCodec::getJavaType)
-				.map(TypeToken::getRawType).collect(Collectors.toSet());
+		return primitives.stream().map(codecRegistry::codecFor).map(TypeCodec::getJavaType).map(GenericType::getRawType)
+				.collect(Collectors.toSet());
 	}
 
 	/**
@@ -164,16 +186,61 @@ public class CassandraSimpleTypeHolder extends SimpleTypeHolder {
 	 */
 	@Nullable
 	public static DataType getDataTypeFor(Class<?> javaType) {
-		return javaType.isEnum() ? DataType.varchar() : classToDataType.get(javaType);
+		return javaType.isEnum() ? DataTypes.TEXT : classToDataType.get(javaType);
 	}
 
 	/**
-	 * Returns the {@link DataType} for a {@link DataType.Name}.
+	 * Returns the required default {@link DataType} for a {@link Class}. This method resolves only simple types to a
+	 * Cassandra {@link DataType}. Throws {@link IllegalStateException} if the {@link Class} cannot be resolved to a
+	 * {@link DataType}.
+	 *
+	 * @param javaType must not be {@literal null}.
+	 * @return the {@link DataType} for {@code javaClass} if resolvable, otherwise {@literal null}.
+	 * @throws IllegalStateException if the {@link Class} cannot be resolved to a {@link DataType}.
+	 * @since 3.1.6
+	 * @see #getDataTypeFor(Class)
+	 */
+	public static DataType getRequiredDataTypeFor(Class<?> javaType) {
+
+		DataType dataType = getDataTypeFor(javaType);
+
+		if (dataType == null) {
+			throw new IllegalStateException(String.format("Required DataType cannot be resolved for %s", javaType.getName()));
+		}
+
+		return dataType;
+	}
+
+	/**
+	 * Returns the {@link DataType} for a {@link CassandraType.Name}.
 	 *
 	 * @param dataTypeName must not be {@literal null}.
-	 * @return the {@link DataType} for {@link DataType.Name}.
+	 * @return the {@link DataType} for {@link CassandraType.Name}.
 	 */
-	public static DataType getDataTypeFor(DataType.Name dataTypeName) {
+	@Nullable
+	public static DataType getDataTypeFor(CassandraType.Name dataTypeName) {
 		return nameToDataType.get(dataTypeName);
 	}
+
+	/**
+	 * Returns the required {@link DataType} for a {@link CassandraType.Name}. Throws {@link IllegalStateException} if the
+	 * {@link CassandraType.Name} cannot be resolved to a {@link DataType}.
+	 *
+	 * @param dataTypeName must not be {@literal null}.
+	 * @return the {@link DataType} for {@link CassandraType.Name}.
+	 * @throws IllegalStateException if the {@link CassandraType.Name} cannot be resolved to a {@link DataType}.
+	 * @since 3.1.6
+	 * @see #getDataTypeFor(CassandraType.Name)
+	 */
+	public static DataType getRequiredDataTypeFor(CassandraType.Name dataTypeName) {
+
+		DataType dataType = getDataTypeFor(dataTypeName);
+
+		if (dataType == null) {
+			throw new IllegalStateException(String.format("Required DataType cannot be resolved for %s", dataTypeName));
+		}
+
+		return dataType;
+	}
+
 }

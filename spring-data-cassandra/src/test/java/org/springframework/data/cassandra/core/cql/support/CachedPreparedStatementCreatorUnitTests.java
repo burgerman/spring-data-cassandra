@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,53 +18,53 @@ package org.springframework.data.cassandra.core.cql.support;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import java.util.Optional;
 
-import com.datastax.driver.core.Cluster;
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.RegularStatement;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.SimpleStatement;
-import com.datastax.driver.core.querybuilder.QueryBuilder;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.cql.PreparedStatement;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
+import com.datastax.oss.driver.api.querybuilder.QueryBuilder;
+import com.datastax.oss.driver.api.querybuilder.update.Assignment;
 
 /**
  * Unit tests for {@link CachedPreparedStatementCreator}.
  *
  * @author Mark Paluch
+ * @author Aldo Bongio
  */
-@RunWith(MockitoJUnitRunner.class)
-public class CachedPreparedStatementCreatorUnitTests {
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+class CachedPreparedStatementCreatorUnitTests {
 
-	@Mock Session session;
+	@Mock CqlSession session;
 
-	@Mock Session otherSession;
+	@Mock CqlSession otherSession;
 
-	@Mock Session otherKeyspaceSession;
-
-	@Mock Cluster cluster;
+	@Mock CqlSession otherKeyspaceSession;
 
 	@Mock PreparedStatement preparedStatement;
 
-	@Before
-	public void before() {
+	@BeforeEach
+	void before() {
 
-		when(session.getCluster()).thenReturn(cluster);
-		when(otherSession.getCluster()).thenReturn(cluster);
-		when(otherKeyspaceSession.getCluster()).thenReturn(cluster);
+		when(session.getKeyspace()).thenReturn(Optional.of(CqlIdentifier.fromCql("mykeyspace")));
+		when(otherSession.getKeyspace()).thenReturn(Optional.of(CqlIdentifier.fromCql("mykeyspace")));
+		when(otherKeyspaceSession.getKeyspace()).thenReturn(Optional.of(CqlIdentifier.fromCql("other")));
 
-		when(session.getLoggedKeyspace()).thenReturn("keyspace");
-		when(otherSession.getLoggedKeyspace()).thenReturn("keyspace");
-		when(otherKeyspaceSession.getLoggedKeyspace()).thenReturn("other");
-
-		when(session.prepare(any(RegularStatement.class))).thenReturn(preparedStatement);
+		when(session.prepare(any(SimpleStatement.class))).thenReturn(preparedStatement);
 	}
 
 	@Test // DATACASS-403
-	public void shouldPrepareStatement() {
+	void shouldPrepareStatement() {
 
 		String cql = "SELECT foo FROM users;";
 
@@ -80,7 +80,7 @@ public class CachedPreparedStatementCreatorUnitTests {
 	}
 
 	@Test // DATACASS-403
-	public void shouldCachePreparedStatement() {
+	void shouldCachePreparedStatement() {
 
 		String cql = "SELECT foo FROM users;";
 
@@ -95,7 +95,7 @@ public class CachedPreparedStatementCreatorUnitTests {
 	}
 
 	@Test // DATACASS-403
-	public void shouldCachePreparedStatementAcrossSessions() {
+	void shouldCachePreparedStatementAcrossSessions() {
 
 		String cql = "SELECT foo FROM users;";
 
@@ -111,10 +111,10 @@ public class CachedPreparedStatementCreatorUnitTests {
 	}
 
 	@Test // DATACASS-403
-	public void shouldCachePreparedStatementOnKeyspaceLevel() {
+	void shouldCachePreparedStatementOnKeyspaceLevel() {
 
 		String cql = "SELECT foo FROM users;";
-		when(otherKeyspaceSession.prepare(any(RegularStatement.class))).thenReturn(preparedStatement);
+		when(otherKeyspaceSession.prepare(any(SimpleStatement.class))).thenReturn(preparedStatement);
 
 		PreparedStatementCache cache = PreparedStatementCache.create();
 
@@ -128,9 +128,10 @@ public class CachedPreparedStatementCreatorUnitTests {
 	}
 
 	@Test // DATACASS-403
-	public void shouldCacheBuiltPreparedStatement() {
+	void shouldCacheBuiltPreparedStatement() {
 
-		RegularStatement statement = QueryBuilder.update("users").with(QueryBuilder.set("foo", "bar"));
+		SimpleStatement statement = QueryBuilder.update("users")
+				.set(Assignment.setColumn("foo", QueryBuilder.literal("bar"))).where().build();
 
 		PreparedStatementCache cache = PreparedStatementCache.create();
 
@@ -146,10 +147,12 @@ public class CachedPreparedStatementCreatorUnitTests {
 	}
 
 	@Test // DATACASS-403
-	public void shouldCacheSameBuiltPreparedStatements() {
+	void shouldCacheSameBuiltPreparedStatements() {
 
-		RegularStatement firstStatement = QueryBuilder.update("users").with(QueryBuilder.set("foo", "bar"));
-		RegularStatement secondStatement = QueryBuilder.update("users").with(QueryBuilder.set("foo", "bar"));
+		SimpleStatement firstStatement = QueryBuilder.update("users")
+				.set(Assignment.setColumn("foo", QueryBuilder.literal("bar"))).where().build();
+		SimpleStatement secondStatement = QueryBuilder.update("users")
+				.set(Assignment.setColumn("foo", QueryBuilder.literal("bar"))).where().build();
 
 		PreparedStatementCache cache = PreparedStatementCache.create();
 
@@ -162,10 +165,12 @@ public class CachedPreparedStatementCreatorUnitTests {
 	}
 
 	@Test // DATACASS-403
-	public void shouldCacheAdoptDifferencesInCachedPreparedStatements() {
+	void shouldCacheAdoptDifferencesInCachedPreparedStatements() {
 
-		RegularStatement firstStatement = QueryBuilder.update("users").with(QueryBuilder.set("foo", "bar"));
-		RegularStatement secondStatement = QueryBuilder.update("users").with(QueryBuilder.set("bar", "foo"));
+		SimpleStatement firstStatement = QueryBuilder.update("users")
+				.set(Assignment.setColumn("foo", QueryBuilder.literal("bar"))).where().build();
+		SimpleStatement secondStatement = QueryBuilder.update("users")
+				.set(Assignment.setColumn("boo", QueryBuilder.literal("far"))).where().build();
 
 		PreparedStatementCache cache = PreparedStatementCache.create();
 
@@ -177,5 +182,18 @@ public class CachedPreparedStatementCreatorUnitTests {
 
 		verify(session).prepare(firstStatement);
 		verify(session).prepare(secondStatement);
+	}
+
+	@Test // DATACASS-814
+	void shouldUseCqlTextInCacheKey() {
+
+		String cql = "SELECT foo FROM users;";
+
+		MapPreparedStatementCache cache = MapPreparedStatementCache.create();
+		CachedPreparedStatementCreator creator = CachedPreparedStatementCreator.of(cache, cql);
+		creator.createPreparedStatement(session);
+
+		MapPreparedStatementCache.CacheKey cacheKey = cache.getCache().keySet().iterator().next();
+		assertThat(cacheKey.cql).isEqualTo(cql);
 	}
 }

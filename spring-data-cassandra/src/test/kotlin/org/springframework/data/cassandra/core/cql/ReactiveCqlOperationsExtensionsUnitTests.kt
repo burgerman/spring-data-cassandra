@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,11 @@
  */
 package org.springframework.data.cassandra.core.cql
 
-import com.datastax.driver.core.Row
-import com.datastax.driver.core.SimpleStatement
+import com.datastax.oss.driver.api.core.cql.Row
+import com.datastax.oss.driver.api.core.cql.SimpleStatement
 import io.mockk.mockk
 import io.mockk.verify
-import org.junit.Ignore
-import org.junit.Test
+import org.junit.jupiter.api.Test
 import org.springframework.data.cassandra.domain.Person
 
 /**
@@ -50,27 +49,33 @@ class ReactiveCqlOperationsExtensionsUnitTests {
 	fun `queryForObject(String, KClass, array) extension should call its Java counterpart`() {
 
 		operations.queryForObject("", Person::class, "foo", "bar")
-		verify { operations.queryForObject("", Person::class.java, arrayOf("foo", "bar")) }
+		verify { operations.queryForObject("", Person::class.java, "foo", "bar") }
 	}
 
 	@Test // DATACASS-484
 	fun `queryForObject(String, array) extension should call its Java counterpart`() {
 
 		operations.queryForObject<Person>("", "foo", "bar")
-		verify { operations.queryForObject("", Person::class.java, arrayOf("foo", "bar")) }
+		verify { operations.queryForObject("", Person::class.java, "foo", "bar") }
 	}
 
 	@Test // DATACASS-484
 	fun `queryForObject(String, RowMapper, array) extension should call its Java counterpart`() {
 
 		operations.queryForObject("", 3) { rs: Row, _: Int -> rs.getInt(1) }
-		verify { operations.queryForObject(eq(""), any<RowMapper<Int>>(), eq(3)) }
+		verify {
+			operations.queryForObject(
+				eq(""),
+				any<RowMapper<Int>>(),
+				eq(3)
+			)
+		}
 	}
 
 	@Test // DATACASS-484
 	fun `queryForObject(Statement, KClass) extension should call its Java counterpart`() {
 
-		val statement = SimpleStatement("SELECT * FROM person")
+		val statement = SimpleStatement.newInstance("SELECT * FROM person")
 
 		operations.queryForObject(statement, Person::class)
 		verify { operations.queryForObject(statement, Person::class.java) }
@@ -79,7 +84,7 @@ class ReactiveCqlOperationsExtensionsUnitTests {
 	@Test // DATACASS-484
 	fun `queryForObject(Statement) extension should call its Java counterpart`() {
 
-		val statement = SimpleStatement("SELECT * FROM person")
+		val statement = SimpleStatement.newInstance("SELECT * FROM person")
 
 		operations.queryForObject<Person>(statement)
 		verify { operations.queryForObject(statement, Person::class.java) }
@@ -96,21 +101,13 @@ class ReactiveCqlOperationsExtensionsUnitTests {
 	fun `queryForFlux(String, array) extension should call its Java counterpart`() {
 
 		operations.queryForFlux<Person>("", "foo", "bar")
-		verify { operations.queryForFlux("", Person::class.java, arrayOf("foo", "bar")) }
-	}
-
-	@Test // DATACASS-484
-	@Ignore("No such method: queryForFlux(CQL, RowMapper, Args), see DATACASS-538")
-	fun `queryForFlux(String, RowMapper, array) extension should call its Java counterpart`() {
-
-		//operations.queryForFlux("", 3) { rs: Row, _: Int -> rs.getInt(1) }
-		verify { operations.queryForFlux(eq(""), any<RowMapper<Int>>(), eq(3)) }
+		verify { operations.queryForFlux("", Person::class.java, "foo", "bar") }
 	}
 
 	@Test // DATACASS-484
 	fun `queryForFlux(Statement, KClass) extension should call its Java counterpart`() {
 
-		val statement = SimpleStatement("SELECT * FROM person")
+		val statement = SimpleStatement.newInstance("SELECT * FROM person")
 
 		operations.queryForFlux(statement, Person::class)
 		verify { operations.queryForFlux(statement, Person::class.java) }
@@ -119,7 +116,7 @@ class ReactiveCqlOperationsExtensionsUnitTests {
 	@Test // DATACASS-484
 	fun `queryForFlux(Statement) extension should call its Java counterpart`() {
 
-		val statement = SimpleStatement("SELECT * FROM person")
+		val statement = SimpleStatement.newInstance("SELECT * FROM person")
 
 		operations.queryForFlux<Person>(statement)
 		verify { operations.queryForFlux(statement, Person::class.java) }

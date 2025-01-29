@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,10 @@
  */
 package org.springframework.data.cassandra.core.cql.keyspace;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Abstract builder class to support the construction of an index.
@@ -32,16 +33,35 @@ public abstract class IndexNameSpecification<T extends IndexNameSpecification<T>
 	/**
 	 * The name of the index.
 	 */
+	private final @Nullable CqlIdentifier keyspace;
+
+	/**
+	 * The name of the index.
+	 */
 	private final @Nullable CqlIdentifier name;
 
 	protected IndexNameSpecification() {
+		this.keyspace = null;
 		this.name = null;
 	}
 
 	protected IndexNameSpecification(CqlIdentifier name) {
 
 		Assert.notNull(name, "CqlIdentifier must not be null");
+
+		this.keyspace = null;
 		this.name = name;
+	}
+
+	protected IndexNameSpecification(@Nullable CqlIdentifier keyspace, @Nullable CqlIdentifier name) {
+
+		this.keyspace = keyspace;
+		this.name = name;
+	}
+
+	@Nullable
+	public CqlIdentifier getKeyspace() {
+		return keyspace;
 	}
 
 	@Nullable

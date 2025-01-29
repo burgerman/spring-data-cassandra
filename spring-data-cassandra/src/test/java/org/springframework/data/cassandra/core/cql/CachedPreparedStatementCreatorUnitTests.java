@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,47 +25,52 @@ import edu.umd.cs.mtc.MultithreadedTestCase;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.Session;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.cql.PreparedStatement;
 
 /**
  * Unit tests for {@link CachedPreparedStatementCreator}.
  *
  * @author Mark Paluch
  */
-@RunWith(MockitoJUnitRunner.class)
-public class CachedPreparedStatementCreatorUnitTests {
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+class CachedPreparedStatementCreatorUnitTests {
 
-	PreparedStatement preparedStatement;
-	@Mock Session sessionMock;
+	private PreparedStatement preparedStatement;
+	@Mock CqlSession sessionMock;
 
-	@Before
-	public void before() throws Exception {
+	@BeforeEach
+	void before() throws Exception {
 
 		preparedStatement = newProxy(PreparedStatement.class, new TestInvocationHandler());
 		when(sessionMock.prepare(anyString())).thenReturn(preparedStatement);
 	}
 
 	@Test // DATACASS-253
-	public void shouldRejectEmptyCql() {
+	void shouldRejectEmptyCql() {
 		assertThatIllegalArgumentException().isThrownBy(() -> new CachedPreparedStatementCreator(""));
 	}
 
 	@Test // DATACASS-253
-	public void shouldRejectNullCql() {
+	void shouldRejectNullCql() {
 		assertThatIllegalArgumentException().isThrownBy(() -> new CachedPreparedStatementCreator(null));
 	}
 
 	@Test // DATACASS-253
-	public void shouldCreatePreparedStatement() {
+	void shouldCreatePreparedStatement() {
 
 		CachedPreparedStatementCreator cachedPreparedStatementCreator = new CachedPreparedStatementCreator("my cql");
 
@@ -76,7 +81,7 @@ public class CachedPreparedStatementCreatorUnitTests {
 	}
 
 	@Test // DATACASS-253
-	public void shouldCacheCreatePreparedStatement() {
+	void shouldCacheCreatePreparedStatement() {
 
 		CachedPreparedStatementCreator cachedPreparedStatementCreator = new CachedPreparedStatementCreator("my cql");
 
@@ -90,7 +95,7 @@ public class CachedPreparedStatementCreatorUnitTests {
 	}
 
 	@Test // DATACASS-253
-	public void concurrentAccessToCreateStatementShouldBeSynchronized() throws Throwable {
+	void concurrentAccessToCreateStatementShouldBeSynchronized() throws Throwable {
 
 		CreatePreparedStatementIsThreadSafe concurrentPrepareStatement = new CreatePreparedStatementIsThreadSafe(
 				preparedStatement, new CachedPreparedStatementCreator("my cql"));
@@ -102,15 +107,15 @@ public class CachedPreparedStatementCreatorUnitTests {
 	private static class CreatePreparedStatementIsThreadSafe extends MultithreadedTestCase {
 
 		final AtomicInteger atomicInteger = new AtomicInteger();
-		final CachedPreparedStatementCreator preparedStatementCreator;
-		final Session session;
+		private final CachedPreparedStatementCreator preparedStatementCreator;
+		private final CqlSession session;
 
-		public CreatePreparedStatementIsThreadSafe(final PreparedStatement preparedStatement,
+		private CreatePreparedStatementIsThreadSafe(final PreparedStatement preparedStatement,
 				CachedPreparedStatementCreator preparedStatementCreator) {
 
 			this.preparedStatementCreator = preparedStatementCreator;
 
-			this.session = newProxy(Session.class, new TestInvocationHandler() {
+			this.session = newProxy(CqlSession.class, new TestInvocationHandler() {
 
 				@Override
 				public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
@@ -119,6 +124,10 @@ public class CachedPreparedStatementCreatorUnitTests {
 						waitForTick(2);
 						atomicInteger.incrementAndGet();
 						return preparedStatement;
+					}
+
+					if (method.getName().equals("getKeyspace")) {
+						return Optional.of(CqlIdentifier.fromCql("system"));
 					}
 
 					return super.invoke(proxy, method, args);

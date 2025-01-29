@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,19 +15,17 @@
  */
 package org.springframework.data.cassandra.core.cql.keyspace;
 
-import lombok.EqualsAndHashCode;
-
-import org.springframework.data.cassandra.core.cql.KeyspaceIdentifier;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Object to configure a {@code ALTER KEYSPACE} specification.
  *
  * @author Mark Paluch
  */
-@EqualsAndHashCode(callSuper = true)
-public class AlterKeyspaceSpecification extends KeyspaceOptionsSpecification<AlterKeyspaceSpecification> {
+public class AlterKeyspaceSpecification extends KeyspaceOptionsSpecification<AlterKeyspaceSpecification>
+		implements CqlSpecification {
 
-	private AlterKeyspaceSpecification(KeyspaceIdentifier name) {
+	private AlterKeyspaceSpecification(CqlIdentifier name) {
 		super(name);
 	}
 
@@ -39,7 +37,7 @@ public class AlterKeyspaceSpecification extends KeyspaceOptionsSpecification<Alt
 	 * @return a new {@link AlterKeyspaceSpecification}.
 	 */
 	public static AlterKeyspaceSpecification alterKeyspace(String name) {
-		return alterKeyspace(KeyspaceIdentifier.of(name));
+		return alterKeyspace(CqlIdentifier.fromCql(name));
 	}
 
 	/**
@@ -49,7 +47,7 @@ public class AlterKeyspaceSpecification extends KeyspaceOptionsSpecification<Alt
 	 * @param name must not be {@literal null} or empty.
 	 * @return a new {@link AlterKeyspaceSpecification}.
 	 */
-	public static AlterKeyspaceSpecification alterKeyspace(KeyspaceIdentifier name) {
+	public static AlterKeyspaceSpecification alterKeyspace(CqlIdentifier name) {
 		return new AlterKeyspaceSpecification(name);
 	}
 }

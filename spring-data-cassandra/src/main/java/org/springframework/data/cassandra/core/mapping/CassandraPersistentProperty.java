@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,14 +19,12 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedType;
 
 import org.springframework.context.ApplicationContextAware;
-import org.springframework.dao.InvalidDataAccessApiUsageException;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.cql.Ordering;
 import org.springframework.data.mapping.PersistentProperty;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.DataType;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Cassandra specific {@link org.springframework.data.mapping.PersistentProperty} extension.
@@ -36,9 +34,29 @@ import com.datastax.driver.core.DataType;
  * @author David T. Webb
  * @author Mark Paluch
  * @author John Blum
+ * @author Christoph Strobl
+ * @author Frank Spitulski
+ * @author Aleksei Zotov
  */
 public interface CassandraPersistentProperty
 		extends PersistentProperty<CassandraPersistentProperty>, ApplicationContextAware {
+
+	/**
+	 * If this property is mapped with a single column, set the column name to the given
+	 * {@link org.springframework.data.cassandra.core.cql.CqlIdentifier}. If this property is not mapped by a single
+	 * column, throws {@link IllegalStateException}. If the given column name is null, {@link IllegalArgumentException} is
+	 * thrown.
+	 *
+	 * @param columnName must not be {@literal null}.
+	 * @deprecated since 3.0, use {@link #setColumnName(CqlIdentifier)}.
+	 */
+	@Deprecated
+	default void setColumnName(org.springframework.data.cassandra.core.cql.CqlIdentifier columnName) {
+
+		Assert.notNull(columnName, "Column name must not be null");
+
+		setColumnName(columnName.toCqlIdentifier());
+	}
 
 	/**
 	 * If this property is mapped with a single column, set the column name to the given {@link CqlIdentifier}. If this
@@ -65,28 +83,32 @@ public interface CassandraPersistentProperty
 
 		CqlIdentifier columnName = getColumnName();
 
-		Assert.state(columnName != null, String.format("No column name available for this persistent property [%1$s.%2$s]",
-				getOwner().getName(), getName()));
+		Assert.state(columnName != null, () -> String
+				.format("No column name available for this persistent property [%1$s.%2$s]", getOwner().getName(), getName()));
 
 		return columnName;
 	}
-
-	/**
-	 * The column's data type. Not valid for a composite primary key.
-	 *
-	 * @return the Cassandra {@link DataType}
-	 * @throws InvalidDataAccessApiUsageException if the {@link DataType} cannot be resolved
-	 * @see CassandraType
-	 */
-	DataType getDataType();
 
 	/**
 	 * Whether to force-quote the column names of this property.
 	 *
 	 * @param forceQuote {@literal true} to enforce quoting.
 	 * @see CassandraPersistentProperty#getColumnName()
+	 * @deprecated since 3.0. The column name gets converted into {@link com.datastax.oss.driver.api.core.CqlIdentifier}
+	 *             hence it no longer requires an indication whether the name should be quoted.
+	 * @see com.datastax.oss.driver.api.core.CqlIdentifier#fromInternal(String)
 	 */
+	@Deprecated
 	void setForceQuote(boolean forceQuote);
+
+	/**
+	 * Return whether the property has an explicitly configured column name. Eg. via {@link Column#value()},
+	 * {@link PrimaryKey#value()} or {@link PrimaryKeyColumn#name()}
+	 *
+	 * @return {@literal true} if a configured column name is present and non empty.
+	 * @since 3.4
+	 */
+	boolean hasExplicitColumnName();
 
 	/**
 	 * The name of the element ordinal to which the property is persisted when the owning type is a mapped tuple.
@@ -104,10 +126,24 @@ public interface CassandraPersistentProperty
 
 		Integer ordinal = getOrdinal();
 
-		Assert.state(ordinal != null, String.format("No ordinal available for this persistent property [%1$s.%2$s]",
+		Assert.state(ordinal != null,
+			() -> String.format("No ordinal available for this persistent property [%1$s.%2$s]",
 				getOwner().getName(), getName()));
 
 		return ordinal;
+	}
+
+	/**
+	 * Determines whether this {@link CassandraPersistentProperty} is persisted (mapped) to an element ordinal when the
+	 * owning type is a mapped tuple.
+	 *
+	 * @return a boolean value indicating whether this {@link CassandraPersistentProperty} is persisted (mapped) to an
+	 *         element ordinal when the owning type is a mapped tuple.
+	 * @see #getOrdinal()
+	 * @since 4.0
+	 */
+	default boolean hasOrdinal() {
+		return getOrdinal() != null;
 	}
 
 	/**
@@ -146,6 +182,21 @@ public interface CassandraPersistentProperty
 	 * @see #isClusterKeyColumn()
 	 */
 	boolean isPrimaryKeyColumn();
+
+	/**
+	 * Whether the property maps to a static column.
+	 *
+	 * @since 3.2
+	 */
+	boolean isStaticColumn();
+
+	/**
+	 * @return {@literal true} if the property should be embedded.
+	 * @since 3.0
+	 */
+	default boolean isEmbedded() {
+		return findAnnotation(Embedded.class) != null && isEntity();
+	}
 
 	/**
 	 * Find an {@link AnnotatedType} by {@code annotationType} derived from the property type. Annotated type is looked up

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,8 @@
  */
 package org.springframework.data.cassandra.core.cql;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.cassandra.ReactiveSession;
@@ -24,7 +24,7 @@ import org.springframework.data.cassandra.ReactiveSessionFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.exceptions.DriverException;
+import com.datastax.oss.driver.api.core.DriverException;
 
 /**
  * Base class for {@link ReactiveCqlTemplate} and other CQL-accessing DAO helpers, defining common properties such as
@@ -41,7 +41,7 @@ import com.datastax.driver.core.exceptions.DriverException;
 public abstract class ReactiveCassandraAccessor implements InitializingBean {
 
 	/** Logger available to subclasses */
-	protected final Logger logger = LoggerFactory.getLogger(getClass());
+	protected final Log logger = LogFactory.getLog(getClass());
 
 	private CqlExceptionTranslator exceptionTranslator = new CassandraExceptionTranslator();
 
@@ -118,7 +118,7 @@ public abstract class ReactiveCassandraAccessor implements InitializingBean {
 	 * @see DataAccessException
 	 */
 	@Nullable
-	protected DataAccessException translateExceptionIfPossible(DriverException ex) {
+	protected DataAccessException translateExceptionIfPossible(RuntimeException ex) {
 
 		Assert.notNull(ex, "DriverException must not be null");
 
@@ -142,10 +142,23 @@ public abstract class ReactiveCassandraAccessor implements InitializingBean {
 	 *      "https://docs.spring.io/spring/docs/current/spring-framework-reference/data-access.html#dao-exceptions">Consistent
 	 *      exception hierarchy</a>
 	 */
-	protected DataAccessException translate(String task, @Nullable String cql, DriverException ex) {
+	protected DataAccessException translate(String task, @Nullable String cql, RuntimeException ex) {
 
 		Assert.notNull(ex, "DriverException must not be null");
 
 		return getExceptionTranslator().translate(task, cql, ex);
+	}
+
+	/**
+	 * Determine CQL from potential provider object.
+	 *
+	 * @param cqlProvider object that's potentially a {@link CqlProvider}
+	 * @return the CQL string, or {@literal null}
+	 * @see CqlProvider
+	 * @since 3.2.7
+	 */
+	@Nullable
+	protected static String toCql(@Nullable Object cqlProvider) {
+		return QueryExtractorDelegate.getCql(cqlProvider);
 	}
 }

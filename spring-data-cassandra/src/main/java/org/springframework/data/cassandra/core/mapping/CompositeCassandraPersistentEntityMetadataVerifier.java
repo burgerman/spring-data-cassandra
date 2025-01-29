@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,10 +58,6 @@ public class CompositeCassandraPersistentEntityMetadataVerifier implements Cassa
 		this.verifiers = verifiers;
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.CassandraPersistentEntityMetadataVerifier#verify(org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity)
-	 */
 	@Override
 	public void verify(CassandraPersistentEntity<?> entity) throws MappingException {
 		verifiers.forEach(verifier -> verifier.verify(entity));

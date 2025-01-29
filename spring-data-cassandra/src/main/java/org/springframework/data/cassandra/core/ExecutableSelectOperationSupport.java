@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,20 +15,16 @@
  */
 package org.springframework.data.cassandra.core;
 
-import lombok.AccessLevel;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.experimental.FieldDefaults;
-
 import java.util.List;
 import java.util.stream.Stream;
 
 import org.springframework.dao.IncorrectResultSizeDataAccessException;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.query.Query;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Implementation of {@link ExecutableSelectOperation}.
@@ -38,14 +34,14 @@ import org.springframework.util.ObjectUtils;
  * @see org.springframework.data.cassandra.core.query.Query
  * @since 2.1
  */
-@RequiredArgsConstructor
 class ExecutableSelectOperationSupport implements ExecutableSelectOperation {
 
-	private final @NonNull CassandraTemplate template;
+	private final CassandraTemplate template;
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ExecutableSelectOperation#query(java.lang.Class)
-	 */
+	public ExecutableSelectOperationSupport(CassandraTemplate template) {
+		this.template = template;
+	}
+
 	@Override
 	public <T> ExecutableSelect<T> query(Class<T> domainType) {
 
@@ -54,30 +50,27 @@ class ExecutableSelectOperationSupport implements ExecutableSelectOperation {
 		return new ExecutableSelectSupport<>(this.template, domainType, domainType, Query.empty(), null);
 	}
 
-	// TODO: rethink the implementation
-	// While the use of final fields and construction on mutation effectively makes this class Thread-safe,
-	// it is possible this implementation could generate a high-level of young-gen garbage on the JVM heap,
-	// particularly if the template query(..) (and this class) are used inside of a loop for a large number
-	// of domain types. Of course, this assumption is highly contingent on the user's `Query`
-	// in addition to his/her application design.
-
-	@RequiredArgsConstructor
-	@FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 	static class ExecutableSelectSupport<T> implements ExecutableSelect<T> {
 
-		@NonNull CassandraTemplate template;
+		private final CassandraTemplate template;
 
-		@NonNull Class<?> domainType;
+		private final Class<?> domainType;
 
-		@NonNull Class<T> returnType;
+		private final Class<T> returnType;
 
-		@NonNull Query query;
+		private final Query query;
 
-		@Nullable CqlIdentifier tableName;
+		private final @Nullable CqlIdentifier tableName;
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ExecutableSelectOperation.SelectWithTable#inTable(org.springframework.data.cassandra.core.cql.CqlIdentifier)
-		 */
+		public ExecutableSelectSupport(CassandraTemplate template, Class<?> domainType, Class<T> returnType, Query query,
+				CqlIdentifier tableName) {
+			this.template = template;
+			this.domainType = domainType;
+			this.returnType = returnType;
+			this.query = query;
+			this.tableName = tableName;
+		}
+
 		@Override
 		public SelectWithProjection<T> inTable(CqlIdentifier tableName) {
 
@@ -86,9 +79,6 @@ class ExecutableSelectOperationSupport implements ExecutableSelectOperation {
 			return new ExecutableSelectSupport<>(this.template, this.domainType, this.returnType, this.query, tableName);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ExecutableSelectOperation.SelectWithProjection#as(java.lang.Class)
-		 */
 		@Override
 		public <R> SelectWithQuery<R> as(Class<R> returnType) {
 
@@ -97,9 +87,6 @@ class ExecutableSelectOperationSupport implements ExecutableSelectOperation {
 			return new ExecutableSelectSupport<>(this.template, this.domainType, returnType, this.query, this.tableName);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ExecutableSelectOperation.SelectWithQuery#matching(org.springframework.data.cassandra.core.query.Query)
-		 */
 		@Override
 		public TerminatingSelect<T> matching(Query query) {
 
@@ -108,25 +95,16 @@ class ExecutableSelectOperationSupport implements ExecutableSelectOperation {
 			return new ExecutableSelectSupport<>(this.template, this.domainType, this.returnType, query, this.tableName);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ExecutableSelectOperation.TerminatingSelect#count()
-		 */
 		@Override
 		public long count() {
 			return this.template.doCount(this.query, this.domainType, getTableName());
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ExecutableSelectOperation.TerminatingSelect#exists()
-		 */
 		@Override
 		public boolean exists() {
 			return this.template.doExists(this.query, this.domainType, getTableName());
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ExecutableSelectOperation.TerminatingSelect#firstValue()
-		 */
 		@Override
 		public T firstValue() {
 
@@ -135,9 +113,6 @@ class ExecutableSelectOperationSupport implements ExecutableSelectOperation {
 			return ObjectUtils.isEmpty(result) ? null : result.iterator().next();
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ExecutableSelectOperation.TerminatingSelect#oneValue()
-		 */
 		@Override
 		public T oneValue() {
 
@@ -149,23 +124,17 @@ class ExecutableSelectOperationSupport implements ExecutableSelectOperation {
 
 			if (result.size() > 1) {
 				throw new IncorrectResultSizeDataAccessException(
-						String.format("Query [%s] returned non unique result.", this.query), 1);
+						String.format("Query [%s] returned non unique result", this.query), 1);
 			}
 
 			return result.iterator().next();
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ExecutableSelectOperation.TerminatingSelect#all()
-		 */
 		@Override
 		public List<T> all() {
 			return this.template.doSelect(this.query, this.domainType, getTableName(), this.returnType);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ExecutableSelectOperation.TerminatingSelect#stream()
-		 */
 		@Override
 		public Stream<T> stream() {
 			return this.template.doStream(this.query, this.domainType, getTableName(), this.returnType);

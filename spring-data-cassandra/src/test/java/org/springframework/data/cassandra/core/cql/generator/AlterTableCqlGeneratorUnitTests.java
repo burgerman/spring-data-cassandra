@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,13 +20,14 @@ import static org.assertj.core.api.Assertions.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.springframework.data.cassandra.core.cql.keyspace.AlterTableSpecification;
+import org.springframework.data.cassandra.core.cql.keyspace.SpecificationBuilder;
 import org.springframework.data.cassandra.core.cql.keyspace.TableOption;
 import org.springframework.data.cassandra.core.cql.keyspace.TableOption.CachingOption;
 import org.springframework.data.cassandra.core.cql.keyspace.TableOption.KeyCachingOption;
 
-import com.datastax.driver.core.DataType;
+import com.datastax.oss.driver.api.core.type.DataTypes;
 
 /**
  * Unit tests for {@link AlterTableCqlGenerator}.
@@ -35,64 +36,63 @@ import com.datastax.driver.core.DataType;
  * @author David Webb
  * @author Mark Paluch
  */
-public class AlterTableCqlGeneratorUnitTests {
+class AlterTableCqlGeneratorUnitTests {
 
 	@Test // DATACASS-192
-	public void alterTableAlterColumnType() {
+	void alterTableAlterColumnType() {
 
-		AlterTableSpecification spec = AlterTableSpecification.alterTable("addamsFamily").alter("lastKnownLocation",
-				DataType.uuid());
+		AlterTableSpecification spec = SpecificationBuilder.alterTable("addamsFamily").alter("lastKnownLocation",
+				DataTypes.UUID);
 
 		assertThat(toCql(spec)).isEqualTo("ALTER TABLE addamsfamily ALTER lastknownlocation TYPE uuid;");
 	}
 
 	@Test // DATACASS-192
-	public void alterTableAlterListColumnType() {
+	void alterTableAlterListColumnType() {
 
-		AlterTableSpecification spec = AlterTableSpecification.alterTable("addamsFamily").alter("lastKnownLocation",
-				DataType.list(DataType.ascii()));
+		AlterTableSpecification spec = SpecificationBuilder.alterTable("addamsFamily").alter("lastKnownLocation",
+				DataTypes.listOf(DataTypes.ASCII));
 
 		assertThat(toCql(spec)).isEqualTo("ALTER TABLE addamsfamily ALTER lastknownlocation TYPE list<ascii>;");
 	}
 
 	@Test // DATACASS-192
-	public void alterTableAddColumn() {
+	void alterTableAddColumn() {
 
-		AlterTableSpecification spec = AlterTableSpecification.alterTable("addamsFamily").add("gravesite",
-				DataType.varchar());
+		AlterTableSpecification spec = SpecificationBuilder.alterTable("addamsFamily").add("gravesite", DataTypes.TEXT);
 
-		assertThat(toCql(spec)).isEqualTo("ALTER TABLE addamsfamily ADD gravesite varchar;");
+		assertThat(toCql(spec)).isEqualTo("ALTER TABLE addamsfamily ADD gravesite text;");
 	}
 
 	@Test // DATACASS-192
-	public void alterTableAddListColumn() {
+	void alterTableAddListColumn() {
 
-		AlterTableSpecification spec = AlterTableSpecification.alterTable("users").add("top_places",
-				DataType.list(DataType.ascii()));
+		AlterTableSpecification spec = SpecificationBuilder.alterTable("users").add("top_places",
+				DataTypes.listOf(DataTypes.ASCII));
 
 		assertThat(toCql(spec)).isEqualTo("ALTER TABLE users ADD top_places list<ascii>;");
 	}
 
 	@Test // DATACASS-192
-	public void alterTableDropColumn() {
+	void alterTableDropColumn() {
 
-		AlterTableSpecification spec = AlterTableSpecification.alterTable("addamsFamily").drop("gender");
+		AlterTableSpecification spec = SpecificationBuilder.alterTable("addamsFamily").drop("gender");
 
 		assertThat(toCql(spec)).isEqualTo("ALTER TABLE addamsfamily DROP gender;");
 	}
 
 	@Test // DATACASS-192
-	public void alterTableRenameColumn() {
+	void alterTableRenameColumn() {
 
-		AlterTableSpecification spec = AlterTableSpecification.alterTable("addamsFamily").rename("firstname", "lastname");
+		AlterTableSpecification spec = SpecificationBuilder.alterTable("addamsFamily").rename("firstname", "lastname");
 
 		assertThat(toCql(spec)).isEqualTo("ALTER TABLE addamsfamily RENAME firstname TO lastname;");
 	}
 
 	@Test // DATACASS-192
-	public void alterTableAddCommentAndTableOption() {
+	void alterTableAddCommentAndTableOption() {
 
-		AlterTableSpecification spec = AlterTableSpecification.alterTable("addamsFamily")
+		AlterTableSpecification spec = SpecificationBuilder.alterTable("addamsFamily")
 				.with(TableOption.READ_REPAIR_CHANCE, 0.2f).with(TableOption.COMMENT, "A most excellent and useful table");
 
 		assertThat(toCql(spec)).isEqualTo(
@@ -100,10 +100,10 @@ public class AlterTableCqlGeneratorUnitTests {
 	}
 
 	@Test // DATACASS-192
-	public void alterTableAddColumnAndComment() {
+	void alterTableAddColumnAndComment() {
 
-		AlterTableSpecification spec = AlterTableSpecification.alterTable("addamsFamily")
-				.add("top_places", DataType.list(DataType.ascii())).add("other", DataType.list(DataType.ascii()))
+		AlterTableSpecification spec = SpecificationBuilder.alterTable("addamsFamily")
+				.add("top_places", DataTypes.listOf(DataTypes.ASCII)).add("other", DataTypes.listOf(DataTypes.ASCII))
 				.with(TableOption.COMMENT, "A most excellent and useful table");
 
 		assertThat(toCql(spec)).isEqualTo(
@@ -111,19 +111,19 @@ public class AlterTableCqlGeneratorUnitTests {
 	}
 
 	@Test // DATACASS-192
-	public void alterTableAddCaching() {
+	void alterTableAddCaching() {
 
 		Map<Object, Object> cachingMap = new LinkedHashMap<>();
 		cachingMap.put(CachingOption.KEYS, KeyCachingOption.NONE);
 		cachingMap.put(CachingOption.ROWS_PER_PARTITION, "15");
 
-		AlterTableSpecification spec = AlterTableSpecification.alterTable("users").with(TableOption.CACHING, cachingMap);
+		AlterTableSpecification spec = SpecificationBuilder.alterTable("users").with(TableOption.CACHING, cachingMap);
 
 		assertThat(toCql(spec))
 				.isEqualTo("ALTER TABLE users WITH caching = { 'keys' : 'none', 'rows_per_partition' : '15' };");
 	}
 
 	private String toCql(AlterTableSpecification spec) {
-		return new AlterTableCqlGenerator(spec).toCql();
+		return CqlGenerator.toCql(spec);
 	}
 }

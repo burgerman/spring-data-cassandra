@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,20 +17,30 @@ package org.springframework.data.cassandra.core;
 
 import java.beans.PropertyDescriptor;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
+import org.springframework.data.cassandra.core.convert.CassandraConverter;
 import org.springframework.data.cassandra.core.convert.QueryMapper;
 import org.springframework.data.cassandra.core.convert.UpdateMapper;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import org.springframework.data.cassandra.core.convert.Where;
 import org.springframework.data.cassandra.core.cql.QueryOptions;
 import org.springframework.data.cassandra.core.cql.QueryOptionsUtil;
+import org.springframework.data.cassandra.core.cql.QueryOptionsUtil.CqlStatementOptionsAccessor;
 import org.springframework.data.cassandra.core.cql.WriteOptions;
+import org.springframework.data.cassandra.core.cql.util.StatementBuilder;
+import org.springframework.data.cassandra.core.cql.util.TermFactory;
+import org.springframework.data.cassandra.core.mapping.BasicCassandraPersistentEntity;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity;
+import org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty;
+import org.springframework.data.cassandra.core.mapping.PersistentPropertyTranslator;
 import org.springframework.data.cassandra.core.query.Columns;
 import org.springframework.data.cassandra.core.query.Columns.ColumnSelector;
 import org.springframework.data.cassandra.core.query.Columns.FunctionCall;
@@ -51,44 +61,73 @@ import org.springframework.data.cassandra.core.query.Update.SetAtKeyOp;
 import org.springframework.data.cassandra.core.query.Update.SetOp;
 import org.springframework.data.convert.EntityWriter;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.domain.Sort.Order;
-import org.springframework.data.mapping.PersistentEntity;
 import org.springframework.data.mapping.PersistentProperty;
-import org.springframework.data.projection.ProjectionFactory;
+import org.springframework.data.projection.EntityProjection;
 import org.springframework.data.projection.ProjectionInformation;
-import org.springframework.data.projection.SpelAwareProxyProjectionFactory;
+import org.springframework.data.util.Predicates;
+import org.springframework.data.util.ProxyUtils;
+import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 
-import com.datastax.driver.core.RegularStatement;
-import com.datastax.driver.core.Statement;
-import com.datastax.driver.core.querybuilder.Assignment;
-import com.datastax.driver.core.querybuilder.Clause;
-import com.datastax.driver.core.querybuilder.Delete;
-import com.datastax.driver.core.querybuilder.Ordering;
-import com.datastax.driver.core.querybuilder.QueryBuilder;
-import com.datastax.driver.core.querybuilder.Select;
-import com.datastax.driver.core.querybuilder.Select.Selection;
-import com.datastax.driver.core.querybuilder.Select.SelectionOrAlias;
-import com.google.common.primitives.Ints;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.metadata.schema.ClusteringOrder;
+import com.datastax.oss.driver.api.querybuilder.BindMarker;
+import com.datastax.oss.driver.api.querybuilder.QueryBuilder;
+import com.datastax.oss.driver.api.querybuilder.condition.Condition;
+import com.datastax.oss.driver.api.querybuilder.condition.ConditionBuilder;
+import com.datastax.oss.driver.api.querybuilder.delete.Delete;
+import com.datastax.oss.driver.api.querybuilder.delete.DeleteSelection;
+import com.datastax.oss.driver.api.querybuilder.insert.Insert;
+import com.datastax.oss.driver.api.querybuilder.insert.RegularInsert;
+import com.datastax.oss.driver.api.querybuilder.relation.ColumnRelationBuilder;
+import com.datastax.oss.driver.api.querybuilder.relation.Relation;
+import com.datastax.oss.driver.api.querybuilder.select.Select;
+import com.datastax.oss.driver.api.querybuilder.term.Term;
+import com.datastax.oss.driver.api.querybuilder.update.Assignment;
+import com.datastax.oss.driver.api.querybuilder.update.OngoingAssignment;
+import com.datastax.oss.driver.api.querybuilder.update.UpdateStart;
+import com.datastax.oss.driver.api.querybuilder.update.UpdateWithAssignments;
 
 /**
- * Statement factory to render {@link Statement} from {@link Query} and {@link Update} objects.
+ * Factory to render {@link com.datastax.oss.driver.api.core.cql.Statement} objects from {@link Query} and
+ * {@link Update} objects.
  *
  * @author Mark Paluch
  * @author John Blum
- * @see Query
- * @see Update
+ * @author Sam Lightfoot
+ * @see com.datastax.oss.driver.api.core.cql.Statement
+ * @see org.springframework.data.cassandra.core.query.Query
+ * @see org.springframework.data.cassandra.core.query.Update
  * @since 2.0
  */
 public class StatementFactory {
+
+	private final CassandraConverter cassandraConverter;
 
 	private final QueryMapper queryMapper;
 
 	private final UpdateMapper updateMapper;
 
-	private final ProjectionFactory projectionFactory = new SpelAwareProxyProjectionFactory();
+	private KeyspaceProvider keyspaceProvider = KeyspaceProviders.ENTITY_KEYSPACE;
+
+	/**
+	 * Create {@link StatementFactory} given {@link CassandraConverter}.
+	 *
+	 * @param converter must not be {@literal null}.
+	 * @since 3.0
+	 */
+	public StatementFactory(CassandraConverter converter) {
+
+		Assert.notNull(converter, "CassandraConverter must not be null");
+
+		this.cassandraConverter = converter;
+
+		UpdateMapper updateMapper = new UpdateMapper(converter);
+		this.queryMapper = updateMapper;
+		this.updateMapper = updateMapper;
+	}
 
 	/**
 	 * Create {@link StatementFactory} given {@link UpdateMapper}.
@@ -110,6 +149,7 @@ public class StatementFactory {
 		Assert.notNull(queryMapper, "QueryMapper must not be null");
 		Assert.notNull(updateMapper, "UpdateMapper must not be null");
 
+		this.cassandraConverter = queryMapper.getConverter();
 		this.queryMapper = queryMapper;
 		this.updateMapper = updateMapper;
 	}
@@ -135,17 +175,31 @@ public class StatementFactory {
 	}
 
 	/**
+	 * Sets the {@link KeyspaceProvider} to determine the {@link CqlIdentifier keyspace} for a
+	 * {@link CassandraPersistentEntity entity}-related statement.
+	 *
+	 * @param keyspaceProvider the keyspace provider to use, must not be {@literal null}.
+	 * @since 4.4
+	 */
+	public void setKeyspaceProvider(KeyspaceProvider keyspaceProvider) {
+
+		Assert.notNull(keyspaceProvider, "KeyspaceProvider must not be null");
+
+		this.keyspaceProvider = keyspaceProvider;
+	}
+
+	/**
 	 * Create a {@literal COUNT} statement by mapping {@link Query} to {@link Select}.
 	 *
 	 * @param query user-defined count {@link Query} to execute; must not be {@literal null}.
 	 * @param entity {@link CassandraPersistentEntity entity} to count; must not be {@literal null}.
-	 * @return the rendered {@link RegularStatement}.
+	 * @return the select builder.
 	 * @since 2.1
 	 */
-	public RegularStatement count(Query query, CassandraPersistentEntity<?> entity) {
+	public StatementBuilder<Select> count(Query query, CassandraPersistentEntity<?> entity) {
 
 		Assert.notNull(query, "Query must not be null");
-		Assert.notNull(entity, "Entity must not be null");
+		Assert.notNull(entity, "CassandraPersistentEntity must not be null");
 
 		return count(query, entity, entity.getTableName());
 	}
@@ -156,10 +210,10 @@ public class StatementFactory {
 	 * @param query user-defined count {@link Query} to execute; must not be {@literal null}.
 	 * @param entity {@link CassandraPersistentEntity entity} to count; must not be {@literal null}.
 	 * @param tableName must not be {@literal null}.
-	 * @return the rendered {@link RegularStatement}.
+	 * @return the select builder.
 	 * @since 2.1
 	 */
-	public RegularStatement count(Query query, CassandraPersistentEntity<?> entity, CqlIdentifier tableName) {
+	public StatementBuilder<Select> count(Query query, CassandraPersistentEntity<?> entity, CqlIdentifier tableName) {
 
 		Filter filter = getQueryMapper().getMappedObject(query, entity);
 
@@ -169,16 +223,38 @@ public class StatementFactory {
 	}
 
 	/**
+	 * Create an {@literal SELECT} statement by mapping {@code id} to {@literal SELECT … WHERE} considering
+	 * {@link UpdateOptions}.
+	 *
+	 * @param id must not be {@literal null}.
+	 * @param entity must not be {@literal null}.
+	 * @param tableName must not be {@literal null}.
+	 * @return the select builder.
+	 */
+	public StatementBuilder<Select> selectOneById(Object id, CassandraPersistentEntity<?> entity,
+			CqlIdentifier tableName) {
+
+		Where where = new Where();
+
+		cassandraConverter.write(id, where, entity);
+
+		return StatementBuilder
+				.of(QueryBuilder.selectFrom(getKeyspace(entity, tableName), tableName).all().limit(1),
+						cassandraConverter.getCodecRegistry())
+				.bind((statement, factory) -> statement.where(toRelations(where, factory)));
+	}
+
+	/**
 	 * Create a {@literal SELECT} statement by mapping {@link Query} to {@link Select}.
 	 *
 	 * @param query must not be {@literal null}.
 	 * @param entity must not be {@literal null}.
-	 * @return the rendered {@link RegularStatement}.
+	 * @return the select builder.
 	 */
-	public RegularStatement select(Query query, CassandraPersistentEntity<?> entity) {
+	public StatementBuilder<Select> select(Query query, CassandraPersistentEntity<?> entity) {
 
 		Assert.notNull(query, "Query must not be null");
-		Assert.notNull(entity, "Entity must not be null");
+		Assert.notNull(entity, "CassandraPersistentEntity must not be null");
 
 		return select(query, entity, entity.getTableName());
 	}
@@ -189,13 +265,13 @@ public class StatementFactory {
 	 * @param query must not be {@literal null}.
 	 * @param entity must not be {@literal null}.
 	 * @param tableName must not be {@literal null}.
-	 * @return the rendered {@link RegularStatement}.
+	 * @return the select builder.
 	 * @since 2.1
 	 */
-	public RegularStatement select(Query query, CassandraPersistentEntity<?> entity, CqlIdentifier tableName) {
+	public StatementBuilder<Select> select(Query query, CassandraPersistentEntity<?> entity, CqlIdentifier tableName) {
 
 		Assert.notNull(query, "Query must not be null");
-		Assert.notNull(entity, "Entity must not be null");
+		Assert.notNull(entity, "CassandraPersistentEntity must not be null");
 		Assert.notNull(entity, "Table name must not be null");
 
 		Filter filter = getQueryMapper().getMappedObject(query, entity);
@@ -205,86 +281,83 @@ public class StatementFactory {
 		return createSelect(query, entity, filter, selectors, tableName);
 	}
 
-	private Select createSelect(Query query, CassandraPersistentEntity<?> entity, Filter filter, List<Selector> selectors,
-			CqlIdentifier tableName) {
+	/**
+	 * Creates a Query Object for an insert.
+	 *
+	 * @param objectToInsert the object to save, must not be {@literal null}.
+	 * @param options optional {@link WriteOptions} to apply to the {@link Insert} statement, may be {@literal null}.
+	 * @return the select builder.
+	 * @since 3.0
+	 */
+	public StatementBuilder<RegularInsert> insert(Object objectToInsert, WriteOptions options) {
 
-		Sort sort = Optional.of(query.getSort()).map(querySort -> getQueryMapper().getMappedSort(querySort, entity))
-				.orElse(Sort.unsorted());
+		Assert.notNull(objectToInsert, "Object to builder must not be null");
+		Assert.notNull(options, "WriteOptions must not be null");
 
-		Select select = createSelectAndOrder(selectors, tableName, filter, sort);
-
-		query.getQueryOptions().ifPresent(queryOptions -> QueryOptionsUtil.addQueryOptions(select, queryOptions));
-
-		if (query.getLimit() > 0) {
-			select.limit(Ints.checkedCast(query.getLimit()));
-		}
-
-		if (query.isAllowFiltering()) {
-			select.allowFiltering();
-		}
-
-		query.getPagingState().ifPresent(select::setPagingState);
-
-		return select;
+		CassandraPersistentEntity<?> entity = cassandraConverter.getMappingContext()
+				.getRequiredPersistentEntity(objectToInsert.getClass());
+		return insert(objectToInsert, options, entity, entity.getTableName());
 	}
 
-	private static Select createSelectAndOrder(List<Selector> selectors, CqlIdentifier from, Filter filter, Sort sort) {
+	/**
+	 * Creates a Query Object for an insert.
+	 *
+	 * @param tableName the table name, must not be empty and not {@literal null}.
+	 * @param objectToInsert the object to save, must not be {@literal null}.
+	 * @param options optional {@link WriteOptions} to apply to the {@link Insert} statement, may be {@literal null}.
+	 * @param entity the {@link CassandraPersistentEntity} to write insert values.
+	 * @return the select builder.
+	 */
+	public StatementBuilder<RegularInsert> insert(Object objectToInsert, WriteOptions options,
+			CassandraPersistentEntity<?> entity, CqlIdentifier tableName) {
 
-		Select select;
+		Assert.notNull(tableName, "TableName must not be null");
+		Assert.notNull(objectToInsert, "Object to insert must not be null");
+		Assert.notNull(entity, "CassandraPersistentEntity must not be null");
 
-		if (selectors.isEmpty()) {
-			select = QueryBuilder.select().all().from(from.toCql());
+		boolean insertNulls;
+
+		if (options instanceof InsertOptions insertOptions) {
+			insertNulls = insertOptions.isInsertNulls();
 		} else {
-
-			Selection selection = QueryBuilder.select();
-
-			selectors.forEach(
-					selector -> selector.getAlias().map(CqlIdentifier::toCql).ifPresent(getSelection(selection, selector)::as));
-			select = selection.from(from.toCql());
+			insertNulls = false;
 		}
 
-		for (CriteriaDefinition criteriaDefinition : filter) {
-			select.where(toClause(criteriaDefinition));
-		}
+		Map<CqlIdentifier, Object> object = new LinkedHashMap<>();
+		cassandraConverter.write(objectToInsert, object, entity);
 
-		if (sort.isSorted()) {
+		StatementBuilder<RegularInsert> builder = StatementBuilder
+				.of(QueryBuilder.insertInto(getKeyspace(entity, tableName), tableName).valuesByIds(Collections.emptyMap()),
+						cassandraConverter.getCodecRegistry())
+				.bind((statement, factory) -> {
 
-			List<Ordering> orderings = new ArrayList<>();
+					Map<CqlIdentifier, Term> values = createTerms(insertNulls, object, factory);
+					CqlStatementOptionsAccessor<Insert> accessor = factory.ifBoundOrInline(
+							bindings -> CqlStatementOptionsAccessor.ofInsert(bindings, statement),
+							() -> CqlStatementOptionsAccessor.ofInsert(statement));
+					RegularInsert afterOptions = (RegularInsert) addInsertOptions(accessor, options);
 
-			for (Order order : sort) {
-				if (order.isAscending()) {
-					orderings.add(QueryBuilder.asc(order.getProperty()));
-				} else {
-					orderings.add(QueryBuilder.desc(order.getProperty()));
-				}
-			}
+					return afterOptions.valuesByIds(values);
+				});
 
-			if (!orderings.isEmpty()) {
-				select.orderBy(orderings.toArray(new Ordering[orderings.size()]));
-			}
-		}
+		builder.transform(statement -> QueryOptionsUtil.addQueryOptions(statement, options));
 
-		return select;
+		return builder;
 	}
 
-	private static SelectionOrAlias getSelection(Selection selection, Selector selector) {
+	private static Map<CqlIdentifier, Term> createTerms(boolean insertNulls, Map<CqlIdentifier, Object> object,
+			TermFactory factory) {
 
-		if (selector instanceof FunctionCall) {
+		Map<CqlIdentifier, Term> values = new LinkedHashMap<>(object.size());
 
-			Object[] objects = ((FunctionCall) selector).getParameters().stream().map(param -> {
+		object.forEach((cqlIdentifier, o) -> {
 
-				if (param instanceof ColumnSelector) {
-					return QueryBuilder.column(((ColumnSelector) param).getExpression());
-				}
-
-				return param;
-
-			}).toArray();
-
-			return selection.fcall(selector.getExpression(), objects);
-		}
-
-		return selection.column(selector.getExpression());
+			if (o == null && !insertNulls) {
+				return;
+			}
+			values.put(cqlIdentifier, factory.create(o));
+		});
+		return values;
 	}
 
 	/**
@@ -292,13 +365,14 @@ public class StatementFactory {
 	 *
 	 * @param query must not be {@literal null}.
 	 * @param entity must not be {@literal null}.
-	 * @return the rendered {@link RegularStatement}.
+	 * @return the update builder.
 	 */
-	public RegularStatement update(Query query, Update update, CassandraPersistentEntity<?> entity) {
+	public StatementBuilder<com.datastax.oss.driver.api.querybuilder.update.Update> update(Query query, Update update,
+			CassandraPersistentEntity<?> entity) {
 
 		Assert.notNull(query, "Query must not be null");
 		Assert.notNull(update, "Update must not be null");
-		Assert.notNull(entity, "Entity must not be null");
+		Assert.notNull(entity, "CassandraPersistentEntity must not be null");
 
 		return update(query, update, entity, entity.getTableName());
 	}
@@ -307,64 +381,126 @@ public class StatementFactory {
 	 * Create an {@literal UPDATE} statement by mapping {@link Query} to {@link Update}.
 	 *
 	 * @param query must not be {@literal null}.
-	 * @param updateObj must not be {@literal null}.
+	 * @param update must not be {@literal null}.
 	 * @param entity must not be {@literal null}.
 	 * @param tableName must not be {@literal null}.
-	 * @return the rendered {@link RegularStatement}.
+	 * @return the update builder.
 	 * @since 2.1
 	 */
-	RegularStatement update(Query query, Update updateObj, CassandraPersistentEntity<?> entity, CqlIdentifier tableName) {
+	StatementBuilder<com.datastax.oss.driver.api.querybuilder.update.Update> update(Query query, Update update,
+			CassandraPersistentEntity<?> entity, CqlIdentifier tableName) {
 
 		Assert.notNull(query, "Query must not be null");
-		Assert.notNull(updateObj, "Update must not be null");
-		Assert.notNull(entity, "Entity must not be null");
+		Assert.notNull(update, "Update must not be null");
+		Assert.notNull(entity, "CassandraPersistentEntity must not be null");
 		Assert.notNull(tableName, "Table name must not be null");
 
 		Filter filter = getQueryMapper().getMappedObject(query, entity);
 
-		Update mappedUpdate = getUpdateMapper().getMappedObject(updateObj, entity);
+		Update mappedUpdate = getUpdateMapper().getMappedObject(update, entity);
 
-		com.datastax.driver.core.querybuilder.Update update = update(tableName, mappedUpdate, filter);
+		StatementBuilder<com.datastax.oss.driver.api.querybuilder.update.Update> builder = update(entity, tableName,
+				mappedUpdate, filter,
+				query.getQueryOptions().filter(WriteOptions.class::isInstance).map(WriteOptions.class::cast));
 
-		query.getQueryOptions().ifPresent(queryOptions -> {
+		query.getQueryOptions().filter(UpdateOptions.class::isInstance).map(UpdateOptions.class::cast)
+				.map(UpdateOptions::getIfCondition)
+				.ifPresent(criteriaDefinitions -> applyUpdateIfCondition(builder, criteriaDefinitions));
 
-			potentiallyApplyIfCondition(queryOptions, UpdateOptions.class, UpdateOptions::getIfCondition,
-					condition -> addIfCondition(condition, update, entity));
+		query.getQueryOptions().ifPresent(
+				options -> builder.transform(statementBuilder -> QueryOptionsUtil.addQueryOptions(statementBuilder, options)));
 
-			if (queryOptions instanceof WriteOptions) {
-				EntityQueryUtils.addWriteOptions(update, (WriteOptions) queryOptions);
-			} else {
-				QueryOptionsUtil.addQueryOptions(update, queryOptions);
-			}
-		});
-
-		query.getPagingState().ifPresent(update::setPagingState);
-
-		return update;
+		return builder;
 	}
 
 	/**
-	 * Create an {@literal UPDATE} statement by mapping {@code entity} to {@link Update} considering
+	 * Create an {@literal UPDATE} statement by mapping {@code objectToUpdate} to {@link Update} considering
 	 * {@link UpdateOptions}.
 	 *
-	 * @param entity must not be {@literal null}.
+	 * @param objectToUpdate must not be {@literal null}.
 	 * @param options must not be {@literal null}.
-	 * @param entityWriter must not be {@literal null}.
-	 * @param persistentEntity must not be {@literal null}.
-	 * @param tableName must not be {@literal null}.
-	 * @return the update object.
+	 * @return the update builder.
+	 * @since 3.0
 	 */
-	com.datastax.driver.core.querybuilder.Update update(Object entity, WriteOptions options,
-			EntityWriter<Object, Object> entityWriter, CassandraPersistentEntity<?> persistentEntity,
-			CqlIdentifier tableName) {
+	public StatementBuilder<com.datastax.oss.driver.api.querybuilder.update.Update> update(Object objectToUpdate,
+			WriteOptions options) {
 
-		com.datastax.driver.core.querybuilder.Update update = EntityQueryUtils.createUpdateQuery(tableName.toCql(), entity,
-				options, entityWriter);
+		Assert.notNull(objectToUpdate, "Object to builder must not be null");
+		Assert.notNull(options, "WriteOptions must not be null");
 
-		potentiallyApplyIfCondition(options, UpdateOptions.class, UpdateOptions::getIfCondition,
-				condition -> addIfCondition(condition, update, persistentEntity));
+		CassandraPersistentEntity<?> entity = cassandraConverter.getMappingContext()
+				.getRequiredPersistentEntity(objectToUpdate.getClass());
 
-		return update;
+		return update(objectToUpdate, options, entity, entity.getTableName());
+	}
+
+	/**
+	 * Create an {@literal UPDATE} statement by mapping {@code objectToUpdate} to {@link Update} considering
+	 * {@link UpdateOptions}.
+	 *
+	 * @param objectToUpdate must not be {@literal null}.
+	 * @param options must not be {@literal null}.
+	 * @param entity must not be {@literal null}.
+	 * @param tableName must not be {@literal null}.
+	 * @return the update builder.
+	 */
+	public StatementBuilder<com.datastax.oss.driver.api.querybuilder.update.Update> update(Object objectToUpdate,
+			WriteOptions options, CassandraPersistentEntity<?> entity, CqlIdentifier tableName) {
+
+		Assert.notNull(tableName, "TableName must not be null");
+		Assert.notNull(objectToUpdate, "Object to builder must not be null");
+		Assert.notNull(options, "WriteOptions must not be null");
+		Assert.notNull(entity, "CassandraPersistentEntity must not be null");
+
+		Where where = new Where();
+		cassandraConverter.write(objectToUpdate, where, entity);
+
+		Map<CqlIdentifier, Object> object = new LinkedHashMap<>();
+		cassandraConverter.write(objectToUpdate, object, entity);
+		where.forEach((cqlIdentifier, o) -> object.remove(cqlIdentifier));
+
+		StatementBuilder<com.datastax.oss.driver.api.querybuilder.update.Update> builder = StatementBuilder
+				.of(QueryBuilder.update(getKeyspace(entity, tableName), tableName).set().where(),
+						cassandraConverter.getCodecRegistry())
+				.bind((statement, factory) -> {
+
+					CqlStatementOptionsAccessor<UpdateStart> accessor = factory.ifBoundOrInline(
+							bindings -> CqlStatementOptionsAccessor.ofUpdate(bindings, (UpdateStart) statement),
+							() -> CqlStatementOptionsAccessor.ofUpdate((UpdateStart) statement));
+					com.datastax.oss.driver.api.querybuilder.update.Update statementToUse = addUpdateOptions(accessor, options);
+
+					return ((UpdateWithAssignments) statementToUse).set(toAssignments(object, factory))
+							.where(toRelations(where, factory));
+				});
+
+		Optional.of(options).filter(UpdateOptions.class::isInstance).map(UpdateOptions.class::cast)
+				.map(UpdateOptions::getIfCondition)
+				.ifPresent(criteriaDefinitions -> applyUpdateIfCondition(builder, criteriaDefinitions));
+
+		builder.transform(statement -> QueryOptionsUtil.addQueryOptions(statement, options));
+
+		return builder;
+	}
+
+	/**
+	 * Create an {@literal DELETE} statement by mapping {@code id} to {@literal SELECT … WHERE} considering
+	 * {@link UpdateOptions}.
+	 *
+	 * @param id must not be {@literal null}.
+	 * @param entity must not be {@literal null}.
+	 * @param tableName must not be {@literal null}.
+	 * @return the delete builder.
+	 */
+	public StatementBuilder<Delete> deleteById(Object id, CassandraPersistentEntity<?> entity, CqlIdentifier tableName) {
+
+		Where where = new Where();
+
+		cassandraConverter.write(id, where, entity);
+
+		return StatementBuilder
+				.of(QueryBuilder.deleteFrom(getKeyspace(entity, tableName), tableName).where(),
+						cassandraConverter.getCodecRegistry())
+				.bind((statement, factory) -> statement.where(toRelations(where, factory)));
 	}
 
 	/**
@@ -372,12 +508,12 @@ public class StatementFactory {
 	 *
 	 * @param query must not be {@literal null}.
 	 * @param entity must not be {@literal null}.
-	 * @return the rendered {@link RegularStatement}.
+	 * @return the delete builder.
 	 */
-	public RegularStatement delete(Query query, CassandraPersistentEntity<?> entity) {
+	public StatementBuilder<Delete> delete(Query query, CassandraPersistentEntity<?> entity) {
 
 		Assert.notNull(query, "Query must not be null");
-		Assert.notNull(entity, "Entity must not be null");
+		Assert.notNull(entity, "CassandraPersistentEntity must not be null");
 
 		return delete(query, entity, entity.getTableName());
 	}
@@ -388,58 +524,79 @@ public class StatementFactory {
 	 * @param query must not be {@literal null}.
 	 * @param entity must not be {@literal null}.
 	 * @param tableName must not be {@literal null}.
-	 * @return the rendered {@link RegularStatement}.
+	 * @return the delete builder.
 	 * @see 2.1
 	 */
-	public RegularStatement delete(Query query, CassandraPersistentEntity<?> entity, CqlIdentifier tableName) {
+	public StatementBuilder<Delete> delete(Query query, CassandraPersistentEntity<?> entity, CqlIdentifier tableName) {
 
 		Assert.notNull(query, "Query must not be null");
-		Assert.notNull(entity, "Entity must not be null");
+		Assert.notNull(entity, "CassandraPersistentEntity must not be null");
 		Assert.notNull(tableName, "Table name must not be null");
 
 		Filter filter = getQueryMapper().getMappedObject(query, entity);
+		List<CqlIdentifier> columnNames = getQueryMapper().getMappedColumnNames(query.getColumns(), entity);
 
-		List<String> columnNames = getQueryMapper().getMappedColumnNames(query.getColumns(), entity);
+		StatementBuilder<Delete> builder = delete(columnNames, entity, tableName, filter,
+				query.getQueryOptions().filter(WriteOptions.class::isInstance).map(WriteOptions.class::cast));
 
-		Delete delete = delete(columnNames, tableName, filter);
+		query.getQueryOptions().filter(DeleteOptions.class::isInstance).map(DeleteOptions.class::cast)
+				.map(DeleteOptions::getIfCondition)
+				.ifPresent(criteriaDefinitions -> applyDeleteIfCondition(builder, criteriaDefinitions));
 
-		query.getQueryOptions().ifPresent(queryOptions -> {
+		query.getQueryOptions()
+				.ifPresent(options -> builder.transform(statement -> QueryOptionsUtil.addQueryOptions(statement, options)));
 
-			potentiallyApplyIfCondition(queryOptions, DeleteOptions.class, DeleteOptions::getIfCondition,
-					condition -> addIfCondition(condition, delete, entity));
-
-			if (queryOptions instanceof WriteOptions) {
-				EntityQueryUtils.addWriteOptions(delete, (WriteOptions) queryOptions);
-			} else {
-				QueryOptionsUtil.addQueryOptions(delete, queryOptions);
-			}
-		});
-
-		query.getPagingState().ifPresent(delete::setPagingState);
-
-		return delete;
+		return builder;
 	}
 
 	/**
-	 * Create an {@literal DELETE} statement by mapping {@code entity} to {@link Delete} considering
-	 * {@link DeleteOptions}.
+	 * Create an {@literal DELETE} statement by mapping {@code entity} to {@link Delete DELETE … WHERE} considering
+	 * {@link WriteOptions}.
 	 *
 	 * @param entity must not be {@literal null}.
 	 * @param options must not be {@literal null}.
 	 * @param entityWriter must not be {@literal null}.
-	 * @param persistentEntity must not be {@literal null}.
 	 * @param tableName must not be {@literal null}.
-	 * @return the update object.
+	 * @return the delete builder.
 	 */
-	Delete delete(Object entity, QueryOptions options, EntityWriter<Object, Object> entityWriter,
-			CassandraPersistentEntity<?> persistentEntity, CqlIdentifier tableName) {
+	public StatementBuilder<Delete> delete(Object entity, QueryOptions options, EntityWriter<Object, Object> entityWriter,
+			CqlIdentifier tableName) {
 
-		Delete delete = EntityQueryUtils.createDeleteQuery(tableName.toCql(), entity, options, entityWriter);
+		Assert.notNull(tableName, "TableName must not be null");
+		Assert.notNull(entity, "Object to builder must not be null");
+		Assert.notNull(entityWriter, "EntityWriter must not be null");
 
-		potentiallyApplyIfCondition(options, DeleteOptions.class, DeleteOptions::getIfCondition,
-				condition -> addIfCondition(condition, delete, persistentEntity));
+		Where where = new Where();
+		entityWriter.write(entity, where);
+		BasicCassandraPersistentEntity<?> persistentEntity = cassandraConverter.getMappingContext()
+				.getRequiredPersistentEntity(ProxyUtils.getUserClass(entity.getClass()));
 
-		return delete;
+		StatementBuilder<Delete> builder = StatementBuilder
+				.of(QueryBuilder.deleteFrom(getKeyspace(persistentEntity, tableName), tableName).where(),
+						cassandraConverter.getCodecRegistry())
+				.bind((statement, factory) -> {
+
+					Delete statementToUse;
+					if (options instanceof WriteOptions wo) {
+
+						CqlStatementOptionsAccessor<DeleteSelection> accessor = factory.ifBoundOrInline(
+								bindings -> CqlStatementOptionsAccessor.ofDelete(bindings, (DeleteSelection) statement),
+								() -> CqlStatementOptionsAccessor.ofDelete((DeleteSelection) statement));
+						statementToUse = addDeleteOptions(accessor, wo);
+					} else {
+						statementToUse = statement;
+					}
+
+					return statementToUse.where(toRelations(where, factory));
+				});
+
+		Optional.of(options).filter(DeleteOptions.class::isInstance).map(DeleteOptions.class::cast)
+				.map(DeleteOptions::getIfCondition)
+				.ifPresent(criteriaDefinitions -> applyDeleteIfCondition(builder, criteriaDefinitions));
+
+		builder.transform(statement -> QueryOptionsUtil.addQueryOptions(statement, options));
+
+		return builder;
 	}
 
 	/**
@@ -447,22 +604,39 @@ public class StatementFactory {
 	 * {@literal closed interface projection}.
 	 *
 	 * @param columns must not be {@literal null}.
-	 * @param persistentEntity must not be {@literal null}.
+	 * @param domainType must not be {@literal null}.
 	 * @param returnType must not be {@literal null}.
 	 * @return {@link Columns} with columns to be included.
 	 * @since 2.2
 	 */
-	Columns computeColumnsForProjection(Columns columns, PersistentEntity<?, ?> persistentEntity, Class<?> returnType) {
+	Columns computeColumnsForProjection(EntityProjection<?, ?> projection, Columns columns,
+			CassandraPersistentEntity<?> domainType, Class<?> returnType) {
 
-		if (!columns.isEmpty() || ClassUtils.isAssignable(persistentEntity.getType(), returnType)) {
+		if (!columns.isEmpty() || ClassUtils.isAssignable(domainType.getType(), returnType)) {
 			return columns;
+		}
+
+		if (projection.getMappedType().getType().isInterface()) {
+			projection.forEach(propertyPath -> columns.include(propertyPath.getPropertyPath().getSegment()));
+		} else {
+
+			// DTO projections use merged metadata between domain type and result type
+			PersistentPropertyTranslator translator = PersistentPropertyTranslator.create(domainType,
+					Predicates.negate(CassandraPersistentProperty::hasExplicitColumnName));
+
+			CassandraPersistentEntity<?> entity = getQueryMapper().getConverter().getMappingContext()
+					.getRequiredPersistentEntity(projection.getMappedType());
+			for (CassandraPersistentProperty property : entity) {
+				columns.include(translator.translate(property).getColumnName());
+			}
 		}
 
 		Columns projectedColumns = Columns.empty();
 
 		if (returnType.isInterface()) {
 
-			ProjectionInformation projectionInformation = projectionFactory.getProjectionInformation(returnType);
+			ProjectionInformation projectionInformation = cassandraConverter.getProjectionFactory()
+					.getProjectionInformation(returnType);
 
 			if (projectionInformation.isClosed()) {
 
@@ -471,7 +645,7 @@ public class StatementFactory {
 				}
 			}
 		} else {
-			for (PersistentProperty<?> property : persistentEntity) {
+			for (PersistentProperty<?> property : domainType) {
 				projectedColumns = projectedColumns.include(property.getName());
 			}
 		}
@@ -479,157 +653,446 @@ public class StatementFactory {
 		return projectedColumns;
 	}
 
-	private void addIfCondition(Filter filter, com.datastax.driver.core.querybuilder.Update update,
-			CassandraPersistentEntity<?> persistentEntity) {
+	private StatementBuilder<Select> createSelect(Query query, CassandraPersistentEntity<?> entity, Filter filter,
+			List<Selector> selectors, CqlIdentifier tableName) {
 
-		Filter ifCondition = getQueryMapper().getMappedObject(filter, persistentEntity);
+		Sort sort = Optional.of(query.getSort()).map(querySort -> getQueryMapper().getMappedSort(querySort, entity))
+				.orElse(Sort.unsorted());
 
-		for (CriteriaDefinition criteria : ifCondition) {
-			update.onlyIf(toClause(criteria));
+		StatementBuilder<Select> select = createSelectAndOrder(selectors, entity, tableName, filter, sort);
+
+		if (query.isAllowFiltering()) {
+			select.apply(Select::allowFiltering);
 		}
+
+		select.onBuild(statementBuilder -> query.getPagingState().ifPresent(statementBuilder::setPagingState));
+
+		if (query.getLimit() > 0) {
+
+			int limit = Math.toIntExact(query.getLimit());
+			select.bind((statement, factory) -> factory.ifBoundOrInline(bindings -> statement.limit(bindings.bind(limit)),
+					() -> statement.limit(limit)));
+		}
+
+		query.getQueryOptions()
+				.ifPresent(it -> select.transform(statement -> QueryOptionsUtil.addQueryOptions(statement, it)));
+
+		return select;
 	}
 
-	private void addIfCondition(Filter filter, Delete delete, CassandraPersistentEntity<?> persistentEntity) {
-
-		Filter ifCondition = getQueryMapper().getMappedObject(filter, persistentEntity);
-
-		for (CriteriaDefinition criteria : ifCondition) {
-			delete.onlyIf(toClause(criteria));
-		}
+	@Nullable
+	private CqlIdentifier getKeyspace(CassandraPersistentEntity<?> entity, CqlIdentifier tableName) {
+		return keyspaceProvider.getKeyspace(entity, tableName);
 	}
 
-	private static com.datastax.driver.core.querybuilder.Update update(CqlIdentifier table, Update mappedUpdate,
-			Filter filter) {
+	private StatementBuilder<Select> createSelectAndOrder(List<Selector> selectors, CassandraPersistentEntity<?> entity,
+			CqlIdentifier from, Filter filter, Sort sort) {
 
-		com.datastax.driver.core.querybuilder.Update update = QueryBuilder.update(table.toCql());
+		Select select;
 
-		for (AssignmentOp assignmentOp : mappedUpdate.getUpdateOperations()) {
-			update.with(getAssignment(assignmentOp));
+		if (selectors.isEmpty()) {
+			select = QueryBuilder.selectFrom(getKeyspace(entity, from), from).all();
+		} else {
+
+			List<com.datastax.oss.driver.api.querybuilder.select.Selector> mappedSelectors = new ArrayList<>(
+					selectors.size());
+			for (Selector selector : selectors) {
+				com.datastax.oss.driver.api.querybuilder.select.Selector orElseGet = selector.getAlias()
+						.map(it -> getSelection(selector).as(it)).orElseGet(() -> getSelection(selector));
+				mappedSelectors.add(orElseGet);
+			}
+
+			select = QueryBuilder.selectFrom(getKeyspace(entity, from), from).selectors(mappedSelectors);
 		}
 
+		StatementBuilder<Select> builder = StatementBuilder.of(select, cassandraConverter.getCodecRegistry());
+
+		builder.bind((statement, factory) -> {
+			return statement.where(getRelations(filter, factory));
+		});
+
+		if (sort.isSorted()) {
+
+			builder.apply((statement) -> {
+
+				Select statementToUse = statement;
+
+				for (Sort.Order order : sort) {
+					statementToUse = statementToUse.orderBy(order.getProperty(),
+							order.isAscending() ? ClusteringOrder.ASC : ClusteringOrder.DESC);
+				}
+
+				return statementToUse;
+			});
+		}
+
+		return builder;
+	}
+
+	private static List<Relation> getRelations(Filter filter, TermFactory factory) {
+		List<Relation> relations = new ArrayList<>();
 		for (CriteriaDefinition criteriaDefinition : filter) {
-			update.where(toClause(criteriaDefinition));
+			relations.add(toClause(criteriaDefinition, factory));
 		}
-
-		return update;
+		return relations;
 	}
 
-	private static Assignment getAssignment(AssignmentOp assignmentOp) {
+	private static com.datastax.oss.driver.api.querybuilder.select.Selector getSelection(Selector selector) {
+
+		if (selector instanceof FunctionCall) {
+
+			com.datastax.oss.driver.api.querybuilder.select.Selector[] arguments = ((FunctionCall) selector).getParameters()
+					.stream().map(param -> {
+
+						if (param instanceof ColumnSelector) {
+
+							return com.datastax.oss.driver.api.querybuilder.select.Selector
+									.column(((ColumnSelector) param).getExpression());
+						}
+						return new SimpleSelector(param.toString());
+
+					}).toArray(com.datastax.oss.driver.api.querybuilder.select.Selector[]::new);
+
+			return com.datastax.oss.driver.api.querybuilder.select.Selector.function(selector.getExpression(), arguments);
+		}
+
+		return com.datastax.oss.driver.api.querybuilder.select.Selector
+				.column(CqlIdentifier.fromInternal(selector.getExpression()));
+	}
+
+	private StatementBuilder<com.datastax.oss.driver.api.querybuilder.update.Update> update(
+			CassandraPersistentEntity<?> entity, CqlIdentifier table, Update mappedUpdate, Filter filter,
+			Optional<WriteOptions> optionalOptions) {
+
+		UpdateStart updateStart = QueryBuilder.update(getKeyspace(entity, table), table);
+
+		return StatementBuilder
+				.of((com.datastax.oss.driver.api.querybuilder.update.Update) updateStart, cassandraConverter.getCodecRegistry())
+				.bind((statement, factory) -> {
+
+					com.datastax.oss.driver.api.querybuilder.update.Update statementToUse;
+					WriteOptions options = optionalOptions.orElse(null);
+					if (options != null) {
+						CqlStatementOptionsAccessor<UpdateStart> accessor = factory.ifBoundOrInline(
+								bindings -> CqlStatementOptionsAccessor.ofUpdate(bindings, (UpdateStart) statement),
+								() -> CqlStatementOptionsAccessor.ofUpdate((UpdateStart) statement));
+						statementToUse = addUpdateOptions(accessor, options);
+					} else {
+						statementToUse = statement;
+					}
+
+					List<Assignment> assignments = mappedUpdate.getUpdateOperations().stream()
+							.map(assignmentOp -> getAssignment(assignmentOp, factory)).collect(Collectors.toList());
+
+					return (com.datastax.oss.driver.api.querybuilder.update.Update) ((OngoingAssignment) statementToUse)
+							.set(assignments);
+
+				}).bind((statement, factory) -> {
+					return statement.where(getRelations(filter, factory));
+				});
+	}
+
+	static Iterable<Relation> toRelations(Where where, TermFactory factory) {
+
+		List<Relation> relations = new ArrayList<>();
+
+		where.forEach((cqlIdentifier, termValue) -> relations
+				.add(Relation.column(cqlIdentifier).isEqualTo(factory.create(termValue))));
+
+		return relations;
+	}
+
+	static Iterable<Assignment> toAssignments(Map<CqlIdentifier, Object> object, TermFactory factory) {
+
+		List<Assignment> assignments = new ArrayList<>();
+
+		object.forEach(
+				(cqlIdentifier, termValue) -> assignments.add(Assignment.setColumn(cqlIdentifier, factory.create(termValue))));
+
+		return assignments;
+	}
+
+	private static void applyUpdateIfCondition(
+			StatementBuilder<com.datastax.oss.driver.api.querybuilder.update.Update> update, Filter criteriaDefinitions) {
+
+		update.bind((statement, factory) -> {
+
+			List<Condition> conditions = criteriaDefinitions.stream().map(it -> toCondition(it, factory))
+					.collect(Collectors.toList());
+
+			return statement.if_(conditions);
+		});
+	}
+
+	private static void applyDeleteIfCondition(
+			StatementBuilder<com.datastax.oss.driver.api.querybuilder.delete.Delete> delete, Filter criteriaDefinitions) {
+		delete.bind((statement, factory) -> {
+
+			List<Condition> conditions = criteriaDefinitions.stream().map(it -> toCondition(it, factory))
+					.collect(Collectors.toList());
+			return statement.if_(conditions);
+		});
+	}
+
+	private static Assignment getAssignment(AssignmentOp assignmentOp, TermFactory termFactory) {
 
 		if (assignmentOp instanceof SetOp) {
-			return getAssignment((SetOp) assignmentOp);
+			return getAssignment((SetOp) assignmentOp, termFactory);
 		}
 
 		if (assignmentOp instanceof RemoveOp) {
-			return getAssignment((RemoveOp) assignmentOp);
+			return getAssignment((RemoveOp) assignmentOp, termFactory);
 		}
 
 		if (assignmentOp instanceof IncrOp) {
-			return getAssignment((IncrOp) assignmentOp);
+			return getAssignment((IncrOp) assignmentOp, termFactory);
 		}
 
 		if (assignmentOp instanceof AddToOp) {
-			return getAssignment((AddToOp) assignmentOp);
+			return getAssignment((AddToOp) assignmentOp, termFactory);
 		}
 
 		if (assignmentOp instanceof AddToMapOp) {
-			return getAssignment((AddToMapOp) assignmentOp);
+			return getAssignment((AddToMapOp) assignmentOp, termFactory);
 		}
 
 		throw new IllegalArgumentException(String.format("UpdateOp %s not supported", assignmentOp));
 	}
 
-	private static Assignment getAssignment(IncrOp incrOp) {
+	private static Assignment getAssignment(IncrOp incrOp, TermFactory termFactory) {
 
-		return incrOp.getValue().intValue() > 0
-				? QueryBuilder.incr(incrOp.getColumnName().toCql(), Math.abs(incrOp.getValue().intValue()))
-				: QueryBuilder.decr(incrOp.getColumnName().toCql(), Math.abs(incrOp.getValue().intValue()));
+		return incrOp.getValue().longValue() > 0
+				? Assignment.increment(incrOp.toCqlIdentifier(), termFactory.create(Math.abs(incrOp.getValue().longValue())))
+				: Assignment.decrement(incrOp.toCqlIdentifier(), termFactory.create(Math.abs(incrOp.getValue().longValue())));
 	}
 
-	private static Assignment getAssignment(SetOp updateOp) {
+	private static Assignment getAssignment(SetOp updateOp, TermFactory termFactory) {
 
 		if (updateOp instanceof SetAtIndexOp) {
-			SetAtIndexOp op = (SetAtIndexOp) updateOp;
-			return QueryBuilder.setIdx(op.getColumnName().toCql(), op.getIndex(), op.getValue());
+
+			return Assignment.setListValue(updateOp.toCqlIdentifier(),
+					termFactory.create(((SetAtIndexOp) updateOp).getIndex()), termFactory.create(updateOp.getValue()));
 		}
 
 		if (updateOp instanceof SetAtKeyOp) {
 			SetAtKeyOp op = (SetAtKeyOp) updateOp;
-			return QueryBuilder.put(op.getColumnName().toCql(), op.getKey(), op.getValue());
+			return Assignment.setMapValue(op.toCqlIdentifier(), termFactory.create(op.getKey()),
+					termFactory.create(op.getValue()));
 		}
 
-		return QueryBuilder.set(updateOp.getColumnName().toCql(), updateOp.getValue());
-	}
-
-	private static Assignment getAssignment(RemoveOp updateOp) {
-
-		if (updateOp.getValue() instanceof Set) {
-			return QueryBuilder.removeAll(updateOp.getColumnName().toCql(), (Set) updateOp.getValue());
-		}
-
-		if (updateOp.getValue() instanceof List) {
-			return QueryBuilder.discardAll(updateOp.getColumnName().toCql(), (List) updateOp.getValue());
-		}
-
-		return QueryBuilder.remove(updateOp.getColumnName().toCql(), updateOp.getValue());
+		return Assignment.setColumn(updateOp.toCqlIdentifier(), termFactory.create(updateOp.getValue()));
 	}
 
 	@SuppressWarnings("unchecked")
-	private static Assignment getAssignment(AddToOp updateOp) {
+	private static Assignment getAssignment(RemoveOp removeOp, TermFactory termFactory) {
+
+		if (removeOp.getValue() instanceof Set) {
+
+			Collection<Object> collection = (Collection<Object>) removeOp.getValue();
+
+			return new RemoveCollectionElementsAssignment(removeOp.toCqlIdentifier(), termFactory.create(collection));
+		}
+
+		if (removeOp.getValue() instanceof List) {
+
+			Collection<Object> collection = (Collection<Object>) removeOp.getValue();
+
+			return new RemoveCollectionElementsAssignment(removeOp.toCqlIdentifier(), termFactory.create(collection));
+		}
+
+		return Assignment.remove(removeOp.toCqlIdentifier(), termFactory.create(removeOp.getValue()));
+	}
+
+	private static Assignment getAssignment(AddToOp updateOp, TermFactory termFactory) {
 
 		if (updateOp.getValue() instanceof Set) {
-			return QueryBuilder.addAll(updateOp.getColumnName().toCql(), (Set) updateOp.getValue());
+			return Assignment.append(updateOp.toCqlIdentifier(), termFactory.create(updateOp.getValue()));
 		}
 
 		return Mode.PREPEND.equals(updateOp.getMode())
-				? QueryBuilder.prependAll(updateOp.getColumnName().toCql(), (List) updateOp.getValue())
-				: QueryBuilder.appendAll(updateOp.getColumnName().toCql(), (List) updateOp.getValue());
+				? Assignment.prepend(updateOp.toCqlIdentifier(), termFactory.create(updateOp.getValue()))
+				: Assignment.append(updateOp.getColumnName().toCql(), termFactory.create(updateOp.getValue()));
 	}
 
-	private static Assignment getAssignment(AddToMapOp updateOp) {
-		return QueryBuilder.putAll(updateOp.getColumnName().toCql(), updateOp.getValue());
+	private static Assignment getAssignment(AddToMapOp updateOp, TermFactory termFactory) {
+		return Assignment.append(updateOp.toCqlIdentifier(), termFactory.create(updateOp.getValue()));
 	}
 
-	private static Delete delete(List<String> columnNames, CqlIdentifier from, Filter filter) {
+	private StatementBuilder<Delete> delete(List<CqlIdentifier> columnNames, CassandraPersistentEntity<?> entity,
+			CqlIdentifier from, Filter filter, Optional<WriteOptions> optionsOptional) {
 
-		Delete select;
+		DeleteSelection select = QueryBuilder.deleteFrom(getKeyspace(entity, from), from);
 
-		if (columnNames.isEmpty()) {
-			select = QueryBuilder.delete().all().from(from.toCql());
-		} else {
-			Delete.Selection selection = QueryBuilder.delete();
-			columnNames.forEach(selection::column);
-			select = selection.from(from.toCql());
+		for (CqlIdentifier columnName : columnNames) {
+			select = select.column(columnName);
 		}
 
-		for (CriteriaDefinition criteriaDefinition : filter) {
-			select.where(toClause(criteriaDefinition));
-		}
+		return StatementBuilder.of(select.where(), cassandraConverter.getCodecRegistry()).bind((statement, factory) -> {
 
-		return select;
+			WriteOptions options = optionsOptional.orElse(null);
+			Delete statementToUse;
+			if (options != null) {
+				CqlStatementOptionsAccessor<DeleteSelection> accessor = factory.ifBoundOrInline(
+						bindings -> CqlStatementOptionsAccessor.ofDelete(bindings, (DeleteSelection) statement),
+						() -> CqlStatementOptionsAccessor.ofDelete((DeleteSelection) statement));
+				statementToUse = addDeleteOptions(accessor, options);
+			} else {
+				statementToUse = statement;
+			}
+
+			return statementToUse.where(getRelations(filter, factory));
+		});
 	}
 
 	/**
-	 * Extract a {@link Filter} from an options {@code object} and callback {@link Consumer}. This method checks
-	 * defensively if the {@code object} is an instance of {@link Class optionsClass} and tries to extract the
-	 * {@link Filter}. If a filter is present, the {@link Consumer} gets called.
+	 * Add common {@link WriteOptions} options to {@link Insert} CQL statements.
+	 *
+	 * @param insert {@link Insert} CQL statement, must not be {@literal null}.
+	 * @param writeOptions write options (e.g. consistency level) to add to the CQL statement.
+	 * @return the given {@link Insert}.
+	 * @since 2.1
 	 */
-	private static <T> void potentiallyApplyIfCondition(@Nullable Object object, Class<T> optionsClass,
-			Function<T, Filter> filterExtractor, Consumer<Filter> consumeIfPresent) {
+	static Insert addInsertOptions(CqlStatementOptionsAccessor<Insert> insert, WriteOptions writeOptions) {
 
-		if (optionsClass.isInstance(object)) {
+		Assert.notNull(insert, "Insert must not be null");
 
-			T options = optionsClass.cast(object);
+		Insert insertToUse = QueryOptionsUtil.addWriteOptions(insert, writeOptions);
 
-			Filter filter = filterExtractor.apply(options);
+		if (writeOptions instanceof InsertOptions insertOptions) {
 
-			if (filter != null) {
-				consumeIfPresent.accept(filter);
+			if (insertOptions.isIfNotExists()) {
+				insertToUse = insertToUse.ifNotExists();
 			}
 		}
+
+		return insertToUse;
 	}
 
-	private static Clause toClause(CriteriaDefinition criteriaDefinition) {
+	/**
+	 * Add common {@link WriteOptions} options to {@link com.datastax.oss.driver.api.querybuilder.update.Update} CQL
+	 * statements.
+	 *
+	 * @param update {@link com.datastax.oss.driver.api.querybuilder.update.Update} CQL statement, must not be
+	 *          {@literal null}.
+	 * @param writeOptions write options (e.g. consistency level) to add to the CQL statement.
+	 * @return the given {@link com.datastax.oss.driver.api.querybuilder.update.Update}.
+	 * @see QueryOptionsUtil#addWriteOptions(com.datastax.oss.driver.api.querybuilder.update.Update, WriteOptions)
+	 * @since 2.1
+	 */
+	static com.datastax.oss.driver.api.querybuilder.update.Update addUpdateOptions(
+			CqlStatementOptionsAccessor<UpdateStart> update, WriteOptions writeOptions) {
+
+		Assert.notNull(update, "Update must not be null");
+
+		com.datastax.oss.driver.api.querybuilder.update.Update updateToUse = (com.datastax.oss.driver.api.querybuilder.update.Update) QueryOptionsUtil
+				.addWriteOptions(update, writeOptions);
+
+		if (writeOptions instanceof UpdateOptions updateOptions) {
+
+			if (updateOptions.isIfExists()) {
+				updateToUse = updateToUse.ifExists();
+			}
+		}
+
+		return updateToUse;
+	}
+
+	/**
+	 * Add common {@link WriteOptions} options to {@link Delete} CQL statements.
+	 *
+	 * @param delete {@link Delete} CQL statement, must not be {@literal null}.
+	 * @param writeOptions write options (e.g. consistency level) to add to the CQL statement.
+	 * @return the given {@link Delete}.
+	 * @since 2.1
+	 */
+	static Delete addDeleteOptions(CqlStatementOptionsAccessor<DeleteSelection> delete, WriteOptions writeOptions) {
+
+		Assert.notNull(delete, "Delete must not be null");
+
+		Delete deleteToUse = (Delete) QueryOptionsUtil.addWriteOptions(delete, writeOptions);
+
+		if (writeOptions instanceof DeleteOptions deleteOptions) {
+
+			if (deleteOptions.isIfExists()) {
+				deleteToUse = deleteToUse.where().ifExists();
+			}
+		}
+
+		return deleteToUse;
+	}
+
+	private static Relation toClause(CriteriaDefinition criteriaDefinition, TermFactory factory) {
+
+		CqlIdentifier columnName = criteriaDefinition.getColumnName().getCqlIdentifier()
+				.orElseGet(() -> CqlIdentifier.fromInternal(criteriaDefinition.getColumnName().toCql()));
+
+		Predicate predicate = criteriaDefinition.getPredicate();
+
+		CriteriaDefinition.Operators predicateOperator = CriteriaDefinition.Operators
+				.from(predicate.getOperator().toString()).orElseThrow(
+						() -> new IllegalArgumentException(String.format("Unknown operator [%s]", predicate.getOperator())));
+
+		ColumnRelationBuilder<Relation> column = Relation.column(columnName);
+		Object value = predicate.getValue();
+
+		switch (predicateOperator) {
+
+			case EQ:
+				return column.isEqualTo(factory.create(value));
+
+			case NE:
+				return column.isNotEqualTo(factory.create(value));
+
+			case GT:
+				return column.isGreaterThan(factory.create(value));
+
+			case GTE:
+				return column.isGreaterThanOrEqualTo(factory.create(value));
+
+			case LT:
+				return column.isLessThan(factory.create(value));
+
+			case LTE:
+				return column.isLessThanOrEqualTo(factory.create(value));
+
+			case IN:
+
+				if (isCollectionLike(value)) {
+
+					if (factory.canBindCollection()) {
+						Term term = factory.create(value);
+						return term instanceof BindMarker ? column.in((BindMarker) term) : column.in(term);
+					}
+
+					return column.in(toLiterals(value));
+				}
+
+				return column.in(factory.create(value));
+
+			case LIKE:
+				return column.like(factory.create(value));
+
+			case IS_NOT_NULL:
+				return column.isNotNull();
+
+			case CONTAINS:
+
+				Assert.state(value != null, () -> String.format("CONTAINS value for column %s is null", columnName));
+
+				return column.contains(factory.create(value));
+
+			case CONTAINS_KEY:
+
+				Assert.state(value != null, () -> String.format("CONTAINS KEY value for column %s is null", columnName));
+
+				return column.containsKey(factory.create(value));
+		}
+
+		throw new IllegalArgumentException(
+				String.format("Criteria %s %s %s not supported", columnName, predicate.getOperator(), value));
+	}
+
+	private static Condition toCondition(CriteriaDefinition criteriaDefinition, TermFactory factory) {
 
 		String columnName = criteriaDefinition.getColumnName().toCql();
 
@@ -639,60 +1102,191 @@ public class StatementFactory {
 				.from(predicate.getOperator().toString()).orElseThrow(
 						() -> new IllegalArgumentException(String.format("Unknown operator [%s]", predicate.getOperator())));
 
+		ConditionBuilder<Condition> column = Condition.column(columnName);
+		Object value = predicate.getValue();
+
 		switch (predicateOperator) {
 
 			case EQ:
-				return QueryBuilder.eq(columnName, predicate.getValue());
+				return column.isEqualTo(factory.create(value));
 
 			case NE:
-				return QueryBuilder.ne(columnName, predicate.getValue());
+				return column.isNotEqualTo(factory.create(value));
 
 			case GT:
-				return QueryBuilder.gt(columnName, predicate.getValue());
+				return column.isGreaterThan(factory.create(value));
 
 			case GTE:
-				return QueryBuilder.gte(columnName, predicate.getValue());
+				return column.isGreaterThanOrEqualTo(factory.create(value));
 
 			case LT:
-				return QueryBuilder.lt(columnName, predicate.getValue());
+				return column.isLessThan(factory.create(value));
 
 			case LTE:
-				return QueryBuilder.lte(columnName, predicate.getValue());
+				return column.isLessThanOrEqualTo(factory.create(value));
 
 			case IN:
 
-				if (predicate.getValue() instanceof List) {
-					return QueryBuilder.in(columnName, (List<?>) predicate.getValue());
+				if (isCollectionLike(value)) {
+
+					if (factory.canBindCollection()) {
+						Term term = factory.create(value);
+						return term instanceof BindMarker ? column.in((BindMarker) term) : column.in(term);
+					}
+
+					return column.in(toLiterals(value));
 				}
 
-				if (predicate.getValue() != null && predicate.getValue().getClass().isArray()) {
-					return QueryBuilder.in(columnName, (Object[]) predicate.getValue());
-				}
-
-				return QueryBuilder.in(columnName, predicate.getValue());
-
-			case LIKE:
-				return QueryBuilder.like(columnName, predicate.getValue());
-
-			case IS_NOT_NULL:
-				return QueryBuilder.notNull(columnName);
-
-			case CONTAINS:
-
-				Assert.state(predicate.getValue() != null,
-						() -> String.format("CONTAINS value for column %s is null", columnName));
-
-				return QueryBuilder.contains(columnName, predicate.getValue());
-
-			case CONTAINS_KEY:
-
-				Assert.state(predicate.getValue() != null,
-						() -> String.format("CONTAINS KEY value for column %s is null", columnName));
-
-				return QueryBuilder.containsKey(columnName, predicate.getValue());
+				return column.in(factory.create(value));
 		}
 
 		throw new IllegalArgumentException(
-				String.format("Criteria %s %s %s not supported", columnName, predicate.getOperator(), predicate.getValue()));
+				String.format("Criteria %s %s %s not supported for IF Conditions", columnName, predicate.getOperator(), value));
 	}
+
+	static List<Term> toLiterals(@Nullable Object arrayOrList) {
+		return toLiterals(arrayOrList, QueryBuilder::literal);
+	}
+
+	static List<Term> toLiterals(@Nullable Object arrayOrList, Function<Object, Term> termFactory) {
+
+		if (arrayOrList instanceof List) {
+
+			List<?> list = (List<?>) arrayOrList;
+			List<Term> literals = new ArrayList<>(list.size());
+			for (Object o : list) {
+				literals.add(termFactory.apply(o));
+			}
+
+			return literals;
+		}
+
+		if (arrayOrList != null && arrayOrList.getClass().isArray()) {
+
+			Object[] array = (Object[]) arrayOrList;
+			List<Term> literals = new ArrayList<>(array.length);
+			for (Object o : array) {
+				literals.add(termFactory.apply(o));
+			}
+
+			return literals;
+		}
+
+		return Collections.emptyList();
+	}
+
+	private static boolean isCollectionLike(@Nullable Object value) {
+		return value instanceof List || (value != null && value.getClass().isArray());
+	}
+
+	static class SimpleSelector implements com.datastax.oss.driver.api.querybuilder.select.Selector {
+
+		private final String selector;
+
+		SimpleSelector(String selector) {
+			this.selector = selector;
+		}
+
+		@NonNull
+		@Override
+		public com.datastax.oss.driver.api.querybuilder.select.Selector as(@NonNull CqlIdentifier alias) {
+			throw new UnsupportedOperationException();
+		}
+
+		@Nullable
+		@Override
+		public CqlIdentifier getAlias() {
+			return null;
+		}
+
+		@Override
+		public void appendTo(@NonNull StringBuilder builder) {
+			builder.append(selector);
+		}
+	}
+
+	private static class RemoveCollectionElementsAssignment implements Assignment {
+
+		private final CqlIdentifier columnId;
+		private final Term value;
+
+		protected RemoveCollectionElementsAssignment(CqlIdentifier columnId, Term value) {
+			this.columnId = columnId;
+			this.value = value;
+		}
+
+		@Override
+		public void appendTo(StringBuilder builder) {
+			builder.append(String.format("%1$s=%1$s-%2$s", columnId.asCql(true), buildRightOperand()));
+		}
+
+		private String buildRightOperand() {
+			StringBuilder builder = new StringBuilder();
+			value.appendTo(builder);
+			return builder.toString();
+		}
+
+		@Override
+		public boolean isIdempotent() {
+			return value.isIdempotent();
+		}
+
+		public Term getValue() {
+			return value;
+		}
+
+	}
+
+	/**
+	 * Function interface to determine a {@link CqlIdentifier keyspace} for a given {@link CassandraPersistentEntity} and
+	 * {@code tableName}. Classes implementing this interface can choose to return a keyspace or {@code null} to use the
+	 * default keyspace.
+	 *
+	 * @since 4.4
+	 */
+	@FunctionalInterface
+	public interface KeyspaceProvider {
+
+		/**
+		 * Determine a {@link CqlIdentifier keyspace} for a given {@link CassandraPersistentEntity} and {@code tableName}.
+		 *
+		 * @param entity the persistent entity for which the operation is applied.
+		 * @param tableName the table of the operation.
+		 * @return a {@link CqlIdentifier keyspace} to use a dedicated keyspace for a
+		 *         {@link com.datastax.oss.driver.api.core.cql.Statement} or {@code null} to use the default session
+		 *         keyspace.
+		 */
+		@Nullable
+		CqlIdentifier getKeyspace(CassandraPersistentEntity<?> entity, CqlIdentifier tableName);
+
+	}
+
+	/**
+	 * Implementations of {@link KeyspaceProvider}.
+	 */
+	enum KeyspaceProviders implements KeyspaceProvider {
+
+		/**
+		 * Derive the keyspace from the given {@link CassandraPersistentEntity}.
+		 */
+		ENTITY_KEYSPACE {
+			@Nullable
+			@Override
+			public CqlIdentifier getKeyspace(CassandraPersistentEntity<?> entity, CqlIdentifier tableName) {
+				return entity.getKeyspace();
+			}
+		},
+
+		/**
+		 * Use the session's keyspace.
+		 */
+		EMPTY_KEYSPACE {
+			@Nullable
+			@Override
+			public CqlIdentifier getKeyspace(CassandraPersistentEntity<?> entity, CqlIdentifier tableName) {
+				return null;
+			}
+		}
+	}
+
 }

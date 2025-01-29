@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,10 @@
  */
 package org.springframework.data.cassandra.core.cql.keyspace;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Base value object builder class to construction of user type specifications.
@@ -31,13 +33,31 @@ public abstract class UserTypeNameSpecification {
 	/**
 	 * User type name.
 	 */
+	private final @Nullable CqlIdentifier keyspace;
 	private final CqlIdentifier name;
 
 	protected UserTypeNameSpecification(CqlIdentifier name) {
 
 		Assert.notNull(name, "Name must not be null");
 
+		this.keyspace = null;
 		this.name = name;
+	}
+
+	protected UserTypeNameSpecification(@Nullable CqlIdentifier keyspace, CqlIdentifier name) {
+
+		Assert.notNull(name, "Name must not be null");
+
+		this.keyspace = keyspace;
+		this.name = name;
+	}
+
+	/**
+	 * @return the user type keyspace.
+	 */
+	@Nullable
+	public CqlIdentifier getKeyspace() {
+		return keyspace;
 	}
 
 	/**

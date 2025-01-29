@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,48 +17,48 @@ package org.springframework.data.cassandra.core;
 
 import static org.assertj.core.api.Assertions.*;
 
-import lombok.Data;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.util.Collections;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.cassandra.core.convert.MappingCassandraConverter;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.cql.session.DefaultBridgedReactiveSession;
 import org.springframework.data.cassandra.core.mapping.Indexed;
 import org.springframework.data.cassandra.core.mapping.Table;
-import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTest;
+import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTests;
+import org.springframework.util.ObjectUtils;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Integration tests for {@link ReactiveInsertOperationSupport}.
  *
  * @author Mark Paluch
  */
-public class ReactiveInsertOperationSupportIntegrationTests extends AbstractKeyspaceCreatingIntegrationTest {
+class ReactiveInsertOperationSupportIntegrationTests extends AbstractKeyspaceCreatingIntegrationTests {
 
-	CassandraAdminTemplate admin;
+	private CassandraAdminTemplate admin;
 
-	ReactiveCassandraTemplate template;
+	private ReactiveCassandraTemplate template;
 
-	Person han;
-	Person luke;
+	private Person han;
+	private Person luke;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		admin = new CassandraAdminTemplate(session, new MappingCassandraConverter());
 		template = new ReactiveCassandraTemplate(new DefaultBridgedReactiveSession(session));
 
-		admin.dropTable(true, CqlIdentifier.of("person"));
-		admin.createTable(true, CqlIdentifier.of("person"), Person.class, Collections.emptyMap());
+		admin.dropTable(true, CqlIdentifier.fromCql("person"));
+		admin.createTable(true, CqlIdentifier.fromCql("person"), Person.class, Collections.emptyMap());
 
 		initPersons();
 	}
-
 
 	private void initPersons() {
 
@@ -74,22 +74,22 @@ public class ReactiveInsertOperationSupportIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-485
-	public void domainTypeIsRequired() {
+	void domainTypeIsRequired() {
 		assertThatIllegalArgumentException().isThrownBy(() -> this.template.insert((Class) null));
 	}
 
 	@Test // DATACASS-485
-	public void optionsIsRequiredOnSet() {
+	void optionsIsRequiredOnSet() {
 		assertThatIllegalArgumentException().isThrownBy(() -> this.template.insert(Person.class).withOptions(null));
 	}
 
 	@Test // DATACASS-485
-	public void tableIsRequiredOnSet() {
+	void tableIsRequiredOnSet() {
 		assertThatIllegalArgumentException().isThrownBy(() -> this.template.insert(Person.class).inTable((String) null));
 	}
 
 	@Test // DATACASS-485, DATACASS-573
-	public void insertOne() {
+	void insertOne() {
 
 		Mono<EntityWriteResult<Person>> writeResult = this.template.insert(Person.class).inTable("person").one(han);
 
@@ -103,24 +103,73 @@ public class ReactiveInsertOperationSupportIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-485, DATACASS-573
-	public void insertOneWithOptions() {
+	void insertOneWithOptions() {
 
 		this.template.insert(Person.class).inTable("person").one(han);
 
-		Mono<EntityWriteResult<Person>> writeResult = this.template
-				.insert(Person.class).inTable("person")
-				.withOptions(InsertOptions.builder().withIfNotExists().build())
-				.one(han);
+		Mono<EntityWriteResult<Person>> writeResult = this.template.insert(Person.class).inTable("person")
+				.withOptions(InsertOptions.builder().withIfNotExists().build()).one(han);
 
 		writeResult.as(StepVerifier::create).assertNext(it -> assertThat(it.wasApplied()).isTrue()).verifyComplete();
 		template.selectOneById(han.id, Person.class).as(StepVerifier::create).expectNext(han).verifyComplete();
 	}
 
-	@Data
 	@Table
 	static class Person {
 		@Id String id;
 		@Indexed String firstname;
 		@Indexed String lastname;
+
+		public Person() {}
+
+		public String getId() {
+			return this.id;
+		}
+
+		public String getFirstname() {
+			return this.firstname;
+		}
+
+		public String getLastname() {
+			return this.lastname;
+		}
+
+		public void setId(String id) {
+			this.id = id;
+		}
+
+		public void setFirstname(String firstname) {
+			this.firstname = firstname;
+		}
+
+		public void setLastname(String lastname) {
+			this.lastname = lastname;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o)
+				return true;
+			if (o == null || getClass() != o.getClass())
+				return false;
+
+			Person person = (Person) o;
+
+			if (!ObjectUtils.nullSafeEquals(id, person.id)) {
+				return false;
+			}
+			if (!ObjectUtils.nullSafeEquals(firstname, person.firstname)) {
+				return false;
+			}
+			return ObjectUtils.nullSafeEquals(lastname, person.lastname);
+		}
+
+		@Override
+		public int hashCode() {
+			int result = ObjectUtils.nullSafeHashCode(id);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(firstname);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(lastname);
+			return result;
+		}
 	}
 }

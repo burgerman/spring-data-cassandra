@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,26 +15,28 @@
  */
 package org.springframework.data.cassandra.core.convert;
 
-import java.time.LocalDate;
+import static java.time.ZoneId.*;
+
+import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoField;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Date;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 import org.springframework.core.convert.converter.Converter;
-import org.springframework.data.cassandra.core.mapping.CassandraType;
 import org.springframework.data.convert.ReadingConverter;
 import org.springframework.data.convert.WritingConverter;
-
-import com.datastax.driver.core.DataType.Name;
+import org.springframework.lang.NonNull;
 
 /**
  * Helper class to register JodaTime specific {@link Converter} implementations in case the library is present on the
  * classpath.
  *
  * @author Mark Paluch
+ * @author Hurelhuyag
  * @since 1.5
  */
 public abstract class CassandraJsr310Converters {
@@ -50,47 +52,14 @@ public abstract class CassandraJsr310Converters {
 
 		List<Converter<?, ?>> converters = new ArrayList<>();
 
-		converters.add(CassandraLocalDateToLocalDateConverter.INSTANCE);
-		converters.add(LocalDateToCassandraLocalDateConverter.INSTANCE);
 		converters.add(MillisOfDayToLocalTimeConverter.INSTANCE);
 		converters.add(LocalTimeToMillisOfDayConverter.INSTANCE);
 
+		converters.add(DateToInstantConverter.INSTANCE);
+		converters.add(InstantToDateConverter.INSTANCE);
+		converters.add(LocalDateTimeToInstantConverter.INSTANCE);
+
 		return converters;
-	}
-
-	/**
-	 * Simple singleton to convert {@link com.datastax.driver.core.LocalDate}s to their {@link LocalDate} representation.
-	 *
-	 * @author Mark Paluch
-	 */
-	@ReadingConverter
-	public enum CassandraLocalDateToLocalDateConverter
-			implements Converter<com.datastax.driver.core.LocalDate, LocalDate> {
-
-		INSTANCE;
-
-		@Override
-		public LocalDate convert(com.datastax.driver.core.LocalDate source) {
-			return LocalDate.of(source.getYear(), source.getMonth(), source.getDay());
-		}
-	}
-
-	/**
-	 * Simple singleton to convert {@link LocalDate}s to their {@link com.datastax.driver.core.LocalDate} representation.
-	 *
-	 * @author Mark Paluch
-	 */
-	@WritingConverter
-	public enum LocalDateToCassandraLocalDateConverter
-			implements Converter<LocalDate, com.datastax.driver.core.LocalDate> {
-
-		INSTANCE;
-
-		@Override
-		public com.datastax.driver.core.LocalDate convert(LocalDate source) {
-			return com.datastax.driver.core.LocalDate.fromYearMonthDay(source.getYear(), source.getMonthValue(),
-					source.getDayOfMonth());
-		}
 	}
 
 	/**
@@ -106,7 +75,7 @@ public abstract class CassandraJsr310Converters {
 
 		@Override
 		public LocalTime convert(Long source) {
-			return LocalTime.ofNanoOfDay(TimeUnit.MILLISECONDS.toNanos(source));
+			return LocalTime.ofNanoOfDay(source);
 		}
 	}
 
@@ -116,15 +85,59 @@ public abstract class CassandraJsr310Converters {
 	 * @author Mark Paluch
 	 * @since 2.1
 	 */
-	@WritingConverter
-	@CassandraType(type = Name.TIME)
+	@ReadingConverter
 	public enum LocalTimeToMillisOfDayConverter implements Converter<LocalTime, Long> {
 
 		INSTANCE;
 
 		@Override
 		public Long convert(LocalTime source) {
-			return source.getLong(ChronoField.MILLI_OF_DAY);
+			return source.getLong(ChronoField.NANO_OF_DAY);
+		}
+	}
+
+	/**
+	 * Simple singleton to convert {@link Date}s to their Cassandra {@link Instant} representation for the CQL Timestamp
+	 * type. Used for Cassandra 3.x to 4.x driver migration where
+	 *
+	 * @since 3.0
+	 */
+	@WritingConverter
+	public enum DateToInstantConverter implements Converter<Date, Instant> {
+
+		INSTANCE;
+
+		@Override
+		public Instant convert(Date source) {
+			return source.toInstant();
+		}
+	}
+
+	@ReadingConverter
+	public enum InstantToDateConverter implements Converter<Instant, Date> {
+
+		INSTANCE;
+
+		@NonNull
+		@Override
+		public Date convert(Instant source) {
+			return Date.from(source);
+		}
+	}
+
+	/**
+	 * Converter from {@link LocalDateTime} to {@link Instant}.
+	 *
+	 * @since 3.0
+	 */
+	@WritingConverter
+	enum LocalDateTimeToInstantConverter implements Converter<LocalDateTime, Instant> {
+
+		INSTANCE;
+
+		@Override
+		public Instant convert(LocalDateTime source) {
+			return source.atZone(systemDefault()).toInstant();
 		}
 	}
 }

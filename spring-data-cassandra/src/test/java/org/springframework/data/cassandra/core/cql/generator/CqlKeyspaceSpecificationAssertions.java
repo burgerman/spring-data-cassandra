@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,17 +23,17 @@ import java.util.Map;
 import org.springframework.data.cassandra.core.cql.keyspace.KeyspaceDescriptor;
 import org.springframework.data.cassandra.core.cql.keyspace.Option;
 
-import com.datastax.driver.core.KeyspaceMetadata;
-import com.datastax.driver.core.Session;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.metadata.schema.KeyspaceMetadata;
 
 /**
  * @author John McPeek
  */
-public class CqlKeyspaceSpecificationAssertions {
+class CqlKeyspaceSpecificationAssertions {
 
 	@SuppressWarnings("unchecked")
-	public static void assertKeyspace(KeyspaceDescriptor expected, String keyspace, Session session) {
-		KeyspaceMetadata kmd = session.getCluster().getMetadata().getKeyspace(keyspace.toLowerCase());
+	public static void assertKeyspace(KeyspaceDescriptor expected, String keyspace, CqlSession session) {
+		KeyspaceMetadata kmd = session.getMetadata().getKeyspace(keyspace.toLowerCase()).get();
 
 		assertThat(expected.getName()).isEqualTo(kmd.getName());
 

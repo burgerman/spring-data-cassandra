@@ -15,4 +15,8 @@ build
 .idea
 download
 work
-
+build/
+node_modules
+node
+package-lock.json
+.mvn/.develocity

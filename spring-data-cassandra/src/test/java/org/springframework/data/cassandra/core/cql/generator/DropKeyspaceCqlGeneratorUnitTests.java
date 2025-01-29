@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,9 @@ package org.springframework.data.cassandra.core.cql.generator;
 
 import static org.assertj.core.api.Assertions.*;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.springframework.data.cassandra.core.cql.keyspace.DropKeyspaceSpecification;
+import org.springframework.data.cassandra.core.cql.keyspace.SpecificationBuilder;
 import org.springframework.data.cassandra.support.RandomKeyspaceName;
 
 /**
@@ -28,28 +29,28 @@ import org.springframework.data.cassandra.support.RandomKeyspaceName;
  * @author Matthew T. Adams
  * @author David Webb
  */
-public class DropKeyspaceCqlGeneratorUnitTests {
+class DropKeyspaceCqlGeneratorUnitTests {
 
 	/**
 	 * Asserts that the preamble is first & correctly formatted in the given CQL string.
 	 */
-	public static void assertStatement(String tableName, String cql) {
-		assertThat(cql.equals("DROP KEYSPACE " + tableName + ";")).isTrue();
+	private static void assertStatement(String tableName, String cql) {
+		assertThat(cql).isEqualTo("DROP KEYSPACE " + tableName + ";");
 	}
 
 	/**
 	 * Convenient base class that other test classes can use so as not to repeat the generics declarations.
 	 */
-	public static abstract class DropTableTest
+	static abstract class DropTableTest
 			extends AbstractKeyspaceOperationCqlGeneratorTest<DropKeyspaceSpecification, DropKeyspaceCqlGenerator> {}
 
-	public static class BasicTest extends DropTableTest {
+	static class BasicTest extends DropTableTest {
 
-		public String name = RandomKeyspaceName.create();
+		private String name = RandomKeyspaceName.create();
 
 		@Override
 		public DropKeyspaceSpecification specification() {
-			return DropKeyspaceSpecification.dropKeyspace(name);
+			return SpecificationBuilder.dropKeyspace(name);
 		}
 
 		@Override
@@ -58,7 +59,7 @@ public class DropKeyspaceCqlGeneratorUnitTests {
 		}
 
 		@Test
-		public void test() {
+		void test() {
 			prepare();
 
 			assertStatement(name, cql);

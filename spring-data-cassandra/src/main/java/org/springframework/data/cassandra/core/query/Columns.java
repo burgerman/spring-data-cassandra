@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,8 @@
  */
 package org.springframework.data.cassandra.core.query;
 
-import lombok.EqualsAndHashCode;
-
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,17 +24,19 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Value object to abstract column names involved in a CQL query. Columns can be constructed from an array of names and
  * included using a {@link Selector}.
  *
  * @author Mark Paluch
- * @see org.springframework.data.cassandra.core.cql.CqlIdentifier
+ * @see com.datastax.oss.driver.api.core.CqlIdentifier
  * @see org.springframework.data.cassandra.core.query.ColumnName
  * @see Selector
  * @see FunctionCall
@@ -71,10 +70,11 @@ public class Columns implements Iterable<ColumnName> {
 
 		Assert.notNull(columnNames, "Column names must not be null");
 
-		Map<ColumnName, Selector> columns = new HashMap<>(columnNames.length, 1);
+		Map<ColumnName, Selector> columns = new LinkedHashMap<>(columnNames.length, 1);
 
-		Arrays.stream(columnNames)
-				.forEach(columnName -> columns.put(ColumnName.from(columnName), ColumnSelector.from(columnName)));
+		for (String columnName : columnNames) {
+			columns.put(ColumnName.from(columnName), ColumnSelector.from(columnName));
+		}
 
 		return new Columns(columns);
 	}
@@ -89,9 +89,11 @@ public class Columns implements Iterable<ColumnName> {
 
 		Assert.notNull(columnNames, "Column names must not be null");
 
-		Map<ColumnName, Selector> columns = new HashMap<>(columnNames.length, 1);
+		Map<ColumnName, Selector> columns = new LinkedHashMap<>(columnNames.length, 1);
 
-		Arrays.stream(columnNames).forEach(cqlId -> columns.put(ColumnName.from(cqlId), ColumnSelector.from(cqlId)));
+		for (CqlIdentifier cqlId : columnNames) {
+			columns.put(ColumnName.from(cqlId), ColumnSelector.from(cqlId));
+		}
 
 		return new Columns(columns);
 	}
@@ -197,9 +199,6 @@ public class Columns implements Iterable<ColumnName> {
 		return new Columns(result);
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Iterable#iterator()
-	 */
 	@Override
 	public Iterator<ColumnName> iterator() {
 		return this.columns.keySet().iterator();
@@ -216,11 +215,8 @@ public class Columns implements Iterable<ColumnName> {
 		return Optional.ofNullable(this.columns.get(columnName));
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#equals(java.lang.Object)
-	 */
 	@Override
-	public boolean equals(Object object) {
+	public boolean equals(@Nullable Object object) {
 
 		if (this == object) {
 			return true;
@@ -235,22 +231,13 @@ public class Columns implements Iterable<ColumnName> {
 		return this.columns.equals(that.columns);
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#hashCode()
-	 */
 	@Override
 	public int hashCode() {
-
 		int result = 17;
-
 		result += 31 * ObjectUtils.nullSafeHashCode(this.columns);
-
 		return result;
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#toString()
-	 */
 	@Override
 	public String toString() {
 
@@ -304,7 +291,6 @@ public class Columns implements Iterable<ColumnName> {
 	 *
 	 * @author Mark Paluch
 	 */
-	@EqualsAndHashCode
 	public static class ColumnSelector implements Selector {
 
 		private final ColumnName columnName;
@@ -355,7 +341,7 @@ public class Columns implements Iterable<ColumnName> {
 		 * @return the aliased {@link ColumnSelector}.
 		 */
 		public ColumnSelector as(String alias) {
-			return as(CqlIdentifier.of(alias));
+			return as(CqlIdentifier.fromCql(alias));
 		}
 
 		/**
@@ -376,20 +362,38 @@ public class Columns implements Iterable<ColumnName> {
 			return columnName.toCql();
 		}
 
-		/* (non-Javadoc)
-		 * @see java.lang.Object#toString()
-		 */
 		@Override
 		public String toString() {
-			return getAlias().map(cqlIdentifier -> String.format("%s AS %s", getExpression(), cqlIdentifier.toCql()))
+			return getAlias().map(cqlIdentifier -> String.format("%s AS %s", getExpression(), cqlIdentifier))
 					.orElseGet(this::getExpression);
+		}
+
+		@Override
+		public boolean equals(@Nullable Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (!(o instanceof ColumnSelector)) {
+				return false;
+			}
+			ColumnSelector that = (ColumnSelector) o;
+			if (!ObjectUtils.nullSafeEquals(columnName, that.columnName)) {
+				return false;
+			}
+			return ObjectUtils.nullSafeEquals(alias, that.alias);
+		}
+
+		@Override
+		public int hashCode() {
+			int result = ObjectUtils.nullSafeHashCode(columnName);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(alias);
+			return result;
 		}
 	}
 
 	/**
 	 * Function call selector with alias support.
 	 */
-	@EqualsAndHashCode
 	public static class FunctionCall implements Selector {
 
 		private final String expression;
@@ -421,7 +425,7 @@ public class Columns implements Iterable<ColumnName> {
 		 * @return the aliased {@link ColumnSelector}.
 		 */
 		public FunctionCall as(String alias) {
-			return as(CqlIdentifier.of(alias));
+			return as(CqlIdentifier.fromCql(alias));
 		}
 
 		/**
@@ -448,17 +452,40 @@ public class Columns implements Iterable<ColumnName> {
 			return params;
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.Columns.Column#toString()
-		 */
 		@Override
 		public String toString() {
 
 			String parameters = StringUtils.collectionToDelimitedString(getParameters(), ", ");
 
 			return getAlias()
-					.map(cqlIdentifier -> String.format("%s(%s) AS %s", getExpression(), parameters, cqlIdentifier.toCql()))
+					.map(cqlIdentifier -> String.format("%s(%s) AS %s", getExpression(), parameters, cqlIdentifier))
 					.orElseGet(() -> String.format("%s(%s)", getExpression(), parameters));
+		}
+
+		@Override
+		public boolean equals(@Nullable Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (!(o instanceof FunctionCall)) {
+				return false;
+			}
+			FunctionCall that = (FunctionCall) o;
+			if (!ObjectUtils.nullSafeEquals(expression, that.expression)) {
+				return false;
+			}
+			if (!ObjectUtils.nullSafeEquals(params, that.params)) {
+				return false;
+			}
+			return ObjectUtils.nullSafeEquals(alias, that.alias);
+		}
+
+		@Override
+		public int hashCode() {
+			int result = ObjectUtils.nullSafeHashCode(expression);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(params);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(alias);
+			return result;
 		}
 	}
 }

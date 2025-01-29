@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,18 +19,18 @@ import org.reactivestreams.Publisher;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.cassandra.ReactiveSession;
 
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.Statement;
-import com.datastax.driver.core.exceptions.DriverException;
+import com.datastax.oss.driver.api.core.DriverException;
+import com.datastax.oss.driver.api.core.cql.PreparedStatement;
+import com.datastax.oss.driver.api.core.cql.Statement;
 
 /**
  * Generic callback interface for code that operates on a {@link PreparedStatement}. Allows to execute any number of
- * operations on a single {@link PreparedStatement}, for example a single {@link ReactiveSession#execute(Statement).
+ * operations on a single {@link PreparedStatement}, for example a single {@link ReactiveSession#execute(Statement)}.
  * <p>
  * Used internally by {@link ReactiveCqlTemplate}, but also useful for application code. Note that the passed-in
  * {@link PreparedStatement} can have been created by the framework or by a custom
  * {@link ReactivePreparedStatementCreator}. However, the latter is hardly ever necessary, as most custom callback
- * actions will perform updates in which case a standard {@link PreparedStatement is fine. Custom actions will always
+ * actions will perform updates in which case a standard {@link PreparedStatement} is fine. Custom actions will always
  * set parameter values themselves, so that {@link ReactivePreparedStatementCreator} capability is not needed either.
  *
  * @author Mark Paluch

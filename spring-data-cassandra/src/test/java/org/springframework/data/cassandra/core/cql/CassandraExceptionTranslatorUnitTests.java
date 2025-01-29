@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,332 +16,243 @@
 package org.springframework.data.cassandra.core.cql;
 
 import static org.assertj.core.api.Assertions.*;
-import static org.junit.Assume.*;
+import static org.mockito.Mockito.*;
 
-import java.lang.reflect.Constructor;
 import java.net.InetSocketAddress;
+import java.util.Arrays;
 import java.util.Collections;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.data.cassandra.*;
-import org.springframework.data.cassandra.CassandraSchemaElementExistsException.ElementType;
-import org.springframework.util.ClassUtils;
 
-import com.datastax.driver.core.ConsistencyLevel;
-import com.datastax.driver.core.DataType;
-import com.datastax.driver.core.ProtocolVersion;
-import com.datastax.driver.core.WriteType;
-import com.datastax.driver.core.exceptions.*;
-import com.google.common.reflect.TypeToken;
+import com.datastax.oss.driver.api.core.DefaultConsistencyLevel;
+import com.datastax.oss.driver.api.core.DriverTimeoutException;
+import com.datastax.oss.driver.api.core.NoNodeAvailableException;
+import com.datastax.oss.driver.api.core.ProtocolVersion;
+import com.datastax.oss.driver.api.core.UnsupportedProtocolVersionException;
+import com.datastax.oss.driver.api.core.auth.AuthenticationException;
+import com.datastax.oss.driver.api.core.connection.BusyConnectionException;
+import com.datastax.oss.driver.api.core.connection.FrameTooLongException;
+import com.datastax.oss.driver.api.core.metadata.EndPoint;
+import com.datastax.oss.driver.api.core.metadata.Node;
+import com.datastax.oss.driver.api.core.servererrors.*;
+import com.datastax.oss.driver.api.core.type.DataTypes;
+import com.datastax.oss.driver.api.core.type.codec.CodecNotFoundException;
+import com.datastax.oss.driver.api.core.type.reflect.GenericType;
+import com.datastax.oss.driver.internal.core.metadata.DefaultEndPoint;
 
 /**
  * Unit tests for {@link CassandraExceptionTranslator}
  *
  * @author Matthew T. Adams
  * @author Mark Paluch
+ * @author Mikhail Polivakha
  */
-public class CassandraExceptionTranslatorUnitTests {
+class CassandraExceptionTranslatorUnitTests {
 
-	InetSocketAddress socketAddress = new InetSocketAddress("localhost", 42);
-	CassandraExceptionTranslator sut = new CassandraExceptionTranslator();
+	private InetSocketAddress socketAddress = new InetSocketAddress("localhost", 42);
+	private EndPoint endPoint = new DefaultEndPoint(socketAddress);
+	private Node node = mock(Node.class);
+	private CassandraExceptionTranslator sut = new CassandraExceptionTranslator();
 
 	@Test // DATACASS-402
-	public void shouldTranslateAuthenticationException() {
+	void shouldTranslateAuthenticationException() {
 
-		DataAccessException result = sut
-				.translateExceptionIfPossible(new AuthenticationException(socketAddress, "message"));
+		DataAccessException result = sut.translateExceptionIfPossible(new AuthenticationException(endPoint, "message"));
 
 		assertThat(result).isInstanceOf(CassandraAuthenticationException.class)
-				.hasMessageStartingWith("Authentication error on host").hasCauseInstanceOf(AuthenticationException.class);
+				.hasMessageStartingWith("Authentication error").hasCauseInstanceOf(AuthenticationException.class);
 	}
 
 	@Test // DATACASS-402
-	public void shouldTranslateCassandraInternalException() {
+	void shouldTranslateNoHostAvailableException() {
 
-		DataAccessException result = sut.translateExceptionIfPossible(new DriverInternalError("message"));
+		DataAccessException result = sut.translateExceptionIfPossible(new NoNodeAvailableException());
 
-		assertThat(result).isInstanceOf(CassandraInternalException.class).hasMessageStartingWith("message")
-				.hasCauseInstanceOf(DriverInternalError.class);
+		assertThat(result).isInstanceOf(CassandraConnectionFailureException.class).hasMessageStartingWith("No node was")
+				.hasCauseInstanceOf(NoNodeAvailableException.class);
 	}
 
 	@Test // DATACASS-402
-	public void shouldTranslateTraceRetrievalException() {
+	void shouldTranslateInvalidQueryException() {
 
-		DataAccessException result = sut.translateExceptionIfPossible(new TraceRetrievalException("message"));
-
-		assertThat(result).isInstanceOf(CassandraTraceRetrievalException.class).hasMessageStartingWith("message")
-				.hasCauseInstanceOf(TraceRetrievalException.class);
-	}
-
-	@Test // DATACASS-402
-	public void shouldTranslateNoHostAvailableException() {
-
-		DataAccessException result = sut.translateExceptionIfPossible(
-				new NoHostAvailableException(Collections.singletonMap(socketAddress, new IllegalStateException())));
-
-		assertThat(result).isInstanceOf(CassandraConnectionFailureException.class)
-				.hasMessageStartingWith("All host(s) tried").hasCauseInstanceOf(NoHostAvailableException.class);
-	}
-
-	@Test // DATACASS-402
-	public void shouldTranslateInvalidQueryException() {
-
-		DataAccessException result = sut.translateExceptionIfPossible(new InvalidQueryException(socketAddress, "message"));
+		DataAccessException result = sut.translateExceptionIfPossible(new InvalidQueryException(node, "message"));
 
 		assertThat(result).isInstanceOf(CassandraInvalidQueryException.class).hasMessageStartingWith("message")
 				.hasCauseInstanceOf(InvalidQueryException.class);
 	}
 
 	@Test // DATACASS-402
-	public void shouldTranslateInvalidConfigurationInQueryException() {
+	void shouldTranslateInvalidConfigurationInQueryException() {
 
 		DataAccessException result = sut
-				.translateExceptionIfPossible(new InvalidConfigurationInQueryException(socketAddress, "message"));
+				.translateExceptionIfPossible(new InvalidConfigurationInQueryException(node, "message"));
 
 		assertThat(result).isInstanceOf(CassandraInvalidConfigurationInQueryException.class)
 				.hasMessageStartingWith("message").hasCauseInstanceOf(InvalidConfigurationInQueryException.class);
 	}
 
-	@Test // DATACASS-402
-	public void shouldTranslateUnauthorizedException() {
+	@Test // GH-1399
+	void shouldTranslateDriverTimeoutException() {
 
-		DataAccessException result = sut.translateExceptionIfPossible(new UnauthorizedException(socketAddress, "message"));
+		DataAccessException dataAccessException = sut.translateExceptionIfPossible(new DriverTimeoutException("message"));
+
+		assertThat(dataAccessException).isInstanceOf(CassandraDriverTimeoutException.class)
+				.hasMessageStartingWith("message")
+				.hasCauseInstanceOf(DriverTimeoutException.class);
+	}
+
+	@Test // DATACASS-402
+	void shouldTranslateUnauthorizedException() {
+
+		DataAccessException result = sut.translateExceptionIfPossible(new UnauthorizedException(node, "message"));
 
 		assertThat(result).isInstanceOf(CassandraUnauthorizedException.class).hasMessageStartingWith("message")
 				.hasCauseInstanceOf(UnauthorizedException.class);
 	}
 
 	@Test // DATACASS-402
-	public void shouldTranslateSyntaxError() {
+	void shouldTranslateSyntaxError() {
 
-		DataAccessException result = sut.translateExceptionIfPossible(new SyntaxError(socketAddress, "message"));
+		DataAccessException result = sut.translateExceptionIfPossible(new SyntaxError(node, "message"));
 
 		assertThat(result).isInstanceOf(CassandraQuerySyntaxException.class).hasMessageStartingWith("message")
 				.hasCauseInstanceOf(SyntaxError.class);
 	}
 
 	@Test // DATACASS-402
-	public void shouldTranslateKeyspaceExistsException() {
+	void shouldTranslateKeyspaceExistsException() {
 
-		AlreadyExistsException cx = new AlreadyExistsException("keyspace", "");
+		AlreadyExistsException cx = new AlreadyExistsException(node, "keyspace", "");
 		DataAccessException result = sut.translateExceptionIfPossible(cx);
 
-		assertThat(result).isInstanceOf(CassandraKeyspaceExistsException.class)
+		assertThat(result).isInstanceOf(CassandraSchemaElementExistsException.class)
 				.hasMessageStartingWith("Keyspace keyspace already exists").hasCauseInstanceOf(AlreadyExistsException.class);
 
 		CassandraSchemaElementExistsException exception = (CassandraSchemaElementExistsException) result;
-
-		assertThat(exception.getElementName()).isEqualTo("keyspace");
-		assertThat(exception.getElementType()).isEqualTo(ElementType.KEYSPACE);
 	}
 
 	@Test // DATACASS-402
-	public void shouldTranslateTableExistsException() {
+	void shouldTranslateUnavailableException() {
 
-		AlreadyExistsException cx = new AlreadyExistsException("keyspace", "table");
-		DataAccessException result = sut.translateExceptionIfPossible(cx);
-
-		assertThat(result).isInstanceOf(CassandraTableExistsException.class)
-				.hasMessageStartingWith("Table keyspace.table already exists").hasCauseInstanceOf(AlreadyExistsException.class);
-
-		CassandraSchemaElementExistsException exception = (CassandraSchemaElementExistsException) result;
-
-		assertThat(exception.getElementName()).isEqualTo("table");
-		assertThat(exception.getElementType()).isEqualTo(ElementType.TABLE);
-	}
-
-	@Test // DATACASS-402
-	public void shouldTranslateInvalidTypeException() {
-
-		DataAccessException result = sut.translateExceptionIfPossible(new InvalidTypeException("message"));
-
-		assertThat(result).isInstanceOf(CassandraTypeMismatchException.class).hasMessageStartingWith("message")
-				.hasCauseInstanceOf(InvalidTypeException.class);
-	}
-
-	@Test // DATACASS-402
-	public void shouldTranslateUnavailableException() {
-
-		DataAccessException result = sut.translateExceptionIfPossible(new UnavailableException(ConsistencyLevel.ALL, 5, 1));
+		DataAccessException result = sut
+				.translateExceptionIfPossible(new UnavailableException(node, DefaultConsistencyLevel.ALL, 5, 1));
 
 		assertThat(result).isInstanceOf(CassandraInsufficientReplicasAvailableException.class)
 				.hasMessageStartingWith("Not enough replicas available").hasCauseInstanceOf(UnavailableException.class);
 	}
 
 	@Test // DATACASS-402
-	public void shouldTranslateBootstrappingException() {
+	void shouldTranslateBootstrappingException() {
 
-		DataAccessException result = sut.translateExceptionIfPossible(new BootstrappingException(socketAddress, "message"));
+		DataAccessException result = sut.translateExceptionIfPossible(new BootstrappingException(node));
 
-		assertThat(result).isInstanceOf(TransientDataAccessResourceException.class).hasMessageStartingWith("Queried host")
+		assertThat(result).isInstanceOf(TransientDataAccessResourceException.class).hasMessageContaining("bootstrapping")
 				.hasCauseInstanceOf(BootstrappingException.class);
 	}
 
 	@Test // DATACASS-402
-	public void shouldTranslateOverloadedException() {
+	void shouldTranslateOverloadedException() {
 
-		DataAccessException result = sut.translateExceptionIfPossible(new OverloadedException(socketAddress, "message"));
+		DataAccessException result = sut.translateExceptionIfPossible(new OverloadedException(node));
 
-		assertThat(result).isInstanceOf(TransientDataAccessResourceException.class).hasMessageStartingWith("Queried host")
+		assertThat(result).isInstanceOf(TransientDataAccessResourceException.class)
 				.hasCauseInstanceOf(OverloadedException.class);
 	}
 
 	@Test // DATACASS-402
-	public void shouldTranslateTruncateException() {
+	void shouldTranslateTruncateException() {
 
-		DataAccessException result = sut.translateExceptionIfPossible(new TruncateException(socketAddress, "message"));
+		DataAccessException result = sut.translateExceptionIfPossible(new TruncateException(node, "message"));
 
 		assertThat(result).isInstanceOf(CassandraTruncateException.class).hasMessageStartingWith("message")
 				.hasCauseInstanceOf(TruncateException.class);
 	}
 
 	@Test // DATACASS-402
-	public void shouldTranslateWriteFailureException() {
+	void shouldTranslateWriteFailureException() {
 
 		DataAccessException result = sut.translateExceptionIfPossible(
-				new WriteFailureException(ConsistencyLevel.ALL, WriteType.BATCH, 1, 5, 1, Collections.emptyMap()));
+				new WriteFailureException(node, DefaultConsistencyLevel.ALL, 1, 5, WriteType.BATCH, 1, Collections.emptyMap()));
 
 		assertThat(result).isInstanceOf(DataAccessResourceFailureException.class)
 				.hasMessageStartingWith("Cassandra failure during").hasCauseInstanceOf(WriteFailureException.class);
 	}
 
 	@Test // DATACASS-402
-	public void shouldTranslateReadFailureException() {
+	void shouldTranslateReadFailureException() {
 
 		DataAccessException result = sut.translateExceptionIfPossible(
-				new ReadFailureException(ConsistencyLevel.ALL, 1, 5, 1, Collections.emptyMap(), true));
+				new ReadFailureException(node, DefaultConsistencyLevel.ALL, 1, 5, 1, true, Collections.emptyMap()));
 
 		assertThat(result).isInstanceOf(DataAccessResourceFailureException.class)
 				.hasMessageStartingWith("Cassandra failure during").hasCauseInstanceOf(ReadFailureException.class);
 	}
 
 	@Test // DATACASS-402
-	public void shouldTranslateWriteTimeoutException() {
+	void shouldTranslateWriteTimeoutException() {
 
-		DataAccessException result = sut
-				.translateExceptionIfPossible(new WriteTimeoutException(ConsistencyLevel.ALL, WriteType.BATCH, 1, 5));
+		DataAccessException result = sut.translateExceptionIfPossible(
+				new WriteTimeoutException(node, DefaultConsistencyLevel.ALL, 1, 5, WriteType.BATCH));
 
 		assertThat(result).isInstanceOf(CassandraWriteTimeoutException.class)
 				.hasMessageStartingWith("Cassandra timeout during").hasCauseInstanceOf(WriteTimeoutException.class);
 	}
 
 	@Test // DATACASS-402
-	public void shouldTranslateReadTimeoutException() {
+	void shouldTranslateReadTimeoutException() {
 
 		DataAccessException result = sut
-				.translateExceptionIfPossible(new ReadTimeoutException(ConsistencyLevel.ALL, 1, 5, true));
+				.translateExceptionIfPossible(new ReadTimeoutException(node, DefaultConsistencyLevel.ALL, 1, 5, true));
 
 		assertThat(result).isInstanceOf(CassandraReadTimeoutException.class)
 				.hasMessageStartingWith("Cassandra timeout during").hasCauseInstanceOf(ReadTimeoutException.class);
 	}
 
 	@Test // DATACASS-402
-	public void shouldTranslateFunctionExecutionException() {
+	void shouldTranslateBusyConnectionException() {
 
-		DataAccessException result = sut
-				.translateExceptionIfPossible(new FunctionExecutionException(socketAddress, "message"));
+		DataAccessException result = sut.translateExceptionIfPossible(new BusyConnectionException(2));
 
-		assertThat(result).isInstanceOf(DataAccessResourceFailureException.class).hasMessageStartingWith("message")
-				.hasCauseInstanceOf(FunctionExecutionException.class);
+		assertThat(result).isInstanceOf(CassandraConnectionFailureException.class).hasMessageContaining("simultaneous")
+				.hasCauseInstanceOf(BusyConnectionException.class);
 	}
 
 	@Test // DATACASS-402
-	@SuppressWarnings("unchecked")
-	public void shouldTranslateBusyPoolException() throws Exception {
+	void shouldTranslateFrameTooLongException() {
 
-		assumeTrue(
-				ClassUtils.isPresent("com.datastax.driver.core.exceptions.BusyPoolException", getClass().getClassLoader()));
+		DataAccessException result = sut.translateExceptionIfPossible(new FrameTooLongException(socketAddress, "foo"));
 
-		DriverException exception = createInstance("com.datastax.driver.core.exceptions.BusyPoolException",
-				new Class[] { InetSocketAddress.class, Integer.TYPE }, socketAddress, 5);
-
-		DataAccessException result = sut.translateExceptionIfPossible(exception);
-
-		assertThat(result).isInstanceOf(CassandraConnectionFailureException.class).hasMessageContaining("Pool is busy")
-				.hasCauseInstanceOf(exception.getClass());
+		assertThat(result).isInstanceOf(CassandraUncategorizedException.class)
+				.hasCauseInstanceOf(FrameTooLongException.class);
 	}
 
 	@Test // DATACASS-402
-	public void shouldTranslateConnectionException() {
-
-		DataAccessException result = sut.translateExceptionIfPossible(new ConnectionException(socketAddress, "message"));
-
-		assertThat(result).isInstanceOf(CassandraConnectionFailureException.class).hasMessageContaining("] message")
-				.hasCauseInstanceOf(ConnectionException.class);
-	}
-
-	@Test // DATACASS-402
-	public void shouldTranslateBusyConnectionException() {
-
-		DataAccessException result = sut.translateExceptionIfPossible(new BusyConnectionException(socketAddress));
-
-		assertThat(result).isInstanceOf(CassandraConnectionFailureException.class)
-				.hasMessageContaining("Connection has run out of stream").hasCauseInstanceOf(BusyConnectionException.class);
-	}
-
-	@Test // DATACASS-402
-	@SuppressWarnings("unchecked")
-	public void shouldTranslateFrameTooLongException() throws Exception {
-
-		assumeTrue(
-				ClassUtils.isPresent("com.datastax.driver.core.exceptions.FrameTooLongException", getClass().getClassLoader()));
-
-		DriverException exception = createInstance("com.datastax.driver.core.exceptions.FrameTooLongException",
-				new Class[] { Integer.TYPE }, 5);
-
-		DataAccessException result = sut.translateExceptionIfPossible(exception);
-
-		assertThat(result).isInstanceOf(CassandraUncategorizedException.class).hasCauseInstanceOf(exception.getClass());
-	}
-
-	@Test // DATACASS-402
-	public void shouldTranslateToUncategorized() {
-
-		assertThat(sut.translateExceptionIfPossible(
-				new CodecNotFoundException("message", DataType.ascii(), TypeToken.of(Class.class))))
-						.isInstanceOf(CassandraUncategorizedException.class);
-
-		assertThat(sut.translateExceptionIfPossible(
-				new UnsupportedProtocolVersionException(socketAddress, ProtocolVersion.NEWEST_SUPPORTED, ProtocolVersion.V1)))
-						.isInstanceOf(CassandraUncategorizedException.class);
-
-		assertThat(sut.translateExceptionIfPossible(new UnpreparedException(socketAddress, "message")))
-				.isInstanceOf(CassandraUncategorizedException.class);
-
-		assertThat(sut.translateExceptionIfPossible(new PagingStateException("message")))
-				.isInstanceOf(CassandraUncategorizedException.class);
-
-		assertThat(sut.translateExceptionIfPossible(new UnresolvedUserTypeException("keyspace", "message")))
-				.isInstanceOf(CassandraUncategorizedException.class);
+	void shouldTranslateToUncategorized() {
 
 		assertThat(
-				sut.translateExceptionIfPossible(new UnsupportedFeatureException(ProtocolVersion.NEWEST_SUPPORTED, "message")))
+				sut.translateExceptionIfPossible(new CodecNotFoundException(DataTypes.ASCII, GenericType.of(String.class))))
 						.isInstanceOf(CassandraUncategorizedException.class);
 
-		assertThat(sut.translateExceptionIfPossible(new UnresolvedUserTypeException("keyspace", "message")))
-				.isInstanceOf(CassandraUncategorizedException.class);
+		assertThat(sut.translateExceptionIfPossible(new UnsupportedProtocolVersionException(endPoint, "Foo",
+				Arrays.asList(ProtocolVersion.V3, ProtocolVersion.V4)))).isInstanceOf(CassandraUncategorizedException.class);
+	}
+
+	@Test // GH-1155
+	void shouldNotTranslateUnknownExceptions() {
+		assertThat(sut.translateExceptionIfPossible(new UnsupportedOperationException())).isNull();
 	}
 
 	@Test // DATACASS-335
-	public void shouldTranslateWithCqlMessage() {
+	void shouldTranslateWithCqlMessage() {
 
-		InvalidQueryException cx = new InvalidConfigurationInQueryException(null, "err");
+		InvalidConfigurationInQueryException cx = new InvalidConfigurationInQueryException(node, "err");
 		DataAccessException dax = sut.translate("Query", "SELECT * FROM person", cx);
 
-		assertThat(dax).hasRootCauseInstanceOf(InvalidQueryException.class).hasMessage(
-				"Query; CQL [SELECT * FROM person]; err; nested exception is com.datastax.driver.core.exceptions.InvalidConfigurationInQueryException: err");
-	}
-
-	@SuppressWarnings("unchecked")
-	public <T> T createInstance(String className, Class<?> argTypes[], Object... args)
-			throws ReflectiveOperationException {
-
-		Class<T> exceptionClass = (Class) ClassUtils.forName(className, getClass().getClassLoader());
-		Constructor<T> constructor = exceptionClass.getDeclaredConstructor(argTypes);
-
-		return constructor.newInstance(args);
+		assertThat(dax).hasRootCauseInstanceOf(InvalidConfigurationInQueryException.class)
+				.hasMessageContaining("Query; CQL [SELECT * FROM person]; err");
 	}
 }

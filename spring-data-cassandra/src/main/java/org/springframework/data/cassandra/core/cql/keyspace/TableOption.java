@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.springframework.data.cassandra.core.cql.keyspace;
 import java.util.Map;
 
 import org.springframework.lang.Nullable;
+import org.springframework.util.StringUtils;
 
 /**
  * Enumeration that represents all known table options. If a table option is not listed here, but is supported by
@@ -26,6 +27,7 @@ import org.springframework.lang.Nullable;
  *
  * @author Matthew T. Adams
  * @author Mark Paluch
+ * @author Mikhail Polivakha
  * @see CompactionOption
  * @see CompressionOption
  * @see CachingOption
@@ -82,6 +84,23 @@ public enum TableOption implements Option {
 
 	TableOption(String name, Class<?> type, boolean requiresValue, boolean escapesValue, boolean quotesValue) {
 		this.delegate = new DefaultOption(name, type, requiresValue, escapesValue, quotesValue);
+	}
+
+	/**
+	 * Look up {@link TableOption} by name using case-insensitive lookups.
+	 *
+	 * @param optionName name of the option.
+	 * @return the option.
+	 * @throws IllegalArgumentException if the option cannot be determined.
+	 * @since 4.1.1
+	 */
+	public static TableOption valueOfIgnoreCase(String optionName) {
+		for (TableOption value : values()) {
+			if (value.getName().equalsIgnoreCase(optionName)) {
+				return value;
+			}
+		}
+		throw new IllegalArgumentException(String.format("Unable to recognize specified Table option '%s'", optionName));
 	}
 
 	@Override

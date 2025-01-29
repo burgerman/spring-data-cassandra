@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,14 @@ import org.springframework.data.cassandra.core.mapping.CassandraPersistentProper
 import org.springframework.data.cassandra.core.mapping.MapId;
 import org.springframework.data.convert.CustomConversions;
 import org.springframework.data.convert.EntityConverter;
+import org.springframework.data.projection.EntityProjection;
+import org.springframework.data.projection.ProjectionFactory;
 import org.springframework.data.util.TypeInformation;
 import org.springframework.lang.Nullable;
+import org.springframework.util.Assert;
+
+import com.datastax.oss.driver.api.core.cql.Row;
+import com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry;
 
 /**
  * Central Cassandra specific converter interface from Object to Row.
@@ -35,17 +41,52 @@ public interface CassandraConverter
 		extends EntityConverter<CassandraPersistentEntity<?>, CassandraPersistentProperty, Object, Object> {
 
 	/**
-	 * Returns the {@link CustomConversions} registered in the {@link CassandraConverter}.
+	 * Returns the {@link ProjectionFactory} for this converter.
 	 *
-	 * @return the {@link CustomConversions}.
+	 * @return will never be {@literal null}.
+	 * @since 3.4
+	 */
+	ProjectionFactory getProjectionFactory();
+
+	/**
+	 * Returns the {@link CustomConversions} for this converter.
+	 *
+	 * @return will never be {@literal null}.
 	 */
 	CustomConversions getCustomConversions();
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.convert.EntityConverter#getMappingContext()
+	/**
+	 * Returns the {@link CodecRegistry} registered in the {@link CassandraConverter}.
+	 *
+	 * @return the {@link CodecRegistry}.
+	 * @since 3.0
 	 */
+	CodecRegistry getCodecRegistry();
+
 	@Override
 	CassandraMappingContext getMappingContext();
+
+	/**
+	 * Returns the {@link ColumnTypeResolver} to resolve {@link ColumnType} for properties, {@link TypeInformation}, and
+	 * {@code values}.
+	 *
+	 * @return the {@link ColumnTypeResolver}
+	 * @since 3.0
+	 */
+	ColumnTypeResolver getColumnTypeResolver();
+
+	/**
+	 * Apply a projection to {@link Row} and return the projection return type {@code R}.
+	 * {@link EntityProjection#isProjection() Non-projecting} descriptors fall back to {@link #read(Class, Object) regular
+	 * object materialization}.
+	 *
+	 * @param descriptor the projection descriptor, must not be {@literal null}.
+	 * @param row must not be {@literal null}.
+	 * @param <R>
+	 * @return a new instance of the projection return type {@code R}.
+	 * @since 3.4
+	 */
+	<R> R project(EntityProjection<R, ?> descriptor, Row row);
 
 	/**
 	 * Returns the Id for an entity. It can return:
@@ -82,7 +123,23 @@ public interface CassandraConverter
 	 * @return the result of the conversion.
 	 * @since 1.5
 	 */
-	Object convertToColumnType(Object value, TypeInformation<?> typeInformation);
+	default Object convertToColumnType(Object value, TypeInformation<?> typeInformation) {
+
+		Assert.notNull(value, "Value must not be null");
+		Assert.notNull(typeInformation, "TypeInformation must not be null");
+
+		return convertToColumnType(value, getColumnTypeResolver().resolve(typeInformation));
+	}
+
+	/**
+	 * Converts the given object into a value Cassandra will be able to store natively in a column.
+	 *
+	 * @param value {@link Object} to convert; must not be {@literal null}.
+	 * @param typeDescriptor {@link ColumnType} used to describe the object type; must not be {@literal null}.
+	 * @return the result of the conversion.
+	 * @since 3.0
+	 */
+	Object convertToColumnType(Object value, ColumnType typeDescriptor);
 
 	/**
 	 * Converts and writes a {@code source} object into a {@code sink} using the given {@link CassandraPersistentEntity}.
@@ -92,4 +149,5 @@ public interface CassandraConverter
 	 * @param entity must not be {@literal null}.
 	 */
 	void write(Object source, Object sink, CassandraPersistentEntity<?> entity);
+
 }

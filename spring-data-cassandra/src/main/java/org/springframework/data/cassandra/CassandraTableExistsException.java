@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 package org.springframework.data.cassandra;
 
+import java.io.Serial;
+
 /**
  * Spring data access exception for when a Cassandra table being created already exists.
  *
@@ -22,8 +24,15 @@ package org.springframework.data.cassandra;
  */
 public class CassandraTableExistsException extends CassandraSchemaElementExistsException {
 
-	private static final long serialVersionUID = 6032967419751410352L;
+	@Serial private static final long serialVersionUID = 6032967419751410352L;
 
+	/**
+	 * Constructor for {@link CassandraTableExistsException}.
+	 *
+	 * @param tableName the table name.
+	 * @param msg the detail message.
+	 * @param cause the root cause from the underlying data access API.
+	 */
 	public CassandraTableExistsException(String tableName, String msg, Throwable cause) {
 		super(tableName, ElementType.TABLE, msg, cause);
 	}

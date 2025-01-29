@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,9 @@ import org.springframework.data.cassandra.core.cql.keyspace.TableOption;
 public class AlterTableCqlGenerator extends TableOptionsCqlGenerator<AlterTableSpecification> {
 
 	/**
-	 * Create a new {@literal {@link AlterTableCqlGenerator}. @param specification must not be {@literal null}.
+	 * Create a new {@link AlterTableCqlGenerator}.
+	 *
+	 * @param specification must not be {@literal null}.
 	 */
 	public AlterTableCqlGenerator(AlterTableSpecification specification) {
 		super(specification);
@@ -74,7 +76,7 @@ public class AlterTableCqlGenerator extends TableOptionsCqlGenerator<AlterTableS
 	}
 
 	private void preambleCql(StringBuilder cql) {
-		cql.append("ALTER TABLE ").append(spec().getName());
+		cql.append("ALTER TABLE ").append(CqlIdentifierUtil.renderName(spec()));
 	}
 
 	private void changesCql(StringBuilder cql) {
@@ -157,7 +159,7 @@ public class AlterTableCqlGenerator extends TableOptionsCqlGenerator<AlterTableS
 			}
 
 			// else just use value as string
-			cql.append(value.toString());
+			cql.append(value);
 		}
 	}
 }

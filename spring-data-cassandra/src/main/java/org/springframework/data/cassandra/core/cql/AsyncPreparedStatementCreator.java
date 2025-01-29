@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,28 +15,29 @@
  */
 package org.springframework.data.cassandra.core.cql;
 
-import org.springframework.util.concurrent.ListenableFuture;
+import java.util.concurrent.CompletionStage;
 
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.exceptions.DriverException;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.DriverException;
+import com.datastax.oss.driver.api.core.cql.PreparedStatement;
 
 /**
  * One of the two central callback interfaces used by the {@link AsyncCqlTemplate} class. This interface prepares a CQL
- * statement returning a {@link org.springframework.util.concurrent.ListenableFuture} given a {@link Session}, provided
- * by the {@link CqlTemplate} class.
+ * statement returning a {@link CompletionStage} given a {@link CqlSession}, provided by the {@link AsyncCqlTemplate}
+ * class.
  * <p>
  * Implementations may either create new prepared statements or reuse cached instances. Implementations do not need to
  * concern themselves with {@link DriverException}s that may be thrown from operations they attempt. The
  * {@link AsyncCqlTemplate} class will catch and handle {@link DriverException}s appropriately.
  * <p>
- * A {@link AsyncPreparedStatementCreator} should also implement the {@link CqlProvider} interface if it is able to
- * provide the CQL it uses for {@link PreparedStatement} creation. This allows for better contextual information in case
- * of exceptions.
+ * Classes implementing this interface should also implement the {@link CqlProvider} interface if it is able to provide
+ * the CQL it uses for {@link PreparedStatement} creation. This allows for better contextual information in case of
+ * exceptions.
  *
  * @author Mark Paluch
  * @since 2.0
  * @see AsyncCqlTemplate#execute(AsyncPreparedStatementCreator, PreparedStatementCallback)
+ * @see CqlProvider
  */
 @FunctionalInterface
 public interface AsyncPreparedStatementCreator {
@@ -51,5 +52,5 @@ public interface AsyncPreparedStatementCreator {
 	 * @throws DriverException there is no need to catch DriverException that may be thrown in the implementation of this
 	 *           method. The {@link AsyncCqlTemplate} class will handle them.
 	 */
-	ListenableFuture<PreparedStatement> createPreparedStatement(Session session) throws DriverException;
+	CompletionStage<PreparedStatement> createPreparedStatement(CqlSession session) throws DriverException;
 }

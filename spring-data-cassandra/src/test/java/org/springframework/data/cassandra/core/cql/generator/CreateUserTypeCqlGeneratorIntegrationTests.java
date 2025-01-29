@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,76 +16,107 @@
 package org.springframework.data.cassandra.core.cql.generator;
 
 import static org.assertj.core.api.Assertions.*;
-import static org.springframework.data.cassandra.core.cql.generator.CreateUserTypeCqlGenerator.*;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import org.springframework.data.cassandra.core.cql.keyspace.CreateTableSpecification;
 import org.springframework.data.cassandra.core.cql.keyspace.CreateUserTypeSpecification;
-import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTest;
+import org.springframework.data.cassandra.core.cql.keyspace.SpecificationBuilder;
+import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTests;
 
-import com.datastax.driver.core.DataType;
-import com.datastax.driver.core.KeyspaceMetadata;
-import com.datastax.driver.core.UserType;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.metadata.schema.KeyspaceMetadata;
+import com.datastax.oss.driver.api.core.type.DataTypes;
+import com.datastax.oss.driver.api.core.type.UserDefinedType;
+import com.datastax.oss.driver.internal.core.metadata.schema.ShallowUserDefinedType;
 
 /**
  * Integration tests for {@link CreateUserTypeCqlGenerator}.
  *
  * @author Mark Paluch
  */
-public class CreateUserTypeCqlGeneratorIntegrationTests extends AbstractKeyspaceCreatingIntegrationTest {
+class CreateUserTypeCqlGeneratorIntegrationTests extends AbstractKeyspaceCreatingIntegrationTests {
 
-	@Before
-	public void setUp() throws Exception {
+	@BeforeEach
+	void setUp() throws Exception {
 
 		session.execute("DROP TYPE IF EXISTS person;");
 		session.execute("DROP TYPE IF EXISTS address;");
+
+		session.execute("DROP KEYSPACE IF EXISTS CreateUserTypeCqlGenerator_it;");
+		session.execute(
+				"CREATE KEYSPACE CreateUserTypeCqlGenerator_it WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};");
 	}
 
 	@Test // DATACASS-172
-	public void createUserType() {
+	void createUserType() {
 
-		CreateUserTypeSpecification spec = CreateUserTypeSpecification //
+		CreateUserTypeSpecification spec = SpecificationBuilder //
 				.createType("address") //
-				.field("zip", DataType.ascii()) //
-				.field("city", DataType.varchar());
+				.field("zip", DataTypes.ASCII) //
+				.field("city", DataTypes.TEXT);
 
-		session.execute(toCql(spec));
+		session.execute(CqlGenerator.toCql(spec));
 
-		KeyspaceMetadata keyspace = session.getCluster().getMetadata().getKeyspace(session.getLoggedKeyspace());
-		UserType address = keyspace.getUserType("address");
-		assertThat(address.getFieldNames()).contains("zip", "city");
+		KeyspaceMetadata keyspace = session.getMetadata().getKeyspace(session.getKeyspace().get()).get();
+		UserDefinedType address = keyspace.getUserDefinedType("address").get();
+		assertThat(address.getFieldNames()).contains(CqlIdentifier.fromCql("zip"), CqlIdentifier.fromCql("city"));
 	}
 
 	@Test // DATACASS-172
-	public void createUserTypeIfNotExists() {
+	void createUserTypeIfNotExists() {
 
-		CreateUserTypeSpecification spec = CreateUserTypeSpecification //
-				.createType("address").ifNotExists().field("zip", DataType.ascii()) //
-				.field("city", DataType.varchar());
+		CreateUserTypeSpecification spec = SpecificationBuilder //
+				.createType("address").ifNotExists().field("zip", DataTypes.ASCII) //
+				.field("city", DataTypes.TEXT);
 
-		session.execute(toCql(spec));
+		session.execute(CqlGenerator.toCql(spec));
 
-		KeyspaceMetadata keyspace = session.getCluster().getMetadata().getKeyspace(session.getLoggedKeyspace());
-		UserType address = keyspace.getUserType("address");
-		assertThat(address.getFieldNames()).contains("zip", "city");
+		KeyspaceMetadata keyspace = session.getMetadata().getKeyspace(session.getKeyspace().get()).get();
+		UserDefinedType address = keyspace.getUserDefinedType("address").get();
+		assertThat(address.getFieldNames()).contains(CqlIdentifier.fromCql("zip"), CqlIdentifier.fromCql("city"));
 	}
 
 	@Test // DATACASS-172, DATACASS-424
-	public void createNestedUserType() {
+	void createNestedUserType() {
 
-		CreateUserTypeSpecification addressSpec = CreateUserTypeSpecification //
-				.createType("address").ifNotExists().field("zip", DataType.ascii()) //
-				.field("city", DataType.varchar());
+		CreateUserTypeSpecification addressSpec = SpecificationBuilder //
+				.createType("address").ifNotExists().field("zip", DataTypes.ASCII) //
+				.field("city", DataTypes.TEXT);
 
-		session.execute(toCql(addressSpec));
+		session.execute(CqlGenerator.toCql(addressSpec));
 
-		KeyspaceMetadata keyspace = session.getCluster().getMetadata().getKeyspace(session.getLoggedKeyspace());
-		UserType address = keyspace.getUserType("address");
+		KeyspaceMetadata keyspace = session.getMetadata().getKeyspace(session.getKeyspace().get()).get();
+		UserDefinedType address = keyspace.getUserDefinedType("address").get();
 
 		CreateUserTypeSpecification personSpec = CreateUserTypeSpecification //
 				.createType("person").ifNotExists().field("address", address.copy(true)) //
-				.field("city", DataType.varchar());
+				.field("city", DataTypes.TEXT);
 
-		session.execute(toCql(personSpec));
+		session.execute(CqlGenerator.toCql(personSpec));
+	}
+
+	@Test // DATACASS-172
+	void shouldGenerateTypeAndTableInOtherKeyspace() {
+
+		CreateUserTypeSpecification spec = SpecificationBuilder //
+				.createType(CqlIdentifier.fromCql("CreateUserTypeCqlGenerator_it"), CqlIdentifier.fromCql("address"))
+				.ifNotExists().field("zip", DataTypes.ASCII) //
+				.field("city", DataTypes.TEXT);
+
+		session.execute(CqlGenerator.toCql(spec));
+
+		CreateTableSpecification table = SpecificationBuilder
+				.createTable(CqlIdentifier.fromCql("CreateUserTypeCqlGenerator_it"), CqlIdentifier.fromCql("person"))
+				.partitionKeyColumn("id", DataTypes.ASCII)//
+				.column("udtref", new ShallowUserDefinedType(CqlIdentifier.fromCql("CreateUserTypeCqlGenerator_it"),
+						CqlIdentifier.fromCql("address"), true));
+
+		session.execute(CqlGenerator.toCql(table));
+
+		KeyspaceMetadata keyspace = session.getMetadata().getKeyspace("CreateUserTypeCqlGenerator_it").get();
+		UserDefinedType address = keyspace.getUserDefinedType("address").get();
+		assertThat(address.getFieldNames()).contains(CqlIdentifier.fromCql("zip"), CqlIdentifier.fromCql("city"));
 	}
 }

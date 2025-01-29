@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,25 +15,48 @@
  */
 package org.springframework.data.cassandra;
 
+import java.io.Serial;
+
 import org.springframework.dao.QueryTimeoutException;
 
 /**
- * Spring data access exception for a Cassandra read timeout.
+ * Cassandra-specific exception for a server-side timeout during a read query.
  *
  * @author Matthew T. Adams
+ * @author Mark Paluch
  */
 public class CassandraReadTimeoutException extends QueryTimeoutException {
 
-	private static final long serialVersionUID = -787022307935203387L;
+	@Serial private static final long serialVersionUID = -787022307935203387L;
 
-	private boolean wasDataReceived;
+	private final boolean wasDataPresent;
 
-	public CassandraReadTimeoutException(boolean wasDataReceived, String message, Throwable cause) {
-		super(message, cause);
-		this.wasDataReceived = wasDataReceived;
+	/**
+	 * Constructor for {@link CassandraReadTimeoutException}.
+	 *
+	 * @param wasDataPresent whether the actual data was amongst the received replica responses.
+	 * @param msg the detail message.
+	 * @param cause the root cause from the underlying data access API.
+	 */
+	public CassandraReadTimeoutException(boolean wasDataPresent, String msg, Throwable cause) {
+		super(msg, cause);
+		this.wasDataPresent = wasDataPresent;
 	}
 
+	/**
+	 * @return whether the actual data was amongst the received replica responses.
+	 * @deprecated since 3.0, use {@link #wasDataPresent()}.
+	 */
+	@Deprecated
 	public boolean getWasDataReceived() {
-		return wasDataReceived;
+		return wasDataPresent();
+	}
+
+	/**
+	 * @return whether the actual data was amongst the received replica responses.
+	 * @since 3.0
+	 */
+	public boolean wasDataPresent() {
+		return wasDataPresent;
 	}
 }

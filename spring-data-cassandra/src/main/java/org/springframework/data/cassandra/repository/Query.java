@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,8 +50,9 @@ public @interface Query {
 	boolean allowFiltering() default false;
 
 	/**
-	 * Specifies whether the {@link #value() CQL query} is {@link com.datastax.driver.core.Statement#isIdempotent}.
-	 * {@code SELECT} statements are considered {@link Idempotency#IDEMPOTENT idempotent} by default.
+	 * Specifies whether the {@link #value() CQL query} is
+	 * {@link com.datastax.oss.driver.api.core.cql.Statement#isIdempotent}. {@code SELECT} statements are considered
+	 * {@link Idempotency#IDEMPOTENT idempotent} by default.
 	 *
 	 * @since 2.2
 	 */
@@ -80,7 +81,7 @@ public @interface Query {
 
 		/**
 		 * Undefined state (default for all non-{@code SELECT} statements. Leaves
-		 * {@link com.datastax.driver.core.Statement#setIdempotent(boolean)} state unchanged.
+		 * {@link com.datastax.oss.driver.api.core.cql.Statement#setIdempotent(Boolean)} state unchanged.
 		 */
 		UNDEFINED,
 
@@ -90,8 +91,8 @@ public @interface Query {
 		IDEMPOTENT,
 
 		/**
-		 * Statement considered non-idempotent. Sets {@link com.datastax.driver.core.Statement#setIdempotent(boolean)} to
-		 * {@code false}.
+		 * Statement considered non-idempotent. Sets
+		 * {@link com.datastax.oss.driver.api.core.cql.Statement#setIdempotent(Boolean)} to {@code false}.
 		 */
 		NON_IDEMPOTENT
 	}

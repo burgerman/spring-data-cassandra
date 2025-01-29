@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,13 @@
  */
 package org.springframework.data.cassandra.core.query;
 
-import lombok.EqualsAndHashCode;
 
 import java.util.Optional;
+import java.util.function.Function;
 
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
+import org.springframework.util.ObjectUtils;
 
 /**
  * Criteria definition for a {@link ColumnName} exposing a {@link Predicate}.
@@ -49,7 +50,6 @@ public interface CriteriaDefinition {
 	 *
 	 * @author Mark Paluch
 	 */
-	@EqualsAndHashCode
 	class Predicate {
 
 		private final Operator operator;
@@ -84,6 +84,45 @@ public interface CriteriaDefinition {
 		public Object getValue() {
 			return this.value;
 		}
+
+		/**
+		 * This method allows the application of a function to this {@link Predicate} value. The function should expect a
+		 * single {@link Object} argument and produce an {@code R} result. Any exception thrown by f() will be propagated to
+		 * the caller.
+		 *
+		 * @param <R>
+		 * @return the result of the {@link Function mappingFunction}.
+		 */
+		public <R> R as(Function<Object, ? extends R> mappingFunction) {
+			return mappingFunction.apply(this.value);
+		}
+
+		@Override
+		public boolean equals(@Nullable Object o) {
+
+			if (this == o) {
+				return true;
+			}
+
+			if (!(o instanceof Predicate)) {
+				return false;
+			}
+
+			Predicate predicate = (Predicate) o;
+
+			if (!ObjectUtils.nullSafeEquals(operator, predicate.operator)) {
+				return false;
+			}
+
+			return ObjectUtils.nullSafeEquals(value, predicate.value);
+		}
+
+		@Override
+		public int hashCode() {
+			int result = ObjectUtils.nullSafeHashCode(operator);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(value);
+			return result;
+		}
 	}
 
 	/**
@@ -98,8 +137,8 @@ public interface CriteriaDefinition {
 
 		/**
 		 * Render to a CQL-like representation. Rendering does not apply conversion via
-		 * {@link com.datastax.driver.core.CodecRegistry} therefore this output is an approximation towards CQL and not
-		 * necessarily valid CQL.
+		 * {@link com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry} therefore this output is an
+		 * approximation towards CQL and not necessarily valid CQL.
 		 *
 		 * @param value optional predicate value, can be {@literal null}.
 		 * @return A CQL-like representation.

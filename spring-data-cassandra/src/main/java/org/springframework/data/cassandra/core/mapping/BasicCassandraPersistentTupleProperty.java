@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,21 @@
  */
 package org.springframework.data.cassandra.core.mapping;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import org.springframework.data.cassandra.core.cql.Ordering;
 import org.springframework.data.mapping.MappingException;
 import org.springframework.data.mapping.model.Property;
 import org.springframework.data.mapping.model.SimpleTypeHolder;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+
 /**
  * Cassandra Tuple specific {@link CassandraPersistentProperty} implementation.
  *
  * @author Mark Paluch
+ * @author Frank Spitulski
+ * @author Aleksei Zotov
  * @since 2.1
  * @see Element
  */
@@ -43,21 +47,7 @@ public class BasicCassandraPersistentTupleProperty extends BasicCassandraPersist
 	public BasicCassandraPersistentTupleProperty(Property property, CassandraPersistentEntity<?> owner,
 			SimpleTypeHolder simpleTypeHolder) {
 
-		this(property, owner, simpleTypeHolder, null);
-	}
-
-	/**
-	 * Create a new {@link BasicCassandraPersistentTupleProperty}.
-	 *
-	 * @param property the actual {@link Property} in the domain entity corresponding to this persistent entity.
-	 * @param owner the containing object or {@link CassandraPersistentEntity} of this persistent property.
-	 * @param simpleTypeHolder mapping of Java [simple|wrapper] types to Cassandra data types.
-	 * @param userTypeResolver resolver for user-defined types.
-	 */
-	public BasicCassandraPersistentTupleProperty(Property property, CassandraPersistentEntity<?> owner,
-			SimpleTypeHolder simpleTypeHolder, @Nullable UserTypeResolver userTypeResolver) {
-
-		super(property, owner, simpleTypeHolder, userTypeResolver);
+		super(property, owner, simpleTypeHolder);
 
 		this.ordinal = findOrdinal();
 	}
@@ -81,64 +71,60 @@ public class BasicCassandraPersistentTupleProperty extends BasicCassandraPersist
 		}
 
 		Assert.isTrue(ordinal >= 0,
-				String.format("Element ordinal must be greater or equal to zero for property [%s] in entity [%s]", getName(),
+				() -> String.format("Element ordinal must be greater or equal to zero for property [%s] in entity [%s]",
+						getName(),
 						getOwner().getName()));
 
 		return ordinal;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty#getColumnName()
-	 */
 	@Override
 	public CqlIdentifier getColumnName() {
 		return null;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.BasicCassandraPersistentProperty#getOrdinal()
-	 */
 	@Nullable
 	@Override
 	public Integer getOrdinal() {
 		return this.ordinal;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty#isClusterKeyColumn()
-	 */
+	@Nullable
+	@Override
+	public Ordering getPrimaryKeyOrdering() {
+		return null;
+	}
+
 	@Override
 	public boolean isClusterKeyColumn() {
 		return false;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty#isCompositePrimaryKey()
-	 */
 	@Override
 	public boolean isCompositePrimaryKey() {
 		return false;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty#isPartitionKeyColumn()
-	 */
 	@Override
 	public boolean isPartitionKeyColumn() {
 		return false;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty#isPrimaryKeyColumn()
-	 */
 	@Override
 	public boolean isPrimaryKeyColumn() {
 		return false;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty#setColumnName(org.springframework.data.cassandra.core.cql.CqlIdentifier)
-	 */
+	@Override
+	public boolean isStaticColumn() {
+		return false;
+	}
+
+	@Override
+	public boolean isEmbedded() {
+		return false;
+	}
+
 	@Override
 	public void setColumnName(CqlIdentifier columnName) {
 		throw new UnsupportedOperationException("Cannot set a column name on a property representing a tuple element");

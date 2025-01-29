@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,8 @@ import java.util.List;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
+import com.datastax.oss.driver.api.core.cql.Row;
 
 /**
  * {@link Converter} from {@link ResultSet} to {@link Object} array.
@@ -45,9 +45,6 @@ public class ResultSetToArrayConverter implements Converter<ResultSet, Object[]>
 		this.rowConverter = rowConverter;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.core.convert.converter.Converter#convert(java.lang.Object)
-	 */
 	@Override
 	public Object[] convert(ResultSet resultSet) {
 

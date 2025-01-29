@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,9 @@
  */
 package org.springframework.data.cassandra.core.mapping;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
-import org.springframework.data.mapping.MappingException;
 import org.springframework.data.util.TypeInformation;
-import org.springframework.lang.Nullable;
-import org.springframework.util.Assert;
 
-import com.datastax.driver.core.UserType;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * {@link org.springframework.data.mapping.PersistentEntity} for a mapped user-defined type (UDT). A mapped UDT consists
@@ -33,74 +29,32 @@ import com.datastax.driver.core.UserType;
  */
 public class CassandraUserTypePersistentEntity<T> extends BasicCassandraPersistentEntity<T> {
 
-	private final UserTypeResolver resolver;
-
-	private final Object lock = new Object();
-
-	private volatile @Nullable UserType userType;
-
 	/**
 	 * Create a new {@link CassandraUserTypePersistentEntity}.
 	 *
 	 * @param typeInformation must not be {@literal null}.
 	 * @param verifier must not be {@literal null}.
-	 * @param resolver must not be {@literal null}.
 	 */
 	public CassandraUserTypePersistentEntity(TypeInformation<T> typeInformation,
-			CassandraPersistentEntityMetadataVerifier verifier, UserTypeResolver resolver) {
+			CassandraPersistentEntityMetadataVerifier verifier) {
 
 		super(typeInformation, verifier);
-
-		Assert.notNull(resolver, "UserTypeResolver must not be null");
-
-		this.resolver = resolver;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.BasicCassandraPersistentEntity#determineTableName()
-	 */
 	@Override
 	protected CqlIdentifier determineTableName() {
-
-		UserDefinedType annotation = findAnnotation(UserDefinedType.class);
-
-		if (annotation != null) {
-			return determineName(annotation.value(), annotation.forceQuote());
-		}
-
-		return super.determineTableName();
+		return determineName(NamingStrategy::getUserDefinedTypeName, findAnnotation(UserDefinedType.class), "value")
+				.getRequiredIdentifier();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.BasicCassandraPersistentEntity#isUserDefinedType()
-	 */
+	@Override
+	protected CqlIdentifier determineKeyspace() {
+		return determineName(NamingStrategy::getKeyspace, findAnnotation(UserDefinedType.class), "keyspace")
+				.getIdentifier();
+	}
+
 	@Override
 	public boolean isUserDefinedType() {
 		return true;
-	}
-
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.BasicCassandraPersistentEntity#getUserType()
-	 */
-	@Override
-	public UserType getUserType() {
-
-		if (userType == null) {
-			synchronized (lock) {
-				if (userType == null) {
-
-					CqlIdentifier identifier = determineTableName();
-					UserType userType = resolver.resolveType(identifier);
-
-					if (userType == null) {
-						throw new MappingException(String.format("User type [%s] not found", identifier));
-					}
-
-					this.userType = userType;
-				}
-			}
-		}
-
-		return userType;
 	}
 }

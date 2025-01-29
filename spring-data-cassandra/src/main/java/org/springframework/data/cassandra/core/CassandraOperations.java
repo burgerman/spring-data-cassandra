@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License")
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import java.util.stream.Stream;
 
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.cassandra.core.convert.CassandraConverter;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.cql.CqlOperations;
 import org.springframework.data.cassandra.core.cql.QueryOptions;
 import org.springframework.data.cassandra.core.cql.WriteOptions;
@@ -31,7 +30,10 @@ import org.springframework.data.cassandra.core.query.Update;
 import org.springframework.data.domain.Slice;
 import org.springframework.lang.Nullable;
 
-import com.datastax.driver.core.Statement;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.cql.BatchType;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
+import com.datastax.oss.driver.api.core.cql.Statement;
 
 /**
  * Interface specifying a basic set of Cassandra operations. Implemented by {@link CassandraTemplate}. Not often used
@@ -41,6 +43,7 @@ import com.datastax.driver.core.Statement;
  * @author David Webb
  * @author Matthew Adams
  * @author Mark Paluch
+ * @author Sam Lightfoot
  * @see CassandraTemplate
  * @see CqlOperations
  * @see Statement
@@ -50,19 +53,26 @@ import com.datastax.driver.core.Statement;
 public interface CassandraOperations extends FluentCassandraOperations {
 
 	/**
-	 * Returns a new {@link CassandraBatchOperations}. Each {@link CassandraBatchOperations} instance can be executed only
-	 * once so you might want to obtain new {@link CassandraBatchOperations} instances for each batch.
+	 * Returns a new {@link CassandraBatchOperations} using {@link BatchType#LOGGED}. Each
+	 * {@link CassandraBatchOperations} instance can be executed only once, so you need to obtain new
+	 * {@link CassandraBatchOperations} instances for each batch.
 	 *
 	 * @return a new {@link CassandraBatchOperations} associated with the given entity class.
+	 * @see #batchOps(BatchType)
 	 */
-	CassandraBatchOperations batchOps();
+	default CassandraBatchOperations batchOps() {
+		return batchOps(BatchType.LOGGED);
+	}
 
 	/**
-	 * Returns the underlying {@link CassandraConverter}.
+	 * Returns a new {@link CassandraBatchOperations}. Each {@link CassandraBatchOperations} instance can be executed only
+	 * once, so you need to obtain new {@link CassandraBatchOperations} instances for each batch.
 	 *
-	 * @return the underlying {@link CassandraConverter}.
+	 * @param batchType must not be {@literal null}.
+	 * @return a new {@link ReactiveCassandraBatchOperations} associated with the given entity class.
+	 * @since 3.2.6
 	 */
-	CassandraConverter getConverter();
+	CassandraBatchOperations batchOps(BatchType batchType);
 
 	/**
 	 * Expose the underlying {@link CqlOperations} to allow CQL operations.
@@ -71,6 +81,13 @@ public interface CassandraOperations extends FluentCassandraOperations {
 	 * @see CqlOperations
 	 */
 	CqlOperations getCqlOperations();
+
+	/**
+	 * Returns the underlying {@link CassandraConverter}.
+	 *
+	 * @return the underlying {@link CassandraConverter}.
+	 */
+	CassandraConverter getConverter();
 
 	/**
 	 * The table name used for the specified class by this template.
@@ -97,7 +114,7 @@ public interface CassandraOperations extends FluentCassandraOperations {
 	/**
 	 * Execute a {@code SELECT} query and convert the resulting items to a {@link Iterator} of entities.
 	 * <p>
-	 * Returns a {@link Iterator} that wraps the Cassandra {@link com.datastax.driver.core.ResultSet}.
+	 * Returns a {@link Iterator} that wraps the Cassandra {@link ResultSet}.
 	 *
 	 * @param <T> element return type.
 	 * @param cql query to execute. Must not be empty or {@literal null}.
@@ -120,8 +137,19 @@ public interface CassandraOperations extends FluentCassandraOperations {
 	<T> T selectOne(String cql, Class<T> entityClass) throws DataAccessException;
 
 	// -------------------------------------------------------------------------
-	// Methods dealing with com.datastax.driver.core.Statement
+	// Methods dealing with com.datastax.oss.driver.api.core.cql.Statement
 	// -------------------------------------------------------------------------
+
+	/**
+	 * Execute the given Cassandra {@link Statement}. Any errors that result from executing this command will be converted
+	 * into Spring's DAO exception hierarchy.
+	 *
+	 * @param statement a Cassandra {@link Statement}, must not be {@literal null}.
+	 * @return the {@link ResultSet}.
+	 * @throws DataAccessException if there is any problem executing the query.
+	 * @since 3.2
+	 */
+	ResultSet execute(Statement<?> statement) throws DataAccessException;
 
 	/**
 	 * Execute a {@code SELECT} query and convert the resulting items to a {@link List} of entities.
@@ -131,7 +159,7 @@ public interface CassandraOperations extends FluentCassandraOperations {
 	 * @return the converted results
 	 * @throws DataAccessException if there is any problem executing the query.
 	 */
-	<T> List<T> select(Statement statement, Class<T> entityClass) throws DataAccessException;
+	<T> List<T> select(Statement<?> statement, Class<T> entityClass) throws DataAccessException;
 
 	/**
 	 * Execute a {@code SELECT} query with paging and convert the result set to a {@link Slice} of entities. A sliced
@@ -143,12 +171,12 @@ public interface CassandraOperations extends FluentCassandraOperations {
 	 * @throws DataAccessException if there is any problem executing the query.
 	 * @since 2.0
 	 */
-	<T> Slice<T> slice(Statement statement, Class<T> entityClass) throws DataAccessException;
+	<T> Slice<T> slice(Statement<?> statement, Class<T> entityClass) throws DataAccessException;
 
 	/**
 	 * Execute a {@code SELECT} query and convert the resulting items to a {@link Iterator} of entities.
 	 * <p>
-	 * Returns a {@link Iterator} that wraps the Cassandra {@link com.datastax.driver.core.ResultSet}.
+	 * Returns a {@link Iterator} that wraps the Cassandra {@link ResultSet}.
 	 *
 	 * @param <T> element return type.
 	 * @param statement query to execute. Must not be empty or {@literal null}.
@@ -157,7 +185,7 @@ public interface CassandraOperations extends FluentCassandraOperations {
 	 * @throws DataAccessException if there is any problem executing the query.
 	 * @since 1.5
 	 */
-	<T> Stream<T> stream(Statement statement, Class<T> entityClass) throws DataAccessException;
+	<T> Stream<T> stream(Statement<?> statement, Class<T> entityClass) throws DataAccessException;
 
 	/**
 	 * Execute a {@code SELECT} query and convert the resulting item to an entity.
@@ -168,7 +196,7 @@ public interface CassandraOperations extends FluentCassandraOperations {
 	 * @throws DataAccessException if there is any problem executing the query.
 	 */
 	@Nullable
-	<T> T selectOne(Statement statement, Class<T> entityClass) throws DataAccessException;
+	<T> T selectOne(Statement<?> statement, Class<T> entityClass) throws DataAccessException;
 
 	// -------------------------------------------------------------------------
 	// Methods dealing with org.springframework.data.cassandra.core.query.Query
@@ -200,7 +228,7 @@ public interface CassandraOperations extends FluentCassandraOperations {
 	/**
 	 * Execute a {@code SELECT} query and convert the resulting items to a {@link Iterator} of entities.
 	 * <p>
-	 * Returns a {@link Iterator} that wraps the Cassandra {@link com.datastax.driver.core.ResultSet}.
+	 * Returns a {@link Iterator} that wraps the Cassandra {@link ResultSet}.
 	 *
 	 * @param <T> element return type.
 	 * @param query query to execute. Must not be empty or {@literal null}.
@@ -345,7 +373,7 @@ public interface CassandraOperations extends FluentCassandraOperations {
 	<T> EntityWriteResult<T> update(T entity, UpdateOptions options) throws DataAccessException;
 
 	/**
-	 * Delete the given entity and return the entity if the delete was applied.
+	 * Delete the given entity and return the entity if the delete statement was applied.
 	 *
 	 * @param entity must not be {@literal null}.
 	 * @throws DataAccessException if there is any problem executing the query.
@@ -353,7 +381,7 @@ public interface CassandraOperations extends FluentCassandraOperations {
 	void delete(Object entity) throws DataAccessException;
 
 	/**
-	 * Delete the given entity applying {@link QueryOptions} and return the entity if the delete was applied.
+	 * Delete the given entity applying {@link QueryOptions} and return the entity if the delete statement was applied.
 	 *
 	 * @param entity must not be {@literal null}.
 	 * @param options must not be {@literal null}.
@@ -364,7 +392,7 @@ public interface CassandraOperations extends FluentCassandraOperations {
 	WriteResult delete(Object entity, QueryOptions options) throws DataAccessException;
 
 	/**
-	 * Delete the given entity applying {@link DeleteOptions} and return the entity if the delete was applied.
+	 * Delete the given entity applying {@link DeleteOptions} and return the entity if the delete statement was applied.
 	 *
 	 * @param entity must not be {@literal null}.
 	 * @param options must not be {@literal null}.

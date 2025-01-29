@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 package org.springframework.data.cassandra;
 
+import java.io.Serial;
+
 import org.springframework.dao.TypeMismatchDataAccessException;
 
 /**
@@ -24,12 +26,23 @@ import org.springframework.dao.TypeMismatchDataAccessException;
  */
 public class CassandraTypeMismatchException extends TypeMismatchDataAccessException {
 
-	private static final long serialVersionUID = -7420058975444905629L;
+	@Serial private static final long serialVersionUID = -7420058975444905629L;
 
+	/**
+	 * Constructor for {@link CassandraTypeMismatchException}.
+	 *
+	 * @param msg the detail message.
+	 */
 	public CassandraTypeMismatchException(String msg) {
 		super(msg);
 	}
 
+	/**
+	 * Constructor for {@link CassandraTypeMismatchException}.
+	 *
+	 * @param msg the detail message.
+	 * @param cause the root cause from the underlying data access API.
+	 */
 	public CassandraTypeMismatchException(String msg, Throwable cause) {
 		super(msg, cause);
 	}

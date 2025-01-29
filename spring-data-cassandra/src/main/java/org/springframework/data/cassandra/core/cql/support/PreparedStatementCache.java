@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,13 @@ package org.springframework.data.cassandra.core.cql.support;
 
 import java.util.function.Supplier;
 
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.RegularStatement;
-import com.datastax.driver.core.Session;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.cql.PreparedStatement;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
 
 /**
  * Cache interface to synchronously prepare CQL statements.
- * <p />
+ * <p>
  * Implementing classes of {@link PreparedStatementCache} come with own synchronization and cache implementation
  * characteristics. A cache implementation should optimize for reduction of preparation calls and cache statements using
  * Cassandras cache key which is specific to the Cluster, keyspace, and CQL text.
@@ -31,7 +31,10 @@ import com.datastax.driver.core.Session;
  * @author Mark Paluch
  * @since 2.0
  * @see PreparedStatement
+ * @deprecated since 3.2, the Cassandra driver has a built-in prepared statement cache with makes external caching of
+ *             prepared statements superfluous.
  */
+@Deprecated
 public interface PreparedStatementCache {
 
 	/**
@@ -44,24 +47,24 @@ public interface PreparedStatementCache {
 	}
 
 	/**
-	 * Obtain a {@link PreparedStatement} by {@link Session} and {@link RegularStatement}.
+	 * Obtain a {@link PreparedStatement} by {@link CqlSession} and {@link SimpleStatement}.
 	 *
 	 * @param session must not be {@literal null}.
 	 * @param statement must not be {@literal null}.
 	 * @return the {@link PreparedStatement}.
 	 */
-	default PreparedStatement getPreparedStatement(Session session, RegularStatement statement) {
+	default PreparedStatement getPreparedStatement(CqlSession session, SimpleStatement statement) {
 		return getPreparedStatement(session, statement, () -> session.prepare(statement));
 	}
 
 	/**
-	 * Obtain a {@link PreparedStatement} by {@link Session} and {@link RegularStatement}.
+	 * Obtain a {@link PreparedStatement} by {@link CqlSession} and {@link SimpleStatement}.
 	 *
 	 * @param session must not be {@literal null}.
 	 * @param statement must not be {@literal null}.
 	 * @param preparer must not be {@literal null}.
 	 * @return the {@link PreparedStatement}.
 	 */
-	PreparedStatement getPreparedStatement(Session session, RegularStatement statement,
+	PreparedStatement getPreparedStatement(CqlSession session, SimpleStatement statement,
 			Supplier<PreparedStatement> preparer);
 }

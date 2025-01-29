@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,39 +18,36 @@ package org.springframework.data.cassandra.core.cql.session;
 import org.springframework.data.cassandra.SessionFactory;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.Session;
+import com.datastax.oss.driver.api.core.CqlSession;
 
 /**
  * Default {@link SessionFactory} implementation.
  * <p>
- * This class uses a singleton {@link Session} and returns the same instances.
+ * This class uses a singleton {@link CqlSession} and returns the same instances.
  *
  * @author Mark Paluch
  * @since 2.0
  * @see #getSession()
- * @see Session
+ * @see CqlSession
  */
 public class DefaultSessionFactory implements SessionFactory {
 
-	private final Session session;
+	private final CqlSession session;
 
 	/**
-	 * Constructs a new {@link DefaultSessionFactory} given {@link Session}.
+	 * Constructs a new {@link DefaultSessionFactory} given {@link CqlSession}.
 	 *
-	 * @param session the {@link Session} to be used in {@link #getSession()}.
+	 * @param session the {@link CqlSession} to be used in {@link #getSession()}.
 	 */
-	public DefaultSessionFactory(Session session) {
+	public DefaultSessionFactory(CqlSession session) {
 
 		Assert.notNull(session, "Session must not be null");
 
 		this.session = session;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.session.SessionFactory#getSession()
-	 */
 	@Override
-	public Session getSession() {
+	public CqlSession getSession() {
 		return session;
 	}
 }

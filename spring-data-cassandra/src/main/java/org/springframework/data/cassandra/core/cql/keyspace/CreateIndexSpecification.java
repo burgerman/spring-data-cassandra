@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,16 @@
  */
 package org.springframework.data.cassandra.core.cql.keyspace;
 
-import static org.springframework.data.cassandra.core.cql.CqlIdentifier.*;
-
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Object to configure a {@code CREATE INDEX} specification.
@@ -35,7 +34,7 @@ import org.springframework.util.StringUtils;
  * @author Mark Paluch
  */
 public class CreateIndexSpecification extends IndexNameSpecification<CreateIndexSpecification>
-		implements IndexDescriptor {
+		implements IndexDescriptor, CqlSpecification {
 
 	private @Nullable CqlIdentifier tableName;
 
@@ -53,12 +52,12 @@ public class CreateIndexSpecification extends IndexNameSpecification<CreateIndex
 
 	private CreateIndexSpecification() {}
 
-	private CreateIndexSpecification(CqlIdentifier name) {
-		super(name);
+	private CreateIndexSpecification(@Nullable CqlIdentifier keyspace, @Nullable CqlIdentifier name) {
+		super(keyspace, name);
 	}
 
 	/**
-	 * Entry point into the {@link CreateIndexSpecification}'s fluent API to create a index. Convenient if imported
+	 * Entry point into the {@link CreateIndexSpecification}'s fluent API to create an index. Convenient if imported
 	 * statically.
 	 */
 	public static CreateIndexSpecification createIndex() {
@@ -66,25 +65,41 @@ public class CreateIndexSpecification extends IndexNameSpecification<CreateIndex
 	}
 
 	/**
-	 * Entry point into the {@link CreateIndexSpecification}'s fluent API given {@code indexName} to create a index.
+	 * Entry point into the {@link CreateIndexSpecification}'s fluent API given {@code indexName} to create an index.
 	 * Convenient if imported statically.
 	 *
 	 * @param indexName must not be {@literal null} or empty.
 	 * @return a new {@link CreateIndexSpecification}.
 	 */
 	public static CreateIndexSpecification createIndex(String indexName) {
-		return createIndex(CqlIdentifier.of(indexName));
+		return createIndex(CqlIdentifier.fromCql(indexName));
 	}
 
 	/**
-	 * Entry point into the {@link CreateIndexSpecification}'s fluent API given {@code indexName} to create a index.
+	 * Entry point into the {@link CreateIndexSpecification}'s fluent API given {@code indexName} to create an index.
 	 * Convenient if imported statically.
 	 *
 	 * @param indexName must not be {@literal null}.
 	 * @return a new {@link CreateIndexSpecification}.
 	 */
 	public static CreateIndexSpecification createIndex(CqlIdentifier indexName) {
-		return new CreateIndexSpecification(indexName);
+		return new CreateIndexSpecification(null, indexName);
+	}
+
+	/**
+	 * Entry point into the {@link CreateIndexSpecification}'s fluent API given {@code keyspace} and {@code indexName} to
+	 * create an index. Convenient if imported statically. Uses the default keyspace if {@code keyspace} is null;
+	 * otherwise, of the {@code keyspace} is not {@link null}, then the index and table name are prefixed with
+	 * {@code keyspace}.
+	 *
+	 * @param keyspace can be {@literal null}.
+	 * @param indexName can be {@literal null}.
+	 * @return a new {@link CreateIndexSpecification}.
+	 * @since 4.4
+	 */
+	public static CreateIndexSpecification createIndex(@Nullable CqlIdentifier keyspace,
+			@Nullable CqlIdentifier indexName) {
+		return new CreateIndexSpecification(keyspace, indexName);
 	}
 
 	/**
@@ -94,7 +109,7 @@ public class CreateIndexSpecification extends IndexNameSpecification<CreateIndex
 	 * @return this
 	 */
 	public CreateIndexSpecification tableName(String tableName) {
-		return tableName(of(tableName));
+		return tableName(CqlIdentifier.fromCql(tableName));
 	}
 
 	/**
@@ -112,9 +127,6 @@ public class CreateIndexSpecification extends IndexNameSpecification<CreateIndex
 		return this;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.keyspace.IndexDescriptor#getTableName()
-	 */
 	@Override
 	public CqlIdentifier getTableName() {
 		return this.tableName;
@@ -127,7 +139,7 @@ public class CreateIndexSpecification extends IndexNameSpecification<CreateIndex
 	 * @return this
 	 */
 	public CreateIndexSpecification columnName(String columnName) {
-		return columnName(of(columnName));
+		return columnName(CqlIdentifier.fromCql(columnName));
 	}
 
 	/**
@@ -145,9 +157,6 @@ public class CreateIndexSpecification extends IndexNameSpecification<CreateIndex
 		return this;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.keyspace.IndexDescriptor#getColumnName()
-	 */
 	@Override
 	public CqlIdentifier getColumnName() {
 		return this.columnName;
@@ -178,9 +187,6 @@ public class CreateIndexSpecification extends IndexNameSpecification<CreateIndex
 		return this.ifNotExists;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.keyspace.IndexDescriptor#isCustom()
-	 */
 	@Override
 	public boolean isCustom() {
 		return this.custom;
@@ -199,9 +205,6 @@ public class CreateIndexSpecification extends IndexNameSpecification<CreateIndex
 		return this;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.keyspace.IndexDescriptor#getUsing()
-	 */
 	@Override
 	@Nullable
 	public String getUsing() {

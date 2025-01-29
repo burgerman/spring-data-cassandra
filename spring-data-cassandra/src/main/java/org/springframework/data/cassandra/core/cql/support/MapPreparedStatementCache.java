@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,28 +15,32 @@
  */
 package org.springframework.data.cassandra.core.cql.support;
 
-import lombok.EqualsAndHashCode;
-
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
+import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
+import org.springframework.util.ObjectUtils;
 
-import com.datastax.driver.core.Cluster;
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.RegularStatement;
-import com.datastax.driver.core.Session;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.cql.PreparedStatement;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
 
 /**
  * {@link PreparedStatementCache} backed by a {@link Map} cache. Defaults to simple {@link ConcurrentHashMap} caching.
- * <p/>
- * Statements are cached with a key consisting of {@link Cluster}, {@code keyspace} and the {@code cql} text. Statement
- * options (idempotency, timeouts) apply from the statement that was initially prepared.
+ * <p>
+ * Statements are cached with a key consisting of {@link CqlSession#getName() session name}, {@code keyspace} and the
+ * {@code cql} text. Statement options (idempotency, timeouts) apply from the statement that was initially prepared.
  *
  * @author Mark Paluch
+ * @author Aldo Bongio
  * @since 2.0
+ * @deprecated since 3.2, the Cassandra driver has a built-in prepared statement cache with makes external caching of
+ *             prepared statements superfluous.
  */
+@Deprecated
 public class MapPreparedStatementCache implements PreparedStatementCache {
 
 	private final Map<CacheKey, PreparedStatement> cache;
@@ -78,14 +82,11 @@ public class MapPreparedStatementCache implements PreparedStatementCache {
 		return this.cache;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.support.PrepatedStatementCache#getPreparedStatement(com.datastax.driver.core.RegularStatement, com.datastax.driver.core.Session, java.util.function.Supplier)
-	 */
 	@Override
-	public PreparedStatement getPreparedStatement(Session session, RegularStatement statement,
+	public PreparedStatement getPreparedStatement(CqlSession session, SimpleStatement statement,
 			Supplier<PreparedStatement> preparer) {
 
-		CacheKey cacheKey = new CacheKey(session, statement.toString());
+		CacheKey cacheKey = new CacheKey(session, statement.getQuery());
 
 		return getCache().computeIfAbsent(cacheKey, key -> preparer.get());
 	}
@@ -93,18 +94,43 @@ public class MapPreparedStatementCache implements PreparedStatementCache {
 	/**
 	 * {@link CacheKey} for {@link PreparedStatement} caching.
 	 */
-	@EqualsAndHashCode
 	protected static class CacheKey {
 
-		final Cluster cluster;
+		final String sessionName;
 		final String keyspace;
 		final String cql;
 
-		CacheKey(Session session, String cql) {
+		CacheKey(CqlSession session, String cql) {
 
-			this.cluster = session.getCluster();
-			this.keyspace = session.getLoggedKeyspace();
+			this.sessionName = session.getName();
+			this.keyspace = session.getKeyspace().orElse(CqlIdentifier.fromCql("system")).asInternal();
 			this.cql = cql;
+		}
+
+		@Override
+		public boolean equals(@Nullable Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (!(o instanceof CacheKey)) {
+				return false;
+			}
+			CacheKey cacheKey = (CacheKey) o;
+			if (!ObjectUtils.nullSafeEquals(sessionName, cacheKey.sessionName)) {
+				return false;
+			}
+			if (!ObjectUtils.nullSafeEquals(keyspace, cacheKey.keyspace)) {
+				return false;
+			}
+			return ObjectUtils.nullSafeEquals(cql, cacheKey.cql);
+		}
+
+		@Override
+		public int hashCode() {
+			int result = ObjectUtils.nullSafeHashCode(sessionName);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(keyspace);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(cql);
+			return result;
 		}
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ class IdInterfaceValidator {
 	 * then an {@link IdInterfaceExceptions} is thrown containing all of the violations encountered, which can be obtained
 	 * from {@link IdInterfaceExceptions#getExceptions()} or, as a convenience,
 	 * {@link IdInterfaceExceptions#getMessages()}.
-	 * <p/>
+	 * <p>
 	 * Id interfaces are intended to have methods representing setters and getters. Getter methods take the form
 	 * <ul>
 	 * <li>{@code PropertyType getPropertyName()} or</li>
@@ -45,7 +45,7 @@ class IdInterfaceValidator {
 	 * <li>{@code void|IdType propertyName(PropertyType)};</li>
 	 * </ul>
 	 * setter methods may also declare that they return their id interface type to support method chaining.
-	 * <p/>
+	 * <p>
 	 * Id interfaces
 	 * <ul>
 	 * <li>must be an {@code interface}, not a <code>class</code>,</li>

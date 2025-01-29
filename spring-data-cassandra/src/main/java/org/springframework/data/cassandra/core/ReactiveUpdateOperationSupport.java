@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,14 @@
  */
 package org.springframework.data.cassandra.core;
 
-import lombok.AccessLevel;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.experimental.FieldDefaults;
 import reactor.core.publisher.Mono;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.query.Query;
 import org.springframework.data.cassandra.core.query.Update;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Implementation of {@link ReactiveUpdateOperation}.
@@ -36,14 +33,14 @@ import org.springframework.util.Assert;
  * @see org.springframework.data.cassandra.core.query.Update
  * @since 2.1
  */
-@RequiredArgsConstructor
 class ReactiveUpdateOperationSupport implements ReactiveUpdateOperation {
 
-	private final @NonNull ReactiveCassandraTemplate template;
+	private final ReactiveCassandraTemplate template;
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveUpdateOperation#update(java.lang.Class)
-	 */
+	public ReactiveUpdateOperationSupport(ReactiveCassandraTemplate template) {
+		this.template = template;
+	}
+
 	@Override
 	public ReactiveUpdate update(Class<?> domainType) {
 
@@ -52,21 +49,24 @@ class ReactiveUpdateOperationSupport implements ReactiveUpdateOperation {
 		return new ReactiveUpdateSupport(this.template, domainType, Query.empty(), null);
 	}
 
-	@RequiredArgsConstructor
-	@FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 	static class ReactiveUpdateSupport implements ReactiveUpdate, TerminatingUpdate {
 
-		@NonNull ReactiveCassandraTemplate template;
+		private final ReactiveCassandraTemplate template;
 
-		@NonNull Class<?> domainType;
+		private final Class<?> domainType;
 
-		@NonNull Query query;
+		private final Query query;
 
-		@Nullable CqlIdentifier tableName;
+		private final @Nullable CqlIdentifier tableName;
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ReactiveUpdateOperation.UpdateWithTable#inTable(org.springframework.data.cassandra.core.cql.CqlIdentifier)
-		 */
+		public ReactiveUpdateSupport(ReactiveCassandraTemplate template, Class<?> domainType, Query query,
+				CqlIdentifier tableName) {
+			this.template = template;
+			this.domainType = domainType;
+			this.query = query;
+			this.tableName = tableName;
+		}
+
 		@Override
 		public UpdateWithQuery inTable(CqlIdentifier tableName) {
 
@@ -75,9 +75,6 @@ class ReactiveUpdateOperationSupport implements ReactiveUpdateOperation {
 			return new ReactiveUpdateSupport(this.template, this.domainType, this.query, tableName);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ReactiveUpdateOperation.UpdateWithQuery#matching(org.springframework.data.cassandra.core.query.Query)
-		 */
 		@Override
 		public TerminatingUpdate matching(Query query) {
 
@@ -86,9 +83,6 @@ class ReactiveUpdateOperationSupport implements ReactiveUpdateOperation {
 			return new ReactiveUpdateSupport(this.template, this.domainType, query, this.tableName);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ReactiveUpdateOperation.UpdateWithUpdate#apply(org.springframework.data.cassandra.core.query.Update)
-		 */
 		@Override
 		public Mono<WriteResult> apply(Update update) {
 

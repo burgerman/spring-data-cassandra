@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,19 +18,19 @@ package org.springframework.data.cassandra.core.cql;
 import org.springframework.dao.DataAccessException;
 import org.springframework.lang.Nullable;
 
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.Statement;
-import com.datastax.driver.core.exceptions.DriverException;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.DriverException;
+import com.datastax.oss.driver.api.core.cql.PreparedStatement;
+import com.datastax.oss.driver.api.core.cql.Statement;
 
 /**
  * Generic callback interface for code that operates on a {@link PreparedStatement}. Allows to execute any number of
- * operations on a single {@link PreparedStatement}, for example a single {@link Session#execute(Statement).
+ * operations on a single {@link PreparedStatement}, for example a single {@link CqlSession#execute(Statement)}.
  * <p>
  * Used internally by {@link CqlTemplate}, but also useful for application code. Note that the passed-in
  * {@link PreparedStatement} can have been created by the framework or by a custom {@link PreparedStatementCreator}.
  * However, the latter is hardly ever necessary, as most custom callback actions will perform updates in which case a
- * standard {@link PreparedStatement is fine. Custom actions will always set parameter values themselves, so that
+ * standard {@link PreparedStatement} is fine. Custom actions will always set parameter values themselves, so that
  * {@link PreparedStatementCreator} capability is not needed either.
  *
  * @author David Webb
@@ -64,6 +64,6 @@ public interface PreparedStatementCallback<T> {
 	 * @see CqlTemplate#queryForList(String, Object...)
 	 */
 	@Nullable
-	T doInPreparedStatement(Session session, PreparedStatement preparedStatement)
+	T doInPreparedStatement(CqlSession session, PreparedStatement preparedStatement)
 			throws DriverException, DataAccessException;
 }

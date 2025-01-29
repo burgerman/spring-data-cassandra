@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,29 +15,29 @@
  */
 package org.springframework.data.cassandra.core.cql.keyspace;
 
-import static org.springframework.data.cassandra.core.cql.CqlIdentifier.*;
 import static org.springframework.data.cassandra.core.cql.Ordering.*;
 import static org.springframework.data.cassandra.core.cql.PrimaryKeyType.*;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.cql.Ordering;
 import org.springframework.data.cassandra.core.cql.PrimaryKeyType;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.DataType;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.type.DataType;
 
 /**
  * Object to configure a CQL column specification.
- * <p/>
- * Use {@link #name(String)} and {@link #type(String)} to set the name and type of the column, respectively. To specify
- * a clustered {@code PRIMARY KEY} column, use {@link #clustered()} or {@link #clustered(Ordering)}. To specify that the
- * {@code PRIMARY KEY} column is or is part of the partition key, use {@link #partitioned()} instead of
- * {@link #clustered()} or {@link #clustered(Ordering)}.
+ * <p>
+ * Use {@link #name(String)} and {@link #type(DataType)} to set the name and type of the column, respectively. To
+ * specify a clustered {@code PRIMARY KEY} column, use {@link #clustered()} or {@link #clustered(Ordering)}. To specify
+ * that the {@code PRIMARY KEY} column is or is part of the partition key, use {@link #partitioned()} instead of
+ * {@link #clustered()} or {@link #clustered(Ordering)}. To specify {@code STATIC} column, use {@link #staticColumn()}.
  *
  * @author Matthew T. Adams
  * @author Alex Shvid
  * @author Mark Paluch
+ * @author Aleksei Zotov
  */
 public class ColumnSpecification {
 
@@ -54,6 +54,8 @@ public class ColumnSpecification {
 
 	private @Nullable Ordering ordering;
 
+	private boolean isStatic;
+
 	private ColumnSpecification(CqlIdentifier name) {
 		this.name = name;
 	}
@@ -65,7 +67,7 @@ public class ColumnSpecification {
 	 * @return a new {@link ColumnSpecification} for {@code name}.
 	 */
 	public static ColumnSpecification name(String name) {
-		return name(of(name));
+		return name(CqlIdentifier.fromCql(name));
 	}
 
 	/**
@@ -88,7 +90,7 @@ public class ColumnSpecification {
 	 */
 	public ColumnSpecification type(DataType type) {
 
-		Assert.notNull(type, "DataType must not be null!");
+		Assert.notNull(type, "DataType must not be null");
 
 		this.type = type;
 
@@ -179,6 +181,19 @@ public class ColumnSpecification {
 		return this;
 	}
 
+	/**
+	 * Identifies this column as a static column. Sets the column's {@link #isStatic} to {@literal true}.
+	 *
+	 * @return this
+	 * @since 3.2
+	 */
+	public ColumnSpecification staticColumn() {
+
+		this.isStatic = true;
+
+		return this;
+	}
+
 	public CqlIdentifier getName() {
 		return name;
 	}
@@ -198,20 +213,24 @@ public class ColumnSpecification {
 		return ordering;
 	}
 
+	public boolean isStatic() {
+		return isStatic;
+	}
+
 	public String toCql() {
 		return toCql(new StringBuilder()).toString();
 	}
 
 	public StringBuilder toCql(StringBuilder cql) {
-		return cql.append(name).append(" ").append(type);
+		return cql.append(name.asCql(true)).append(" ").append(type.asCql(true, true));
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#toString()
-	 */
 	@Override
 	public String toString() {
-		return toCql(new StringBuilder()).append(" /* keyType=").append(keyType).append(", ordering=").append(ordering)
+		return toCql(new StringBuilder()).append(" /* ")
+				.append("keyType=").append(keyType).append(", ")
+				.append("ordering=").append(ordering).append(", ")
+				.append("isStatic=").append(isStatic)
 				.append(" */ ").toString();
 	}
 }

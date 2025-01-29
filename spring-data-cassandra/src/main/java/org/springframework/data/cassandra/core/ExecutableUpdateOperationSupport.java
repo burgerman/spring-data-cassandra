@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,12 @@
  */
 package org.springframework.data.cassandra.core;
 
-import lombok.AccessLevel;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.experimental.FieldDefaults;
-
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.query.Query;
 import org.springframework.data.cassandra.core.query.Update;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Implementation of {@link ExecutableUpdateOperation}.
@@ -35,14 +31,14 @@ import org.springframework.util.Assert;
  * @see org.springframework.data.cassandra.core.query.Update
  * @since 2.1
  */
-@RequiredArgsConstructor
 class ExecutableUpdateOperationSupport implements ExecutableUpdateOperation {
 
-	private final @NonNull CassandraTemplate template;
+	private final CassandraTemplate template;
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ExecutableUpdateOperation#update(java.lang.Class)
-	 */
+	public ExecutableUpdateOperationSupport(CassandraTemplate template) {
+		this.template = template;
+	}
+
 	@Override
 	public ExecutableUpdate update(Class<?> domainType) {
 
@@ -51,28 +47,24 @@ class ExecutableUpdateOperationSupport implements ExecutableUpdateOperation {
 		return new ExecutableUpdateSupport(this.template, domainType, Query.empty(), null);
 	}
 
-	// TODO: rethink the implementation
-	// While the use of final fields and construction on mutation effectively makes this class Thread-safe,
-	// it is possible this implementation could generate a high-level of young-gen garbage on the JVM heap,
-	// particularly if the template update(..) (and this class) are used inside of a loop for a large number
-	// of domain types. Of course, this assumption is highly contingent on the user's `Query`
-	// in addition to his/her application design.
-
-	@RequiredArgsConstructor
-	@FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 	static class ExecutableUpdateSupport implements ExecutableUpdate, TerminatingUpdate {
 
-		@NonNull CassandraTemplate template;
+		private final CassandraTemplate template;
 
-		@NonNull Class<?> domainType;
+		private final Class<?> domainType;
 
-		@NonNull Query query;
+		private final Query query;
 
-		@Nullable CqlIdentifier tableName;
+		private final @Nullable CqlIdentifier tableName;
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ExecutableUpdateOperation.UpdateWithTable#inTable(org.springframework.data.cassandra.core.cql.CqlIdentifier)
-		 */
+		public ExecutableUpdateSupport(CassandraTemplate template, Class<?> domainType, Query query,
+				CqlIdentifier tableName) {
+			this.template = template;
+			this.domainType = domainType;
+			this.query = query;
+			this.tableName = tableName;
+		}
+
 		@Override
 		public UpdateWithQuery inTable(CqlIdentifier tableName) {
 
@@ -81,9 +73,6 @@ class ExecutableUpdateOperationSupport implements ExecutableUpdateOperation {
 			return new ExecutableUpdateSupport(this.template, this.domainType, this.query, tableName);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ExecutableUpdateOperation.UpdateWithQuery#matching(org.springframework.data.cassandra.core.query.Query)
-		 */
 		@Override
 		public TerminatingUpdate matching(Query query) {
 
@@ -92,9 +81,6 @@ class ExecutableUpdateOperationSupport implements ExecutableUpdateOperation {
 			return new ExecutableUpdateSupport(this.template, this.domainType, query, this.tableName);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ExecutableUpdateOperation.TerminatingUpdate#apply(org.springframework.data.cassandra.core.query.Update)
-		 */
 		@Override
 		public WriteResult apply(Update update) {
 

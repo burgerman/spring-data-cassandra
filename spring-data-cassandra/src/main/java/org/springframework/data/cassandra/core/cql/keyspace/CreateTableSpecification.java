@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,9 @@
  */
 package org.springframework.data.cassandra.core.cql.keyspace;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.lang.Nullable;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Object to configure a {@code CREATE TABLE} specification.
@@ -24,12 +25,12 @@ import org.springframework.lang.Nullable;
  * @author Matthew T. Adams
  * @author Mark Paluch
  */
-public class CreateTableSpecification extends TableSpecification<CreateTableSpecification> {
+public class CreateTableSpecification extends TableSpecification<CreateTableSpecification> implements CqlSpecification {
 
 	private boolean ifNotExists = false;
 
-	private CreateTableSpecification(CqlIdentifier name) {
-		super(name);
+	private CreateTableSpecification(@Nullable CqlIdentifier keyspace, CqlIdentifier name) {
+		super(keyspace, name);
 	}
 
 	/**
@@ -40,7 +41,7 @@ public class CreateTableSpecification extends TableSpecification<CreateTableSpec
 	 * @return a new {@link CreateTableSpecification}.
 	 */
 	public static CreateTableSpecification createTable(String tableName) {
-		return new CreateTableSpecification(CqlIdentifier.of(tableName));
+		return new CreateTableSpecification(null, CqlIdentifier.fromCql(tableName));
 	}
 
 	/**
@@ -51,7 +52,21 @@ public class CreateTableSpecification extends TableSpecification<CreateTableSpec
 	 * @return a new {@link CreateTableSpecification}.
 	 */
 	public static CreateTableSpecification createTable(CqlIdentifier tableName) {
-		return new CreateTableSpecification(tableName);
+		return new CreateTableSpecification(null, tableName);
+	}
+
+	/**
+	 * Entry point into the {@link CreateTableSpecification}'s fluent API given {@code tableName} to create a table.
+	 * Convenient if imported statically. Uses the default keyspace if {@code keyspace} is null; otherwise, of the
+	 * {@code keyspace} is not {@link null}, then the table name is prefixed with {@code keyspace}.
+	 *
+	 * @param keyspace can be {@literal null}.
+	 * @param tableName must not be {@literal null}.
+	 * @return a new {@link CreateTableSpecification}.
+	 * @since 4.4
+	 */
+	public static CreateTableSpecification createTable(@Nullable CqlIdentifier keyspace, CqlIdentifier tableName) {
+		return new CreateTableSpecification(keyspace, tableName);
 	}
 
 	/**
@@ -79,28 +94,16 @@ public class CreateTableSpecification extends TableSpecification<CreateTableSpec
 		return this.ifNotExists;
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.keyspace.TableOptionsSpecification#with(org.springframework.data.cassandra.core.cql.keyspace.TableOption)
-	 */
 	@Override
 	public CreateTableSpecification with(TableOption option) {
 		return (CreateTableSpecification) super.with(option);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.keyspace.TableOptionsSpecification#with(org.springframework.data.cassandra.core.cql.keyspace.TableOption, java.lang.Object)
-	 */
 	@Override
 	public CreateTableSpecification with(TableOption option, Object value) {
 		return (CreateTableSpecification) super.with(option, value);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.keyspace.TableOptionsSpecification#with(java.lang.String, java.lang.Object, boolean, boolean)
-	 */
 	@Override
 	public CreateTableSpecification with(String name, @Nullable Object value, boolean escape, boolean quote) {
 		return (CreateTableSpecification) super.with(name, value, escape, quote);

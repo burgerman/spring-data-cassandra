@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,6 @@
  */
 package org.springframework.data.cassandra.repository.query;
 
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-
-import java.util.Iterator;
 import java.util.List;
 
 import org.springframework.core.convert.converter.Converter;
@@ -27,17 +23,21 @@ import org.springframework.data.cassandra.core.CassandraOperations;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty;
 import org.springframework.data.cassandra.core.query.CassandraPageRequest;
-import org.springframework.data.convert.EntityInstantiators;
+import org.springframework.data.cassandra.core.query.CassandraScrollPosition;
+import org.springframework.data.convert.DtoInstantiatingConverter;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
+import org.springframework.data.domain.SliceImpl;
 import org.springframework.data.mapping.context.MappingContext;
+import org.springframework.data.mapping.model.EntityInstantiators;
 import org.springframework.data.repository.query.ResultProcessor;
 import org.springframework.data.repository.query.ReturnedType;
 import org.springframework.lang.Nullable;
 import org.springframework.util.ClassUtils;
 
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
-import com.datastax.driver.core.Statement;
+import com.datastax.oss.driver.api.core.cql.Row;
+import com.datastax.oss.driver.api.core.cql.Statement;
 
 /**
  * Query executions for Cassandra.
@@ -49,24 +49,25 @@ import com.datastax.driver.core.Statement;
 interface CassandraQueryExecution {
 
 	@Nullable
-	Object execute(Statement statement, Class<?> type);
+	Object execute(Statement<?> statement, Class<?> type);
 
 	/**
 	 * {@link CassandraQueryExecution} for a Stream.
 	 *
 	 * @author Mark Paluch
 	 */
-	@RequiredArgsConstructor
 	final class StreamExecution implements CassandraQueryExecution {
 
-		private final @NonNull CassandraOperations operations;
-		private final @NonNull Converter<Object, Object> resultProcessing;
+		private final CassandraOperations operations;
+		private final Converter<Object, Object> resultProcessing;
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.repository.query.CassandraQueryExecution#execute(java.lang.String, java.lang.Class)
-		 */
+		StreamExecution(CassandraOperations operations, Converter<Object, Object> resultProcessing) {
+			this.operations = operations;
+			this.resultProcessing = resultProcessing;
+		}
+
 		@Override
-		public Object execute(Statement statement, Class<?> type) {
+		public Object execute(Statement<?> statement, Class<?> type) {
 			return operations.stream(statement, type).map(resultProcessing::convert);
 		}
 	}
@@ -76,27 +77,67 @@ interface CassandraQueryExecution {
 	 *
 	 * @author Mark Paluch
 	 */
-	@RequiredArgsConstructor
 	final class SlicedExecution implements CassandraQueryExecution {
 
-		private final @NonNull CassandraOperations operations;
-		private final @NonNull Pageable pageable;
+		private final CassandraOperations operations;
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.repository.query.CassandraQueryExecution#execute(java.lang.String, java.lang.Class)
-		 */
+		SlicedExecution(CassandraOperations operations, Pageable pageable) {
+			this.operations = operations;
+			this.pageable = pageable;
+		}
+
+		private final Pageable pageable;
+
 		@Override
-		public Object execute(Statement statement, Class<?> type) {
+		public Object execute(Statement<?> statement, Class<?> type) {
 
 			CassandraPageRequest.validatePageable(pageable);
 
-			Statement statementToUse = statement.setFetchSize(pageable.getPageSize());
+			Statement<?> statementToUse = statement.setPageSize(pageable.getPageSize());
 
 			if (pageable instanceof CassandraPageRequest) {
 				statementToUse = statementToUse.setPagingState(((CassandraPageRequest) pageable).getPagingState());
 			}
 
-			return operations.slice(statementToUse, type);
+			Slice<?> slice = operations.slice(statementToUse, type);
+
+			if (pageable.getSort().isUnsorted()) {
+				return slice;
+			}
+
+			CassandraPageRequest cassandraPageRequest = (CassandraPageRequest) slice.getPageable();
+			return new SliceImpl<>(slice.getContent(), cassandraPageRequest.withSort(pageable.getSort()), slice.hasNext());
+		}
+	}
+
+	/**
+	 * {@link CassandraQueryExecution} for a {@link org.springframework.data.domain.Window}.
+	 *
+	 * @author Mark Paluch
+	 * @since 4.2
+	 */
+	final class WindowExecution implements CassandraQueryExecution {
+
+		private final CassandraOperations operations;
+		private final CassandraScrollPosition scrollPosition;
+		private final Limit limit;
+
+		public WindowExecution(CassandraOperations operations, CassandraScrollPosition scrollPosition, Limit limit) {
+			this.operations = operations;
+			this.scrollPosition = scrollPosition;
+			this.limit = limit;
+		}
+
+		@Override
+		public Object execute(Statement<?> statement, Class<?> type) {
+
+			Statement<?> statementToUse = limit.isLimited() ? statement.setPageSize(limit.max()) : statement;
+
+			if (!this.scrollPosition.isInitial()) {
+				statementToUse = statementToUse.setPagingState(this.scrollPosition.getPagingState());
+			}
+
+			return WindowUtil.of(operations.slice(statementToUse, type));
 		}
 	}
 
@@ -105,16 +146,16 @@ interface CassandraQueryExecution {
 	 *
 	 * @author Mark Paluch
 	 */
-	@RequiredArgsConstructor
 	final class CollectionExecution implements CassandraQueryExecution {
 
-		private final @NonNull CassandraOperations operations;
+		private final CassandraOperations operations;
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.repository.query.CassandraQueryExecution#execute(java.lang.String, java.lang.Class)
-		 */
+		CollectionExecution(CassandraOperations operations) {
+			this.operations = operations;
+		}
+
 		@Override
-		public Object execute(Statement statement, Class<?> type) {
+		public Object execute(Statement<?> statement, Class<?> type) {
 			return operations.select(statement, type);
 		}
 	}
@@ -124,18 +165,19 @@ interface CassandraQueryExecution {
 	 *
 	 * @author Mark Paluch
 	 */
-	@RequiredArgsConstructor
 	final class SingleEntityExecution implements CassandraQueryExecution {
 
-		private final @NonNull CassandraOperations operations;
+		private final CassandraOperations operations;
 		private final boolean limiting;
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.repository.query.CassandraQueryExecution#execute(java.lang.String, java.lang.Class)
-		 */
+		SingleEntityExecution(CassandraOperations operations, boolean limiting) {
+			this.operations = operations;
+			this.limiting = limiting;
+		}
+
 		@Override
 		@SuppressWarnings("unchecked")
-		public Object execute(Statement statement, Class<?> type) {
+		public Object execute(Statement<?> statement, Class<?> type) {
 
 			List<Object> objects = operations.select(statement, (Class) type);
 
@@ -157,55 +199,52 @@ interface CassandraQueryExecution {
 	 * @author Mark Paluch
 	 * @since 2.1
 	 */
-	@RequiredArgsConstructor
 	final class ExistsExecution implements CassandraQueryExecution {
 
-		private final @NonNull CassandraOperations operations;
+		private final CassandraOperations operations;
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.repository.query.CassandraQueryExecution#execute(java.lang.String, java.lang.Class)
-		 */
+		ExistsExecution(CassandraOperations operations) {
+			this.operations = operations;
+		}
+
 		@Override
-		public Object execute(Statement statement, Class<?> type) {
+		public Object execute(Statement<?> statement, Class<?> type) {
 
-			ResultSet resultSet = this.operations.getCqlOperations().queryForResultSet(statement);
+			List<Row> resultSet = this.operations.select(statement, Row.class);
 
-			Iterator<Row> iterator = resultSet.iterator();
-
-			if (iterator.hasNext()) {
-
-				Row row = iterator.next();
-
-				if (!iterator.hasNext() && ProjectionUtil.qualifiesAsCountProjection(row)) {
-
-					Object object = row.getObject(0);
-
-					return ((Number) object).longValue() > 0;
-				}
-
-				return true;
+			if (resultSet.isEmpty()) {
+				return false;
 			}
 
-			return false;
+			Row row = resultSet.get(0);
+
+			if (resultSet.size() == 1 && ProjectionUtil.qualifiesAsCountProjection(row)) {
+
+				Object object = row.getObject(0);
+
+				return ((Number) object).longValue() > 0;
+			}
+
+			return true;
 		}
 	}
 
 	/**
-	 * {@link CassandraQueryExecution} to return a {@link com.datastax.driver.core.ResultSet}.
+	 * {@link CassandraQueryExecution} to return a {@link com.datastax.oss.driver.api.core.cql.ResultSet}.
 	 *
 	 * @author Mark Paluch
 	 */
-	@RequiredArgsConstructor
 	final class ResultSetQuery implements CassandraQueryExecution {
 
-		private final @NonNull CassandraOperations operations;
+		private final CassandraOperations operations;
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.repository.query.CassandraQueryExecution#execute(java.lang.String, java.lang.Class)
-		 */
+		ResultSetQuery(CassandraOperations operations) {
+			this.operations = operations;
+		}
+
 		@Override
-		public Object execute(Statement statement, Class<?> type) {
-			return operations.getCqlOperations().queryForResultSet(statement);
+		public Object execute(Statement<?> statement, Class<?> type) {
+			return operations.execute(statement);
 		}
 	}
 
@@ -214,18 +253,19 @@ interface CassandraQueryExecution {
 	 *
 	 * @author Mark Paluch
 	 */
-	@RequiredArgsConstructor
 	final class ResultProcessingExecution implements CassandraQueryExecution {
 
-		private final @NonNull CassandraQueryExecution delegate;
-		private final @NonNull Converter<Object, Object> converter;
+		private final CassandraQueryExecution delegate;
+		private final Converter<Object, Object> converter;
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.repository.query.CassandraQueryExecution#execute(java.lang.String, java.lang.Class)
-		 */
+		ResultProcessingExecution(CassandraQueryExecution delegate, Converter<Object, Object> converter) {
+			this.delegate = delegate;
+			this.converter = converter;
+		}
+
 		@Nullable
 		@Override
-		public Object execute(Statement statement, Class<?> type) {
+		public Object execute(Statement<?> statement, Class<?> type) {
 
 			Object result = delegate.execute(statement, type);
 
@@ -238,16 +278,20 @@ interface CassandraQueryExecution {
 	 *
 	 * @author Mark Paluch
 	 */
-	@RequiredArgsConstructor
 	final class ResultProcessingConverter implements Converter<Object, Object> {
 
-		private final @NonNull ResultProcessor processor;
-		private final @NonNull MappingContext<? extends CassandraPersistentEntity<?>, CassandraPersistentProperty> mappingContext;
-		private final @NonNull EntityInstantiators instantiators;
+		private final ResultProcessor processor;
+		private final MappingContext<? extends CassandraPersistentEntity<?>, CassandraPersistentProperty> mappingContext;
+		private final EntityInstantiators instantiators;
 
-		/* (non-Javadoc)
-		 * @see org.springframework.core.convert.converter.Converter#convert(java.lang.Object)
-		 */
+		ResultProcessingConverter(ResultProcessor processor,
+				MappingContext<? extends CassandraPersistentEntity<?>, CassandraPersistentProperty> mappingContext,
+				EntityInstantiators instantiators) {
+			this.processor = processor;
+			this.mappingContext = mappingContext;
+			this.instantiators = instantiators;
+		}
+
 		@Override
 		public Object convert(@Nullable Object source) {
 

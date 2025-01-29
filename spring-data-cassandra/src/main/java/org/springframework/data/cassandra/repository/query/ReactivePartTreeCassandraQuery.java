@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,10 @@
  */
 package org.springframework.data.cassandra.repository.query;
 
+import reactor.core.publisher.Mono;
+
 import org.springframework.data.cassandra.core.ReactiveCassandraOperations;
+import org.springframework.data.cassandra.core.ReactiveCassandraTemplate;
 import org.springframework.data.cassandra.core.StatementFactory;
 import org.springframework.data.cassandra.core.convert.UpdateMapper;
 import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
@@ -25,7 +28,7 @@ import org.springframework.data.mapping.context.MappingContext;
 import org.springframework.data.repository.query.RepositoryQuery;
 import org.springframework.data.repository.query.parser.PartTree;
 
-import com.datastax.driver.core.Statement;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
 
 /**
  * Reactive PartTree {@link RepositoryQuery} implementation for Cassandra.
@@ -56,7 +59,8 @@ public class ReactivePartTreeCassandraQuery extends AbstractReactiveCassandraQue
 
 		this.tree = new PartTree(queryMethod.getName(), queryMethod.getResultProcessor().getReturnedType().getDomainType());
 		this.mappingContext = operations.getConverter().getMappingContext();
-		this.statementFactory = new StatementFactory(new UpdateMapper(operations.getConverter()));
+		this.statementFactory = operations instanceof ReactiveCassandraTemplate rct ? rct.getStatementFactory()
+				: new StatementFactory(new UpdateMapper(operations.getConverter()));
 	}
 
 	/**
@@ -89,56 +93,43 @@ public class ReactivePartTreeCassandraQuery extends AbstractReactiveCassandraQue
 		return this.tree;
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.AbstractCassandraQuery#createQuery(org.springframework.data.cassandra.repository.query.CassandraParameterAccessor, boolean)
-	 */
 	@Override
-	protected Statement createQuery(CassandraParameterAccessor parameterAccessor) {
+	protected Mono<SimpleStatement> createQuery(CassandraParameterAccessor parameterAccessor) {
 
-		if (isCountQuery()) {
-			return getQueryStatementCreator().count(getStatementFactory(), getTree(), parameterAccessor);
-		}
+		return Mono.fromSupplier(() -> {
 
-		if (isExistsQuery()) {
-			return getQueryStatementCreator().exists(getStatementFactory(), getTree(), parameterAccessor);
-		}
+			if (isCountQuery()) {
+				return getQueryStatementCreator().count(getStatementFactory(), getTree(), parameterAccessor);
+			}
 
-		if (getTree().isDelete()) {
-			return getQueryStatementCreator().delete(getStatementFactory(), getTree(), parameterAccessor);
-		}
+			if (isExistsQuery()) {
+				return getQueryStatementCreator().exists(getStatementFactory(), getTree(), parameterAccessor);
+			}
 
-		return getQueryStatementCreator().select(getStatementFactory(), getTree(), parameterAccessor,
-				getQueryMethod().getResultProcessor());
+			if (getTree().isDelete()) {
+				return getQueryStatementCreator().delete(getStatementFactory(), getTree(), parameterAccessor);
+			}
+
+			return getQueryStatementCreator().select(getStatementFactory(), getTree(), parameterAccessor,
+					getQueryMethod().getResultProcessor());
+		});
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.AbstractReactiveCassandraQuery#isCountQuery()
-	 */
 	@Override
 	protected boolean isCountQuery() {
 		return getTree().isCountProjection();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.AbstractReactiveCassandraQuery#isExistsQuery()
-	 */
 	@Override
 	protected boolean isExistsQuery() {
 		return getTree().isExistsProjection();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.AbstractReactiveCassandraQuery#isLimiting()
-	 */
 	@Override
 	protected boolean isLimiting() {
 		return getTree().isLimiting();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.AbstractCassandraQuery#isModifyingQuery()
-	 */
 	@Override
 	protected boolean isModifyingQuery() {
 		return getTree().isDelete();

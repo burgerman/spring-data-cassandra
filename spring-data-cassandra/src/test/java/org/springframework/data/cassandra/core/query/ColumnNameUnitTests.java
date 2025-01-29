@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,18 +17,19 @@ package org.springframework.data.cassandra.core.query;
 
 import static org.assertj.core.api.Assertions.*;
 
-import org.junit.Test;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import org.junit.jupiter.api.Test;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Unit tests for {@link ColumnName}.
  *
  * @author Mark Paluch
  */
-public class ColumnNameUnitTests {
+class ColumnNameUnitTests {
 
 	@Test // DATACASS-343
-	public void stringBasedShouldEqual() {
+	void stringBasedShouldEqual() {
 
 		ColumnName first = ColumnName.from("foo");
 		ColumnName second = ColumnName.from("foo");
@@ -44,12 +45,12 @@ public class ColumnNameUnitTests {
 	}
 
 	@Test // DATACASS-343
-	public void cqlBasedShouldEqual() {
+	void cqlBasedShouldEqual() {
 
-		ColumnName first = ColumnName.from(CqlIdentifier.of("foo"));
-		ColumnName second = ColumnName.from(CqlIdentifier.of("Foo"));
+		ColumnName first = ColumnName.from(CqlIdentifier.fromCql("foo"));
+		ColumnName second = ColumnName.from(CqlIdentifier.fromCql("Foo"));
 
-		ColumnName different = ColumnName.from(CqlIdentifier.of("Foo", true));
+		ColumnName different = ColumnName.from(CqlIdentifier.fromInternal("bar"));
 
 		assertThat(first).isEqualTo(second);
 		assertThat(first.equals(second)).isTrue();
@@ -61,11 +62,11 @@ public class ColumnNameUnitTests {
 	}
 
 	@Test // DATACASS-343
-	public void stringAndCqlComparisonShouldEqual() {
+	void stringAndCqlComparisonShouldEqual() {
 
 		ColumnName first = ColumnName.from("foo");
-		ColumnName second = ColumnName.from(CqlIdentifier.of("foo"));
-		ColumnName different = ColumnName.from(CqlIdentifier.of("one", true));
+		ColumnName second = ColumnName.from(CqlIdentifier.fromCql("foo"));
+		ColumnName different = ColumnName.from(CqlIdentifier.fromCql("one"));
 
 		assertThat(first).isEqualTo(second);
 		assertThat(first.equals(second)).isTrue();

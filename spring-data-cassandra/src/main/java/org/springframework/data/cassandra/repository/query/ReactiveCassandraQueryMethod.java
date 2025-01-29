@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import org.springframework.data.projection.ProjectionFactory;
 import org.springframework.data.repository.core.RepositoryMetadata;
 import org.springframework.data.repository.util.ReactiveWrapperConverters;
 import org.springframework.data.repository.util.ReactiveWrappers;
+import org.springframework.data.util.Lazy;
 
 /**
  * Reactive specific implementation of {@link CassandraQueryMethod}.
@@ -34,7 +35,7 @@ import org.springframework.data.repository.util.ReactiveWrappers;
  */
 public class ReactiveCassandraQueryMethod extends CassandraQueryMethod {
 
-	private final Method method;
+	private final Lazy<Boolean> isCollectionQuery;
 
 	/**
 	 * Create a new {@link ReactiveCassandraQueryMethod} from the given {@link Method}.
@@ -49,23 +50,15 @@ public class ReactiveCassandraQueryMethod extends CassandraQueryMethod {
 
 		super(method, metadata, projectionFactory, mappingContext);
 
-		this.method = method;
+		this.isCollectionQuery = Lazy.of(() -> (!(isPageQuery() || isSliceQuery())
+				&& ReactiveWrappers.isMultiValueType(metadata.getReturnType(method).getType())) || super.isCollectionQuery());
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.repository.query.QueryMethod#isCollectionQuery()
-	 */
 	@Override
 	public boolean isCollectionQuery() {
-		return !(isPageQuery() || isSliceQuery()) && ReactiveWrappers.isMultiValueType(method.getReturnType());
+		return isCollectionQuery.get();
 	}
 
-	/*
-	 * All reactive query methods are streaming queries.
-	 * (non-Javadoc)
-	 * @see org.springframework.data.repository.query.QueryMethod#isStreamQuery()
-	 */
 	@Override
 	public boolean isStreamQuery() {
 		return true;

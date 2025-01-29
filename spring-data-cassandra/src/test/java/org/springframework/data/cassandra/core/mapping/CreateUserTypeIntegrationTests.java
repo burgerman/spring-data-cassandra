@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,93 +17,102 @@ package org.springframework.data.cassandra.core.mapping;
 
 import static org.assertj.core.api.Assertions.*;
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-
 import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.cassandra.CassandraManagedTypes;
 import org.springframework.data.cassandra.repository.support.AbstractSpringDataEmbeddedCassandraIntegrationTest;
 import org.springframework.data.cassandra.repository.support.IntegrationTestConfig;
-import org.springframework.data.convert.CustomConversions;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
-import com.datastax.driver.core.KeyspaceMetadata;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.UserType;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.metadata.schema.KeyspaceMetadata;
 
 /**
  * Integration tests for creation of UDT types through {@link CassandraMappingContext}.
  *
  * @author Mark Paluch
  */
-@RunWith(SpringJUnit4ClassRunner.class)
-@ContextConfiguration
+@SpringJUnitConfig
 public class CreateUserTypeIntegrationTests extends AbstractSpringDataEmbeddedCassandraIntegrationTest {
 
 	@Configuration
 	public static class Config extends IntegrationTestConfig {
 
+		@Override
 		@Bean
-		public CassandraMappingContext cassandraMapping() throws ClassNotFoundException {
-
-			CassandraMappingContext mappingContext = new CassandraMappingContext();
-
-			mappingContext.setInitialEntitySet(new HashSet<>(Arrays.asList(Car.class, Engine.class, Manufacturer.class)));
-
-			CustomConversions customConversions = customConversions();
-
-			mappingContext.setCustomConversions(customConversions);
-			mappingContext.setSimpleTypeHolder(customConversions.getSimpleTypeHolder());
-			mappingContext.setUserTypeResolver(new SimpleUserTypeResolver(cluster().getObject(), getKeyspaceName()));
-
-			return mappingContext;
+		public CassandraManagedTypes cassandraManagedTypes() {
+			return CassandraManagedTypes.fromIterable(Arrays.asList(Car.class, Engine.class, Manufacturer.class));
 		}
 	}
 
-	@Autowired Session session;
+	@Autowired CqlSession session;
 
 	@Test // DATACASS-424
-	public void shouldCreateUserTypes() {
+	void shouldCreateUserTypes() {
 
-		KeyspaceMetadata keyspace = session.getCluster().getMetadata().getKeyspace(session.getLoggedKeyspace());
+		KeyspaceMetadata keyspace = session.getMetadata().getKeyspace(session.getKeyspace().get()).get();
 
-		Collection<UserType> userTypes = keyspace.getUserTypes();
-
-		assertThat(userTypes).extracting("typeName").contains("engine", "manufacturer");
+		assertThat(keyspace.getUserDefinedTypes()).containsKeys(CqlIdentifier.fromCql("engine"),
+				CqlIdentifier.fromCql("manufacturer"));
 	}
 
 	@Table
-	@Getter
-	@AllArgsConstructor
 	private static class Car {
 
 		@Id String id;
 		Engine engine;
+
+		public Car(String id, Engine engine) {
+			this.id = id;
+			this.engine = engine;
+		}
+
+		public String getId() {
+			return this.id;
+		}
+
+		public Engine getEngine() {
+			return this.engine;
+		}
 	}
 
 	@UserDefinedType
-	@Getter
-	@AllArgsConstructor
 	private static class Engine {
 		Manufacturer manufacturer;
 		List<Manufacturer> alternative;
+
+		public Engine(Manufacturer manufacturer, List<Manufacturer> alternative) {
+			this.manufacturer = manufacturer;
+			this.alternative = alternative;
+		}
+
+		public Manufacturer getManufacturer() {
+			return this.manufacturer;
+		}
+
+		public List<Manufacturer> getAlternative() {
+			return this.alternative;
+		}
 	}
 
 	@UserDefinedType
-	@Getter
-	@AllArgsConstructor
 	private static class Manufacturer {
 		String name;
+
+		public Manufacturer(String name) {
+			this.name = name;
+		}
+
+		public String getName() {
+			return this.name;
+		}
 	}
 
 }

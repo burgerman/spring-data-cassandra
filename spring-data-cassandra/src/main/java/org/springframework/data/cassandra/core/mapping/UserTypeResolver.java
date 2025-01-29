@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,31 +15,40 @@
  */
 package org.springframework.data.cassandra.core.mapping;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.lang.Nullable;
 
-import com.datastax.driver.core.UserType;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.type.UserDefinedType;
 
 /**
- * Strategy interface to resolve {@link UserType} by {@link String name}.
+ * Strategy interface to resolve {@link UserDefinedType} by {@link String name}.
  *
  * @author Mark Paluch
- * @see com.datastax.driver.core.DataType
- * @see org.springframework.data.cassandra.core.cql.CqlIdentifier
+ * @see UserDefinedType
+ * @see CqlIdentifier
  * @since 1.5
  */
 @FunctionalInterface
 public interface UserTypeResolver {
 
 	/**
-	 * Resolve a {@link UserType} by {@link String name}.
+	 * Resolve a {@link UserDefinedType} by {@link String name}.
 	 *
-	 * @param typeName {@link String name} of the {@link UserType} to resolve; must not be {@literal null}.
-	 * @return the resolved {@link UserType} or {@literal null} if not found.
-	 * @see org.springframework.data.cassandra.core.cql.CqlIdentifier
-	 * @see com.datastax.driver.core.DataType
+	 * @param typeName {@link String name} of the {@link UserDefinedType} to resolve; must not be {@literal null}.
+	 * @return the resolved {@link UserDefinedType} or {@literal null} if not found.
 	 */
 	@Nullable
-	UserType resolveType(CqlIdentifier typeName);
+	UserDefinedType resolveType(CqlIdentifier typeName);
+
+	/**
+	 * Resolve a {@link UserDefinedType} by {@link String name}.
+	 *
+	 * @param typeName {@link String name} of the {@link UserDefinedType} to resolve; must not be {@literal null}.
+	 * @return the resolved {@link UserDefinedType} or {@literal null} if not found.
+	 */
+	@Nullable
+	default UserDefinedType resolveType(CqlIdentifier keyspace, CqlIdentifier typeName) {
+		return resolveType(typeName);
+	}
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,13 +21,13 @@ import java.util.Map;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.lang.Nullable;
 
-import com.datastax.driver.core.ResultSet;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
 
 /**
  * Convenient converter that can be used to convert a single-row-single-column, single-row-multi-column, or multi-row
- * {@link ResultSet} into the a value of a given type. The majority of the expected usage is to convert a
+ * {@link ResultSet} into the given value of a given type. The majority of the expected usage is to convert a
  * single-row-single-column result set into the target type.
- * <p/>
+ * <p>
  * The algorithm is:
  * <ul>
  * <li>if there is one row with one column, convert that value to this converter's type if possible or throw,</li>
@@ -35,7 +35,7 @@ import com.datastax.driver.core.ResultSet;
  * throw,</li>
  * <li>else convert the rows into this converter's type (since there are multiple rows) or throw.</li>
  * </ul>
- * <p/>
+ * <p>
  * If the converter throws due to the inability to convert a given {@link ResultSet}, it will throw an
  * {@link IllegalArgumentException}.
  *
@@ -66,7 +66,7 @@ public abstract class AbstractResultSetConverter<T> implements Converter<ResultS
 	}
 
 	/**
-	 * @return surrogate value if the {@link ResultSet} is {@link ResultSet#isExhausted() exhausted}.
+	 * @return surrogate value if the {@link ResultSet} is {@link ResultSet#isFullyFetched()}}.
 	 */
 	@Nullable
 	protected T getExhaustedResultSetValue() {
@@ -76,7 +76,7 @@ public abstract class AbstractResultSetConverter<T> implements Converter<ResultS
 	@Override
 	public T convert(ResultSet source) {
 
-		if (source.isExhausted()) {
+		if (source.getAvailableWithoutFetching() == 0 && source.isFullyFetched()) {
 			return getExhaustedResultSetValue();
 		}
 

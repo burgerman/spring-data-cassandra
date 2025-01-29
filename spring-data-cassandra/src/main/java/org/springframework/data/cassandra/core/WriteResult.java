@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,9 +21,9 @@ import java.util.List;
 
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.ExecutionInfo;
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
+import com.datastax.oss.driver.api.core.cql.ExecutionInfo;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
+import com.datastax.oss.driver.api.core.cql.Row;
 
 /**
  * The result of a write operation.
@@ -40,16 +40,16 @@ public class WriteResult {
 
 	private final List<Row> rows;
 
-	WriteResult(List<ExecutionInfo> executionInfo, boolean wasApplied, List<Row> rows) {
+	protected WriteResult(List<ExecutionInfo> executionInfo, boolean wasApplied, List<Row> rows) {
 
 		this.executionInfo = executionInfo;
 		this.wasApplied = wasApplied;
 		this.rows = rows;
 	}
 
-	WriteResult(ResultSet resultSet) {
+	protected WriteResult(ResultSet resultSet) {
 
-		this.executionInfo = resultSet.getAllExecutionInfo();
+		this.executionInfo = resultSet.getExecutionInfos();
 		this.wasApplied = resultSet.wasApplied();
 
 		int limit = resultSet.getAvailableWithoutFetching();

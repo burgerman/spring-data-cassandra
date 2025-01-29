@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,70 +15,47 @@
  */
 package org.springframework.data.cassandra.core.cql;
 
-import lombok.EqualsAndHashCode;
-
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.TimeUnit;
 
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
+import org.springframework.util.ObjectUtils;
 
-import com.datastax.driver.core.ConsistencyLevel;
-import com.datastax.driver.core.policies.RetryPolicy;
+import com.datastax.oss.driver.api.core.ConsistencyLevel;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
- * Cassandra Write Options are an extension to {@link QueryOptions} for write operations. {@link WriteOptions}allow
+ * Cassandra Write Options are an extension to {@link QueryOptions} for write operations. {@link WriteOptions} allow
  * tuning of various query options on a per-request level. Only options that are set are applied to queries.
  *
  * @author David Webb
  * @author Mark Paluch
  * @author Lukasz Antoniak
+ * @author Tomasz Lelek
+ * @author Sam Lightfoot
+ * @author Thomas Strau&szlig;
  * @see QueryOptions
  */
-@EqualsAndHashCode(callSuper = true)
 public class WriteOptions extends QueryOptions {
 
 	private static final WriteOptions EMPTY = new WriteOptionsBuilder().build();
 
-	private final Duration ttl;
+	private final @Nullable Duration ttl;
+
 	private final @Nullable Long timestamp;
 
-	/**
-	 * Creates new {@link WriteOptions} for the given {@link ConsistencyLevel} and {@link RetryPolicy}.
-	 *
-	 * @param consistencyLevel the consistency level, may be {@literal null}.
-	 * @param retryPolicy the retry policy, may be {@literal null}.
-	 * @deprecated since 2.0, use {@link #builder()} or {@link #empty()}.
-	 */
-	@Deprecated
-	public WriteOptions(@Nullable ConsistencyLevel consistencyLevel, @Nullable RetryPolicy retryPolicy) {
-		this(consistencyLevel, retryPolicy, null);
-	}
+	protected WriteOptions(@Nullable ConsistencyLevel consistencyLevel, ExecutionProfileResolver executionProfileResolver,
+			@Nullable Boolean idempotent, @Nullable CqlIdentifier keyspace, @Nullable Integer pageSize,
+			@Nullable CqlIdentifier routingKeyspace, @Nullable ByteBuffer routingKey,
+			@Nullable ConsistencyLevel serialConsistencyLevel, Duration timeout, @Nullable Duration ttl,
+			@Nullable Long timestamp,
+			@Nullable Boolean tracing) {
 
-	/**
-	 * Creates new {@link WriteOptions} for the given {@link ConsistencyLevel}, {@link RetryPolicy} and {@code ttl}.
-	 *
-	 * @param consistencyLevel the consistency level, may be {@literal null}.
-	 * @param retryPolicy the retry policy, may be {@literal null}.
-	 * @param ttl the ttl, may be {@literal null}.
-	 * @deprecated since 2.0, use {@link #builder()}.
-	 */
-	@Deprecated
-	public WriteOptions(@Nullable ConsistencyLevel consistencyLevel, @Nullable RetryPolicy retryPolicy,
-			@Nullable Integer ttl) {
-
-		super(consistencyLevel, retryPolicy);
-
-		this.ttl = ttl == null ? Duration.ofMillis(-1) : Duration.ofSeconds(ttl);
-		this.timestamp = null;
-	}
-
-	protected WriteOptions(@Nullable ConsistencyLevel consistencyLevel, @Nullable RetryPolicy retryPolicy,
-			@Nullable Boolean tracing, @Nullable Integer fetchSize, Duration readTimeout, Duration ttl,
-			@Nullable Long timestamp) {
-
-		super(consistencyLevel, retryPolicy, tracing, fetchSize, readTimeout);
+		super(consistencyLevel, executionProfileResolver, idempotent, keyspace, pageSize, routingKeyspace, routingKey,
+				serialConsistencyLevel, timeout, tracing);
 
 		this.ttl = ttl;
 		this.timestamp = timestamp;
@@ -116,8 +93,9 @@ public class WriteOptions extends QueryOptions {
 	}
 
 	/**
-	 * @return the time to live, if set.
+	 * @return the time to live, if set, otherwise {@literal null}.
 	 */
+	@Nullable
 	public Duration getTtl() {
 		return this.ttl;
 	}
@@ -131,16 +109,51 @@ public class WriteOptions extends QueryOptions {
 		return this.timestamp;
 	}
 
+	@Override
+	public boolean equals(@Nullable Object o) {
+
+		if (this == o) {
+			return true;
+		}
+
+		if (!(o instanceof WriteOptions)) {
+			return false;
+		}
+
+		if (!super.equals(o)) {
+			return false;
+		}
+
+		WriteOptions that = (WriteOptions) o;
+
+		if (!ObjectUtils.nullSafeEquals(ttl, that.ttl)) {
+			return false;
+		}
+
+		return ObjectUtils.nullSafeEquals(timestamp, that.timestamp);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = super.hashCode();
+		result = 31 * result + ObjectUtils.nullSafeHashCode(ttl);
+		result = 31 * result + ObjectUtils.nullSafeHashCode(timestamp);
+		return result;
+	}
+
 	/**
 	 * Builder for {@link WriteOptions}.
 	 *
 	 * @author Mark Paluch
 	 * @author Lukasz Antoniak
+	 * @author Thomas Strau&szlig;
+	 * @author Tudor Marc
 	 * @since 1.5
 	 */
 	public static class WriteOptionsBuilder extends QueryOptionsBuilder {
 
 		protected Duration ttl = Duration.ofMillis(-1);
+
 		protected Long timestamp = null;
 
 		protected WriteOptionsBuilder() {}
@@ -153,49 +166,62 @@ public class WriteOptions extends QueryOptions {
 			this.timestamp = writeOptions.timestamp;
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.cql.QueryOptions.QueryOptionsBuilder#consistencyLevel(com.datastax.driver.core.ConsistencyLevel)
-		 */
 		@Override
-		public WriteOptionsBuilder consistencyLevel(com.datastax.driver.core.ConsistencyLevel consistencyLevel) {
+		public WriteOptionsBuilder consistencyLevel(ConsistencyLevel consistencyLevel) {
 
 			super.consistencyLevel(consistencyLevel);
 			return this;
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.cql.QueryOptions.QueryOptionsBuilder#retryPolicy(org.springframework.data.cassandra.core.cql.RetryPolicy)
-		 */
 		@Override
-		public WriteOptionsBuilder retryPolicy(com.datastax.driver.core.policies.RetryPolicy driverRetryPolicy) {
-
-			super.retryPolicy(driverRetryPolicy);
+		public WriteOptionsBuilder executionProfile(String profileName) {
+			super.executionProfile(profileName);
 			return this;
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.cql.QueryOptions.QueryOptionsBuilder#fetchSize(int)
-		 */
 		@Override
-		public WriteOptionsBuilder fetchSize(int fetchSize) {
-
-			super.fetchSize(fetchSize);
+		public WriteOptionsBuilder executionProfile(ExecutionProfileResolver executionProfileResolver) {
+			super.executionProfile(executionProfileResolver);
 			return this;
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.cql.QueryOptions.QueryOptionsBuilder#readTimeout(long)
-		 */
 		@Override
+		@Deprecated
+		public WriteOptionsBuilder fetchSize(int pageSize) {
+
+			super.fetchSize(pageSize);
+			return this;
+		}
+
+		@Override
+		public WriteOptionsBuilder idempotent(boolean idempotent) {
+
+			super.idempotent(idempotent);
+			return this;
+		}
+
+		@Override
+		public WriteOptionsBuilder keyspace(CqlIdentifier keyspace) {
+
+			super.keyspace(keyspace);
+			return this;
+		}
+
+		@Override
+		public WriteOptionsBuilder pageSize(int pageSize) {
+
+			super.pageSize(pageSize);
+			return this;
+		}
+
+		@Override
+		@Deprecated
 		public WriteOptionsBuilder readTimeout(long readTimeout) {
 
 			super.readTimeout(readTimeout);
 			return this;
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.cql.QueryOptions.QueryOptionsBuilder#readTimeout(long, java.util.concurrent.TimeUnit)
-		 */
 		@Override
 		@Deprecated
 		public WriteOptionsBuilder readTimeout(long readTimeout, TimeUnit timeUnit) {
@@ -204,19 +230,33 @@ public class WriteOptions extends QueryOptions {
 			return this;
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.cql.QueryOptions.QueryOptionsBuilder#readTimeout(java.time.Duration)
-		 */
 		@Override
-		public WriteOptionsBuilder readTimeout(Duration readTimeout) {
+		public WriteOptionsBuilder routingKeyspace(CqlIdentifier routingKeyspace) {
 
-			super.readTimeout(readTimeout);
+			super.routingKeyspace(routingKeyspace);
 			return this;
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.cql.QueryOptions.QueryOptionsBuilder#tracing(boolean)
-		 */
+		@Override
+		public WriteOptionsBuilder routingKey(ByteBuffer routingKey) {
+
+			super.routingKey(routingKey);
+			return this;
+		}
+
+		@Override
+		public WriteOptionsBuilder serialConsistencyLevel(ConsistencyLevel consistencyLevel) {
+			super.serialConsistencyLevel(consistencyLevel);
+			return this;
+		}
+
+		@Override
+		public WriteOptionsBuilder timeout(Duration timeout) {
+
+			super.timeout(timeout);
+			return this;
+		}
+
 		@Override
 		public WriteOptionsBuilder tracing(boolean tracing) {
 
@@ -224,9 +264,6 @@ public class WriteOptions extends QueryOptions {
 			return this;
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.cql.QueryOptions.QueryOptionsBuilder#withTracing()
-		 */
 		@Override
 		public WriteOptionsBuilder withTracing() {
 
@@ -241,12 +278,7 @@ public class WriteOptions extends QueryOptions {
 		 * @return {@code this} {@link WriteOptionsBuilder}
 		 */
 		public WriteOptionsBuilder ttl(int ttl) {
-
-			Assert.isTrue(ttl >= 0, "TTL must be greater than equal to zero");
-
-			this.ttl = Duration.ofSeconds(ttl);
-
-			return this;
+			return ttl(Duration.ofSeconds(ttl));
 		}
 
 		/**
@@ -305,8 +337,9 @@ public class WriteOptions extends QueryOptions {
 		 * @return a new {@link WriteOptions} with the configured values
 		 */
 		public WriteOptions build() {
-			return new WriteOptions(this.consistencyLevel, this.retryPolicy, this.tracing, this.fetchSize, this.readTimeout,
-					this.ttl, this.timestamp);
+			return new WriteOptions(this.consistencyLevel, this.executionProfileResolver, this.idempotent, this.keyspace,
+					this.pageSize, this.routingKeyspace, this.routingKey, this.serialConsistencyLevel, this.timeout, this.ttl,
+					this.timestamp, this.tracing);
 		}
 	}
 }

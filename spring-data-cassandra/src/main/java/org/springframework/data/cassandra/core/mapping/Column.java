@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 /*
- * Copyright 2010-2019 the original author or authors.
+ * Copyright 2010-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,10 +41,12 @@ import java.lang.annotation.Target;
  *
  * @author Alex Shvid
  * @author Matthew T. Adams
+ * @author Mark Paluch
+ * @author Aleksei Zotov
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
-@Target(value = { ElementType.ANNOTATION_TYPE, ElementType.FIELD, ElementType.METHOD })
+@Target(value = { ElementType.ANNOTATION_TYPE, ElementType.FIELD, ElementType.METHOD, ElementType.PARAMETER })
 public @interface Column {
 
 	/**
@@ -53,7 +55,19 @@ public @interface Column {
 	String value() default "";
 
 	/**
-	 * Whether to cause the column name to be force-quoted.
+	 * Whether the column is {@code static}. Default is {@literal false}. Used primarily for schema creation.
+	 *
+	 * @since 3.2
 	 */
+	boolean isStatic() default false;
+
+	/**
+	 * Whether to cause the column name to be force-quoted.
+	 *
+	 * @deprecated since 3.0. The column name gets converted into {@link com.datastax.oss.driver.api.core.CqlIdentifier}
+	 *             hence it no longer requires an indication whether the name should be quoted.
+	 * @see com.datastax.oss.driver.api.core.CqlIdentifier#fromInternal(String)
+	 */
+	@Deprecated
 	boolean forceQuote() default false;
 }

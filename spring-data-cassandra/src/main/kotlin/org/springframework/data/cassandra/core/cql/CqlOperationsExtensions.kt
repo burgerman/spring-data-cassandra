@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,10 @@
  */
 package org.springframework.data.cassandra.core.cql
 
-import com.datastax.driver.core.ResultSet
-import com.datastax.driver.core.Row
-import com.datastax.driver.core.Statement
+import com.datastax.oss.driver.api.core.cql.ResultSet
+import com.datastax.oss.driver.api.core.cql.Row
+import com.datastax.oss.driver.api.core.cql.Statement
+import java.util.stream.Stream
 import kotlin.reflect.KClass
 
 /**
@@ -45,31 +46,31 @@ inline fun <reified T : Any> CqlOperations.queryForObject(cql: String): T? =
  */
 @Deprecated("Since 2.2, use the reified variant", replaceWith = ReplaceWith("queryForObject<T>(cql, args)"))
 fun <T : Any> CqlOperations.queryForObject(cql: String, entityClass: KClass<T>, vararg args: Any): T? =
-		queryForObject(cql, entityClass.java, args)
+		queryForObject(cql, entityClass.java, *args)
 
 /**
  * Extension for [CqlOperations.queryForObject] leveraging reified type parameters.
  */
 inline fun <reified T : Any> CqlOperations.queryForObject(cql: String, vararg args: Any): T? =
-		queryForObject(cql, T::class.java, args)
+	queryForObject(cql, T::class.java, *args)
 
 /**
  * Extension for [CqlOperations.queryForObject] leveraging reified type parameters.
  */
 fun <T : Any> CqlOperations.queryForObject(cql: String, vararg args: Any, function: (Row, Int) -> T): T? =
-		queryForObject(cql, function, args)
+	queryForObject(cql, function, *args)
 
 /**
  * Extension for [CqlOperations.queryForObject] providing a [KClass] based variant.
  */
 @Deprecated("Since 2.2, use the reified variant", replaceWith = ReplaceWith("queryForObject<T>(statement)"))
-fun <T : Any> CqlOperations.queryForObject(statement: Statement, entityClass: KClass<T>): T? =
+fun <T : Any> CqlOperations.queryForObject(statement: Statement<*>, entityClass: KClass<T>): T? =
 		queryForObject(statement, entityClass.java)
 
 /**
  * Extension for [CqlOperations.queryForObject] leveraging reified type parameters.
  */
-inline fun <reified T : Any> CqlOperations.queryForObject(statement: Statement): T? =
+inline fun <reified T : Any> CqlOperations.queryForObject(statement: Statement<*>): T? =
 		queryForObject(statement, T::class.java)
 
 /**
@@ -84,20 +85,20 @@ inline fun <reified T : Any> CqlOperations.queryForList(cql: String): List<T> =
  */
 @Suppress("EXTENSION_SHADOWED_BY_MEMBER")
 inline fun <reified T : Any> CqlOperations.queryForList(cql: String, vararg args: Any): List<T> =
-		queryForList(cql, T::class.java, args)
+	queryForList(cql, T::class.java, *args)
 
 /**
  * Extension for [CqlOperations.queryForList] providing a [KClass] based variant.
  */
 @Deprecated("Since 2.2, use the reified variant", replaceWith = ReplaceWith("queryForList<T>(statement)"))
-fun <T : Any> CqlOperations.queryForList(statement: Statement, entityClass: KClass<T>): List<T> =
+fun <T : Any> CqlOperations.queryForList(statement: Statement<*>, entityClass: KClass<T>): List<T> =
 		queryForList(statement, entityClass.java)
 
 /**
  * Extension for [CqlOperations.queryForList] leveraging reified type parameters.
  */
 @Suppress("EXTENSION_SHADOWED_BY_MEMBER")
-inline fun <reified T : Any> CqlOperations.queryForList(statement: Statement): List<T> =
+inline fun <reified T : Any> CqlOperations.queryForList(statement: Statement<*>): List<T> =
 		queryForList(statement, T::class.java)
 
 /**
@@ -120,3 +121,10 @@ fun CqlOperations.query(cql: String, vararg args: Any, function: (Row) -> Unit):
  */
 fun <T : Any> CqlOperations.query(cql: String, vararg args: Any, function: (Row, Int) -> T): List<T> =
 		query(cql, RowMapper { row, i -> function(row, i) }, *args)
+
+/**
+ * Extension for [queryForStream.query] providing a RowMapper-like function
+ * variant: `query("...", arg1, argN){ row, i -> }`.
+ */
+fun <T : Any> CqlOperations.queryForStream(cql: String, vararg args: Any, function: (Row, Int) -> T): Stream<T> =
+		queryForStream(cql, RowMapper { row, i -> function(row, i) }, *args)

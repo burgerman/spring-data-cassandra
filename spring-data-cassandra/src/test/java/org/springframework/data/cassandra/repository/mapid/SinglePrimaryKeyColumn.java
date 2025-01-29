@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,18 +15,16 @@
  */
 package org.springframework.data.cassandra.repository.mapid;
 
-import lombok.EqualsAndHashCode;
-
 import org.springframework.data.cassandra.core.cql.PrimaryKeyType;
 import org.springframework.data.cassandra.core.mapping.Column;
 import org.springframework.data.cassandra.core.mapping.PrimaryKeyColumn;
 import org.springframework.data.cassandra.core.mapping.Table;
+import org.springframework.util.ObjectUtils;
 
 /**
  * @author Matthew T. Adams
  */
 @Table
-@EqualsAndHashCode
 public class SinglePrimaryKeyColumn {
 
 	@PrimaryKeyColumn(ordinal = 0, type = PrimaryKeyType.PARTITIONED) String key;
@@ -41,7 +39,7 @@ public class SinglePrimaryKeyColumn {
 		return key;
 	}
 
-	public void setKey(String key) {
+	private void setKey(String key) {
 		this.key = key;
 	}
 
@@ -51,5 +49,27 @@ public class SinglePrimaryKeyColumn {
 
 	public void setValue(String value) {
 		this.value = value;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o)
+			return true;
+		if (o == null || getClass() != o.getClass())
+			return false;
+
+		SinglePrimaryKeyColumn that = (SinglePrimaryKeyColumn) o;
+
+		if (!ObjectUtils.nullSafeEquals(key, that.key)) {
+			return false;
+		}
+		return ObjectUtils.nullSafeEquals(value, that.value);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = ObjectUtils.nullSafeHashCode(key);
+		result = 31 * result + ObjectUtils.nullSafeHashCode(value);
+		return result;
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,51 +15,89 @@
  */
 package org.springframework.data.cassandra.core.mapping;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import java.util.function.Supplier;
+
+import org.springframework.data.util.Lazy;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.Cluster;
-import com.datastax.driver.core.KeyspaceMetadata;
-import com.datastax.driver.core.UserType;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.metadata.Metadata;
+import com.datastax.oss.driver.api.core.type.UserDefinedType;
 
 /**
- * Default implementation of {@link UserTypeResolver} that resolves {@link UserType} by their name from
- * {@link Cluster#getMetadata()}.
+ * Default implementation of {@link UserTypeResolver} that resolves a {@link UserDefinedType} by its name from
+ * {@link Metadata}.
  *
  * @author Mark Paluch
  * @since 1.5
  */
 public class SimpleUserTypeResolver implements UserTypeResolver {
 
-	private final String keyspaceName;
+	private final Supplier<Metadata> metadataSupplier;
 
-	private final Cluster cluster;
+	private final Supplier<CqlIdentifier> keyspaceName;
 
 	/**
 	 * Create a new {@link SimpleUserTypeResolver}.
 	 *
-	 * @param cluster must not be {@literal null}.
-	 * @param keyspaceName must not be empty or {@literal null}.
+	 * @param session must not be {@literal null}.
+	 * @since 3.0
 	 */
-	public SimpleUserTypeResolver(Cluster cluster, String keyspaceName) {
+	public SimpleUserTypeResolver(CqlSession session) {
 
-		Assert.notNull(cluster, "Cluster must not be null");
-		Assert.hasText(keyspaceName, "Keyspace must not be null or empty");
+		Assert.notNull(session, "Session must not be null");
 
-		this.keyspaceName = keyspaceName;
-		this.cluster = cluster;
+		this.metadataSupplier = session::getMetadata;
+		this.keyspaceName = Lazy.of(() -> session.getKeyspace().orElse(CqlIdentifier.fromCql("system")));
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.UserTypeResolver#resolveType(org.springframework.data.cassandra.core.cql.CqlIdentifier)
+	/**
+	 * Create a new {@link SimpleUserTypeResolver}.
+	 *
+	 * @param session must not be {@literal null}.
+	 * @param keyspaceName must not be {@literal null}.
+	 * @since 3.0
 	 */
+	public SimpleUserTypeResolver(CqlSession session, CqlIdentifier keyspaceName) {
+
+		Assert.notNull(session, "Session must not be null");
+		Assert.notNull(keyspaceName, "Keyspace must not be null");
+
+		this.metadataSupplier = session::getMetadata;
+		this.keyspaceName = Lazy.of(keyspaceName);
+	}
+
+	/**
+	 * Create a new {@link SimpleUserTypeResolver}.
+	 *
+	 * @param metadataSupplier must not be {@literal null}.
+	 * @param keyspaceName must not be {@literal null}.
+	 * @since 3.2.2
+	 */
+	public SimpleUserTypeResolver(Supplier<Metadata> metadataSupplier, CqlIdentifier keyspaceName) {
+
+		Assert.notNull(metadataSupplier, "Metadata supplier must not be null");
+		Assert.notNull(keyspaceName, "Keyspace must not be null");
+
+		this.metadataSupplier = metadataSupplier;
+		this.keyspaceName = Lazy.of(keyspaceName);
+	}
+
 	@Nullable
 	@Override
-	public UserType resolveType(CqlIdentifier typeName) {
+	public UserDefinedType resolveType(CqlIdentifier typeName) {
+		return metadataSupplier.get().getKeyspace(keyspaceName.get()) //
+				.flatMap(it -> it.getUserDefinedType(typeName)) //
+				.orElse(null);
+	}
 
-		KeyspaceMetadata keyspace = cluster.getMetadata().getKeyspace(keyspaceName);
-
-		return keyspace.getUserType(typeName.toCql());
+	@Nullable
+	@Override
+	public UserDefinedType resolveType(CqlIdentifier keyspace, CqlIdentifier typeName) {
+		return metadataSupplier.get().getKeyspace(keyspace) //
+				.flatMap(it -> it.getUserDefinedType(typeName)) //
+				.orElse(null);
 	}
 }

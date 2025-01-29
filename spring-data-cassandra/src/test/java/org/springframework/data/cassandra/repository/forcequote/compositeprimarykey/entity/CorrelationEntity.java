@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import org.springframework.data.cassandra.core.mapping.PrimaryKey;
 import org.springframework.data.cassandra.core.mapping.PrimaryKeyClass;
 import org.springframework.data.cassandra.core.mapping.PrimaryKeyColumn;
 import org.springframework.data.cassandra.core.mapping.Table;
+import org.springframework.util.ObjectUtils;
 
 /**
  * @author Matthew T. Adams
@@ -69,7 +70,7 @@ public class CorrelationEntity {
 			this.ts = ts;
 		}
 
-		public IdentityEntity(String type, String value, String correlatedType, Date ts, String correlatedValue) {
+		private IdentityEntity(String type, String value, String correlatedType, Date ts, String correlatedValue) {
 			this.type = type;
 			this.value = value;
 			this.correlatedType = correlatedType;
@@ -121,29 +122,33 @@ public class CorrelationEntity {
 		public boolean equals(Object o) {
 			if (this == o)
 				return true;
-			if (!(o instanceof IdentityEntity))
+			if (o == null || getClass() != o.getClass())
 				return false;
 
 			IdentityEntity that = (IdentityEntity) o;
 
-			if (correlatedType != null ? !correlatedType.equals(that.correlatedType) : that.correlatedType != null)
+			if (!ObjectUtils.nullSafeEquals(type, that.type)) {
 				return false;
-			if (correlatedValue != null ? !correlatedValue.equals(that.correlatedValue) : that.correlatedValue != null)
+			}
+			if (!ObjectUtils.nullSafeEquals(value, that.value)) {
 				return false;
-			if (ts != null ? !ts.equals(that.ts) : that.ts != null)
+			}
+			if (!ObjectUtils.nullSafeEquals(correlatedType, that.correlatedType)) {
 				return false;
-			if (!type.equals(that.type))
+			}
+			if (!ObjectUtils.nullSafeEquals(ts, that.ts)) {
 				return false;
-			return value.equals(that.value);
+			}
+			return ObjectUtils.nullSafeEquals(correlatedValue, that.correlatedValue);
 		}
 
 		@Override
 		public int hashCode() {
-			int result = type.hashCode();
-			result = 31 * result + value.hashCode();
-			result = 31 * result + (correlatedType != null ? correlatedType.hashCode() : 0);
-			result = 31 * result + (ts != null ? ts.hashCode() : 0);
-			result = 31 * result + (correlatedValue != null ? correlatedValue.hashCode() : 0);
+			int result = ObjectUtils.nullSafeHashCode(type);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(value);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(correlatedType);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(ts);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(correlatedValue);
 			return result;
 		}
 	}
@@ -185,20 +190,21 @@ public class CorrelationEntity {
 	public boolean equals(Object o) {
 		if (this == o)
 			return true;
-		if (!(o instanceof CorrelationEntity))
+		if (o == null || getClass() != o.getClass())
 			return false;
 
 		CorrelationEntity that = (CorrelationEntity) o;
 
-		if (extra != null ? !extra.equals(that.extra) : that.extra != null)
+		if (!ObjectUtils.nullSafeEquals(identityEntity, that.identityEntity)) {
 			return false;
-		return identityEntity.equals(that.identityEntity);
+		}
+		return ObjectUtils.nullSafeEquals(extra, that.extra);
 	}
 
 	@Override
 	public int hashCode() {
-		int result = identityEntity.hashCode();
-		result = 31 * result + (extra != null ? extra.hashCode() : 0);
+		int result = ObjectUtils.nullSafeHashCode(identityEntity);
+		result = 31 * result + ObjectUtils.nullSafeHashCode(extra);
 		return result;
 	}
 }

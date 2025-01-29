@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,15 +19,12 @@ import static org.assertj.core.api.Assertions.*;
 import static org.springframework.data.cassandra.core.query.Criteria.*;
 import static org.springframework.data.cassandra.core.query.Query.*;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.data.annotation.Id;
@@ -38,24 +35,25 @@ import org.springframework.data.cassandra.core.mapping.Indexed;
 import org.springframework.data.cassandra.core.mapping.Table;
 import org.springframework.data.cassandra.core.query.Query;
 import org.springframework.data.cassandra.repository.support.SchemaTestUtils;
-import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTest;
+import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTests;
+import org.springframework.util.ObjectUtils;
 
 /**
  * Integration tests for {@link ExecutableSelectOperationSupport}.
  *
  * @author Mark Paluch
  */
-public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeyspaceCreatingIntegrationTest {
+class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeyspaceCreatingIntegrationTests {
 
-	CassandraAdminTemplate admin;
+	private CassandraAdminTemplate admin;
 
-	ReactiveCassandraTemplate template;
+	private ReactiveCassandraTemplate template;
 
-	Person han;
-	Person luke;
+	private Person han;
+	private Person luke;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		admin = new CassandraAdminTemplate(session, new MappingCassandraConverter());
 		template = new ReactiveCassandraTemplate(new DefaultBridgedReactiveSession(session));
@@ -85,33 +83,31 @@ public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-485
-	public void domainTypeIsRequired() {
+	void domainTypeIsRequired() {
 		assertThatIllegalArgumentException().isThrownBy(() -> this.template.query(null));
 	}
 
 	@Test // DATACASS-485
-	public void returnTypeIsRequiredOnSet() {
+	void returnTypeIsRequiredOnSet() {
 		assertThatIllegalArgumentException().isThrownBy(() -> this.template.query(Person.class).as(null));
 	}
 
 	@Test // DATACASS-485
-	public void tableIsRequiredOnSet() {
+	void tableIsRequiredOnSet() {
 		assertThatIllegalArgumentException().isThrownBy(() -> this.template.query(Person.class).inTable((String) null));
 	}
 
 	@Test // DATACASS-485
-	public void findAll() {
+	void findAll() {
 
 		Flux<Person> result = this.template.query(Person.class).all();
 
 		result.collectList().as(StepVerifier::create)
-				.assertNext(actual ->
-			assertThat(actual).containsExactlyInAnyOrder(han, luke)
-		).verifyComplete();
+				.assertNext(actual -> assertThat(actual).containsExactlyInAnyOrder(han, luke)).verifyComplete();
 	}
 
 	@Test // DATACASS-485
-	public void findAllWithCollection() {
+	void findAllWithCollection() {
 
 		Flux<Human> result = this.template.query(Human.class).inTable("person").all();
 
@@ -119,29 +115,26 @@ public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-485
-	public void findAllWithProjection() {
+	void findAllWithProjection() {
 
 		Flux<Jedi> result = this.template.query(Person.class).as(Jedi.class).all();
 
 		result.collectList().as(StepVerifier::create)
-				.assertNext(actual ->
-			assertThat(actual).hasOnlyElementsOfType(Jedi.class).hasSize(2)
-		).verifyComplete();
+				.assertNext(actual -> assertThat(actual).hasOnlyElementsOfType(Jedi.class).hasSize(2)).verifyComplete();
 	}
 
 	@Test // DATACASS-485
-	public void findByReturningAllValuesAsClosedInterfaceProjection() {
+	void findByReturningAllValuesAsClosedInterfaceProjection() {
 
 		Flux<PersonProjection> result = this.template.query(Person.class).as(PersonProjection.class).all();
 
 		result.collectList().as(StepVerifier::create)
-				.assertNext(actual ->
-			assertThat(actual).hasOnlyElementsOfType(PersonProjection.class).hasSize(2)
-		).verifyComplete();
+				.assertNext(actual -> assertThat(actual).hasOnlyElementsOfType(PersonProjection.class).hasSize(2))
+				.verifyComplete();
 	}
 
 	@Test // DATACASS-485
-	public void findAllBy() {
+	void findAllBy() {
 
 		Flux<Person> result = this.template.query(Person.class).matching(queryLuke()).all();
 
@@ -149,18 +142,16 @@ public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-485
-	public void findAllByWithCollectionUsingMappingInformation() {
+	void findAllByWithCollectionUsingMappingInformation() {
 
 		Flux<Jedi> result = this.template.query(Jedi.class).inTable("person").all();
 
 		result.collectList().as(StepVerifier::create)
-				.assertNext(actual ->
-			assertThat(actual).isNotEmpty().hasOnlyElementsOfType(Jedi.class)
-		).verifyComplete();
+				.assertNext(actual -> assertThat(actual).isNotEmpty().hasOnlyElementsOfType(Jedi.class)).verifyComplete();
 	}
 
 	@Test // DATACASS-485
-	public void findAllByWithCollection() {
+	void findAllByWithCollection() {
 
 		Flux<Human> result = this.template.query(Human.class).inTable("person").matching(queryLuke()).all();
 
@@ -168,18 +159,16 @@ public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-485
-	public void findAllByWithProjection() {
+	void findAllByWithProjection() {
 
 		Flux<Jedi> result = this.template.query(Person.class).as(Jedi.class).all();
 
 		result.collectList().as(StepVerifier::create)
-				.assertNext(actual ->
-			assertThat(actual).isNotEmpty().hasOnlyElementsOfType(Jedi.class)
-		).verifyComplete();
+				.assertNext(actual -> assertThat(actual).isNotEmpty().hasOnlyElementsOfType(Jedi.class)).verifyComplete();
 	}
 
 	@Test // DATACASS-485
-	public void findBy() {
+	void findBy() {
 
 		Mono<Person> result = this.template.query(Person.class).matching(queryLuke()).one();
 
@@ -187,7 +176,7 @@ public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-485
-	public void findByNoMatch() {
+	void findByNoMatch() {
 
 		Mono<Person> result = this.template.query(Person.class).matching(querySpock()).one();
 
@@ -195,7 +184,7 @@ public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-485
-	public void findByTooManyResults() {
+	void findByTooManyResults() {
 
 		Mono<Person> result = this.template.query(Person.class).one();
 
@@ -203,7 +192,7 @@ public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-485
-	public void findByReturningFirst() {
+	void findByReturningFirst() {
 
 		Mono<Person> result = this.template.query(Person.class).matching(queryLuke()).first();
 
@@ -211,23 +200,18 @@ public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-485
-	public void findByReturningFirstForManyResults() {
+	void findByReturningFirstForManyResults() {
 
 		Mono<Person> result = this.template.query(Person.class).first();
 
-		result.as(StepVerifier::create).assertNext(actual ->
-			assertThat(actual).isIn(han, luke)
-		).verifyComplete();
+		result.as(StepVerifier::create).assertNext(actual -> assertThat(actual).isIn(han, luke)).verifyComplete();
 	}
 
 	@Test // DATACASS-485
-	public void findByReturningFirstAsClosedInterfaceProjection() {
+	void findByReturningFirstAsClosedInterfaceProjection() {
 
-		Mono<PersonProjection> result = this.template
-				.query(Person.class)
-				.as(PersonProjection.class)
-				.matching(query(where("firstname").is("han")).withAllowFiltering())
-				.first();
+		Mono<PersonProjection> result = this.template.query(Person.class).as(PersonProjection.class)
+				.matching(query(where("firstname").is("han")).withAllowFiltering()).first();
 
 		result.as(StepVerifier::create).assertNext(actual -> {
 			assertThat(actual).isInstanceOf(PersonProjection.class);
@@ -236,13 +220,10 @@ public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-485
-	public void findByReturningFirstAsOpenInterfaceProjection() {
+	void findByReturningFirstAsOpenInterfaceProjection() {
 
-		Mono<PersonSpELProjection> result = this.template
-				.query(Person.class)
-				.as(PersonSpELProjection.class)
-				.matching(query(where("firstname").is("han")).withAllowFiltering())
-				.first();
+		Mono<PersonSpELProjection> result = this.template.query(Person.class).as(PersonSpELProjection.class)
+				.matching(query(where("firstname").is("han")).withAllowFiltering()).first();
 
 		result.as(StepVerifier::create).assertNext(actual -> {
 			assertThat(actual).isInstanceOf(PersonSpELProjection.class);
@@ -251,7 +232,7 @@ public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-485
-	public void countShouldReturnNumberOfElementsInCollectionWhenNoQueryPresent() {
+	void countShouldReturnNumberOfElementsInCollectionWhenNoQueryPresent() {
 
 		Mono<Long> count = this.template.query(Person.class).count();
 
@@ -259,18 +240,16 @@ public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-485
-	public void countShouldReturnNrOfElementsMatchingQuery() {
+	void countShouldReturnNrOfElementsMatchingQuery() {
 
-		Mono<Long> count = this.template
-				.query(Person.class)
-				.matching(query(where("firstname").is(luke.getFirstname())).withAllowFiltering())
-				.count();
+		Mono<Long> count = this.template.query(Person.class)
+				.matching(query(where("firstname").is(luke.getFirstname())).withAllowFiltering()).count();
 
 		count.as(StepVerifier::create).expectNext(1L).verifyComplete();
 	}
 
 	@Test // DATACASS-485
-	public void existsShouldReturnTrueIfAtLeastOneElementExistsInCollection() {
+	void existsShouldReturnTrueIfAtLeastOneElementExistsInCollection() {
 
 		Mono<Boolean> exists = this.template.query(Person.class).exists();
 
@@ -278,7 +257,7 @@ public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-485
-	public void existsShouldReturnFalseIfNoElementExistsInCollection() {
+	void existsShouldReturnFalseIfNoElementExistsInCollection() {
 
 		this.template.truncate(Person.class).as(StepVerifier::create).verifyComplete();
 
@@ -288,7 +267,7 @@ public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-485
-	public void existsShouldReturnTrueIfAtLeastOneElementMatchesQuery() {
+	void existsShouldReturnTrueIfAtLeastOneElementMatchesQuery() {
 
 		Mono<Boolean> exists = this.template.query(Person.class).matching(queryLuke()).exists();
 
@@ -296,7 +275,7 @@ public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-485
-	public void existsShouldReturnFalseWhenNoElementMatchesQuery() {
+	void existsShouldReturnFalseWhenNoElementMatchesQuery() {
 
 		Mono<Boolean> exists = this.template.query(Person.class).matching(querySpock()).exists();
 
@@ -304,14 +283,12 @@ public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-485
-	public void returnsTargetObjectDirectlyIfProjectionInterfaceIsImplemented() {
+	void returnsTargetObjectDirectlyIfProjectionInterfaceIsImplemented() {
 
 		Flux<Contact> result = this.template.query(Person.class).as(Contact.class).all();
 
 		result.collectList().as(StepVerifier::create)
-				.assertNext(actual ->
-			assertThat(actual).allMatch(it -> it instanceof Person)
-		).verifyComplete();
+				.assertNext(actual -> assertThat(actual).allMatch(it -> it instanceof Person)).verifyComplete();
 	}
 
 	private static Query queryLuke() {
@@ -322,17 +299,68 @@ public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeys
 		return query(where("firstname").is("spock")).withAllowFiltering();
 	}
 
-	interface Contact {}
+	private interface Contact {}
 
-	@Data
 	@Table
 	static class Person implements Contact {
 		@Id String id;
 		@Indexed String firstname;
 		@Indexed String lastname;
+
+		public Person() {}
+
+		public String getId() {
+			return this.id;
+		}
+
+		public String getFirstname() {
+			return this.firstname;
+		}
+
+		public String getLastname() {
+			return this.lastname;
+		}
+
+		public void setId(String id) {
+			this.id = id;
+		}
+
+		public void setFirstname(String firstname) {
+			this.firstname = firstname;
+		}
+
+		public void setLastname(String lastname) {
+			this.lastname = lastname;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o)
+				return true;
+			if (o == null || getClass() != o.getClass())
+				return false;
+
+			Person person = (Person) o;
+
+			if (!ObjectUtils.nullSafeEquals(id, person.id)) {
+				return false;
+			}
+			if (!ObjectUtils.nullSafeEquals(firstname, person.firstname)) {
+				return false;
+			}
+			return ObjectUtils.nullSafeEquals(lastname, person.lastname);
+		}
+
+		@Override
+		public int hashCode() {
+			int result = ObjectUtils.nullSafeHashCode(id);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(firstname);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(lastname);
+			return result;
+		}
 	}
 
-	interface PersonProjection {
+	private interface PersonProjection {
 		String getFirstname();
 	}
 
@@ -341,21 +369,27 @@ public class ReactiveSelectOperationSupportIntegrationTests extends AbstractKeys
 		String getName();
 	}
 
-	@Data
 	static class Human {
 		@Id String id;
+
+		public Human() {}
+
+		public String getId() {
+			return this.id;
+		}
+
+		public void setId(String id) {
+			this.id = id;
+		}
 	}
 
-	@Data
-	@AllArgsConstructor
-	@NoArgsConstructor
-	static class Jedi {
-		@Column("firstname") String name;
+	record Jedi(@Column("firstname") String name) {
+
 	}
 
-	@Data
 	static class Sith {
 		String rank;
+
 	}
 
 	interface PlanetProjection {

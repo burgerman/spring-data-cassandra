@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,10 @@ import static org.springframework.data.cassandra.core.cql.keyspace.CqlStringUtil
 import java.lang.reflect.Constructor;
 import java.util.Collection;
 import java.util.Map;
+import java.util.function.Consumer;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
@@ -31,6 +34,8 @@ import org.springframework.util.Assert;
  * @author Mark Paluch
  */
 public class DefaultOption implements Option {
+
+	protected final Log log = LogFactory.getLog(getClass());
 
 	private final String name;
 
@@ -63,7 +68,7 @@ public class DefaultOption implements Option {
 	@SuppressWarnings({ "unchecked", "rawtypes" })
 	public boolean isCoerceable(Object value) {
 
-		if (getType().equals(Void.class)) {
+		if (getType().equals(Void.class) || getType().equals(String.class)) {
 			return true;
 		}
 
@@ -86,63 +91,75 @@ public class DefaultOption implements Option {
 			}
 		}
 
+		if (type == Long.class) {
+			return tryParse(value, Long::parseLong);
+		}
+		if (type == Integer.class) {
+			return tryParse(value, Integer::parseInt);
+		}
+		if (type == Double.class) {
+			return tryParse(value, Double::parseDouble);
+		}
+		if (type == Float.class) {
+			return tryParse(value, Float::parseFloat);
+		}
+		if (type == Boolean.class) {
+			return tryParse(value, Boolean::valueOf);
+		}
+
 		// check class via String constructor
 		try {
 			Constructor<?> ctor = type.getConstructor(String.class);
-			if (!ctor.isAccessible()) {
+			if (!ctor.canAccess(this)) {
 				ctor.setAccessible(true);
 			}
 			ctor.newInstance(value.toString());
 			return true;
-		} catch (Exception e) {}
+		} catch (Exception e) {
+			if (log.isDebugEnabled()) {
+				log.debug("Cannot parse option %s into %s".formatted(getName(), getType()), e);
+			}
+
+		}
 		return false;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.keyspace.Option#getType()
-	 */
+	private boolean tryParse(Object value, Consumer<String> parseFunction) {
+		try {
+			parseFunction.accept(value.toString());
+			return true;
+		} catch (RuntimeException e) {
+			if (log.isDebugEnabled()) {
+				log.debug("Cannot parse option %s into %s".formatted(getName(), getType()), e);
+			}
+			return false;
+		}
+	}
+
 	public Class<?> getType() {
 		return type;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.keyspace.Option#getName()
-	 */
 	public String getName() {
 		return name;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.keyspace.Option#takesValue()
-	 */
 	public boolean takesValue() {
 		return type != Void.class;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.keyspace.Option#requiresValue()
-	 */
 	public boolean requiresValue() {
 		return this.requiresValue;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.keyspace.Option#escapesValue()
-	 */
 	public boolean escapesValue() {
 		return this.escapesValue;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.keyspace.Option#quotesValue()
-	 */
 	public boolean quotesValue() {
 		return this.quotesValue;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.keyspace.Option#checkValue(java.lang.Object)
-	 */
 	public void checkValue(@Nullable Object value) {
 		if (takesValue()) {
 			if (value == null) {
@@ -179,9 +196,6 @@ public class DefaultOption implements Option {
 		return string;
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#toString()
-	 */
 	@Override
 	public String toString() {
 		return "[name=" + name + ", type=" + type.getName() + ", requiresValue=" + requiresValue + ", escapesValue="

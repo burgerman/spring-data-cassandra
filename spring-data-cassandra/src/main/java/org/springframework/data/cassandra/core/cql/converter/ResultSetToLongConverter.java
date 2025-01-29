@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ package org.springframework.data.cassandra.core.cql.converter;
 
 import org.springframework.core.convert.converter.Converter;
 
-import com.datastax.driver.core.ResultSet;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
 
 /**
  * {@link Converter} from {@link ResultSet} to a single {@link Long} value.
@@ -28,17 +28,11 @@ public class ResultSetToLongConverter extends AbstractResultSetToBasicFixedTypeC
 
 	public static final ResultSetToLongConverter INSTANCE = new ResultSetToLongConverter();
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.converter.AbstractResultSetConverter#doConvertSingleValue(java.lang.Object)
-	 */
 	@Override
 	protected Long doConvertSingleValue(Object object) {
 		return CONVERTER.convert(object, Long.class);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.converter.AbstractResultSetConverter#getType()
-	 */
 	@Override
 	protected Class<?> getType() {
 		return Long.class;

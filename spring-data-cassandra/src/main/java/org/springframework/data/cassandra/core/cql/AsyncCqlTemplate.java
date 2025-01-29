@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,11 @@
  */
 package org.springframework.data.cassandra.core.cql;
 
-import io.netty.util.concurrent.ImmediateExecutor;
-
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
 
@@ -28,19 +29,14 @@ import org.springframework.dao.support.PersistenceExceptionTranslator;
 import org.springframework.data.cassandra.SessionFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
-import org.springframework.util.concurrent.ListenableFuture;
-import org.springframework.util.concurrent.SettableListenableFuture;
 
-import com.datastax.driver.core.BoundStatement;
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.ResultSetFuture;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.SimpleStatement;
-import com.datastax.driver.core.Statement;
-import com.datastax.driver.core.exceptions.DriverException;
-import com.google.common.util.concurrent.FutureCallback;
-import com.google.common.util.concurrent.Futures;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.DriverException;
+import com.datastax.oss.driver.api.core.cql.AsyncResultSet;
+import com.datastax.oss.driver.api.core.cql.PreparedStatement;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
+import com.datastax.oss.driver.api.core.cql.Statement;
 
 /**
  * <b>This is the central class in the CQL core package for asynchronous Cassandra data access.</b> It simplifies the
@@ -51,13 +47,13 @@ import com.google.common.util.concurrent.Futures;
  * <p>
  * Code using this class need only implement callback interfaces, giving them a clearly defined contract. The
  * {@link PreparedStatementCreator} callback interface creates a prepared statement given a Connection, providing CQL
- * and any necessary parameters. The {@link ResultSetExtractor} interface extracts values from a {@link ResultSet}. See
- * also {@link PreparedStatementBinder} and {@link RowMapper} for two popular alternative callback interfaces.
+ * and any necessary parameters. The {@link AsyncResultSetExtractor} interface extracts values from a {@link ResultSet}.
+ * See also {@link PreparedStatementBinder} and {@link RowMapper} for two popular alternative callback interfaces.
  * <p>
- * Can be used within a service implementation via direct instantiation with a {@link Session} reference, or get
- * prepared in an application context and given to services as bean reference. Note: The {@link Session} should always
- * be configured as a bean in the application context, in the first case given to the service directly, in the second
- * case to the prepared template.
+ * Can be used within a service implementation via direct instantiation with a {@link CqlSession} reference, or get
+ * prepared in an application context and given to services as bean reference. Note: The {@link CqlSession} should
+ * always be configured as a bean in the application context, in the first case given to the service directly, in the
+ * second case to the prepared template.
  * <p>
  * Because this class is parameterizable by the callback interfaces and the
  * {@link org.springframework.dao.support.PersistenceExceptionTranslator} interface, there should be no need to subclass
@@ -70,11 +66,12 @@ import com.google.common.util.concurrent.Futures;
  *
  * @author Mark Paluch
  * @author John Blum
- * @see ListenableFuture
+ * @since 2.0
+ * @see CompletableFuture
  * @see PreparedStatementCreator
  * @see PreparedStatementBinder
  * @see PreparedStatementCallback
- * @see ResultSetExtractor
+ * @see AsyncResultSetExtractor
  * @see RowCallbackHandler
  * @see RowMapper
  * @see org.springframework.dao.support.PersistenceExceptionTranslator
@@ -90,13 +87,12 @@ public class AsyncCqlTemplate extends CassandraAccessor implements AsyncCqlOpera
 	public AsyncCqlTemplate() {}
 
 	/**
-	 * Create a new {@link AsyncCqlTemplate} with the given {@link Session}.
+	 * Create a new {@link AsyncCqlTemplate} with the given {@link CqlSession}.
 	 *
-	 * @param session the active Cassandra {@link Session}, must not be {@literal null}.
-	 * @throws IllegalStateException if {@link Session} is {@literal null}.
-	 * @see com.datastax.driver.core.Session
+	 * @param session the active Cassandra {@link CqlSession}, must not be {@literal null}.
+	 * @throws IllegalStateException if {@link CqlSession} is {@literal null}.
 	 */
-	public AsyncCqlTemplate(Session session) {
+	public AsyncCqlTemplate(CqlSession session) {
 
 		Assert.notNull(session, "Session must not be null");
 
@@ -118,15 +114,11 @@ public class AsyncCqlTemplate extends CassandraAccessor implements AsyncCqlOpera
 	}
 
 	// -------------------------------------------------------------------------
-	// Methods dealing with a plain com.datastax.driver.core.Session
+	// Methods dealing with a plain com.datastax.oss.driver.api.core.CqlSession
 	// -------------------------------------------------------------------------
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#execute(org.springframework.data.cassandra.core.cql.AsyncSessionCallback)
-	 */
 	@Override
-	public <T> ListenableFuture<T> execute(AsyncSessionCallback<T> action) throws DataAccessException {
+	public <T> CompletableFuture<T> execute(AsyncSessionCallback<T> action) throws DataAccessException {
 
 		Assert.notNull(action, "Callback object must not be null");
 
@@ -141,304 +133,202 @@ public class AsyncCqlTemplate extends CassandraAccessor implements AsyncCqlOpera
 	// Methods dealing with static CQL
 	// -------------------------------------------------------------------------
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#execute(java.lang.String)
-	 */
 	@Override
-	public ListenableFuture<Boolean> execute(String cql) throws DataAccessException {
+	public CompletableFuture<Boolean> execute(String cql) throws DataAccessException {
 
 		Assert.hasText(cql, "CQL must not be empty");
 
-		return new MappingListenableFutureAdapter<>(queryForResultSet(cql), ResultSet::wasApplied);
+		return queryForResultSet(cql).thenApply(AsyncResultSet::wasApplied);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(java.lang.String, org.springframework.data.cassandra.core.cql.ResultSetExtractor)
-	 */
 	@Override
-	public <T> ListenableFuture<T> query(String cql, ResultSetExtractor<T> resultSetExtractor)
+	public <T> CompletableFuture<T> query(String cql, AsyncResultSetExtractor<T> resultSetExtractor)
 			throws DataAccessException {
 
 		Assert.hasText(cql, "CQL must not be empty");
-		Assert.notNull(resultSetExtractor, "ResultSetExtractor must not be null");
+		Assert.notNull(resultSetExtractor, "AsyncResultSetExtractor must not be null");
 
 		try {
 			if (logger.isDebugEnabled()) {
-				logger.debug("Executing CQL Statement [{}]", cql);
+				logger.debug(String.format("Executing CQL statement [%s]", cql));
 			}
 
-			SimpleStatement simpleStatement = applyStatementSettings(new SimpleStatement(cql));
+			CompletionStage<T> results = getCurrentSession().executeAsync(applyStatementSettings(newStatement(cql)))
+					.thenApply(resultSetExtractor::extractData) //
+					.thenCompose(Function.identity());
 
-			ResultSetFuture results = getCurrentSession().executeAsync(simpleStatement);
-
-			return new ExceptionTranslatingListenableFutureAdapter<>(new MappingListenableFutureAdapter<>(
-					new GuavaListenableFutureAdapter<>(results, ex -> translateExceptionIfPossible("Query", cql, ex)),
-					resultSetExtractor::extractData), getExceptionTranslator());
+			return results.exceptionallyCompose(exceptionComposition(ex -> translateExceptionIfPossible("Query", cql, ex)))
+					.toCompletableFuture();
 		} catch (DriverException e) {
 			throw translateException("Query", cql, e);
 		}
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(java.lang.String, org.springframework.data.cassandra.core.cql.RowCallbackHandler)
-	 */
 	@Override
-	public ListenableFuture<Void> query(String cql, RowCallbackHandler rowCallbackHandler) throws DataAccessException {
+	public CompletableFuture<Void> query(String cql, RowCallbackHandler rowCallbackHandler) throws DataAccessException {
 
-		ListenableFuture<?> results = query(cql, newResultSetExtractor(rowCallbackHandler));
+		CompletableFuture<?> results = query(cql, newAsyncResultSetExtractor(rowCallbackHandler));
 
-		return new ExceptionTranslatingListenableFutureAdapter<>(new MappingListenableFutureAdapter<>(results, o -> null),
-				getExceptionTranslator());
+		return results.thenApply(o -> null);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(java.lang.String, org.springframework.data.cassandra.core.cql.RowMapper)
-	 */
 	@Override
-	public <T> ListenableFuture<List<T>> query(String cql, RowMapper<T> rowMapper) throws DataAccessException {
-		return query(cql, newResultSetExtractor(rowMapper));
+	public <T> CompletableFuture<List<T>> query(String cql, RowMapper<T> rowMapper) throws DataAccessException {
+		return query(cql, newAsyncResultSetExtractor(rowMapper));
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForList(java.lang.String)
-	 */
 	@Override
-	public ListenableFuture<List<Map<String, Object>>> queryForList(String cql) throws DataAccessException {
-		return query(cql, newResultSetExtractor(newColumnMapRowMapper()));
+	public CompletableFuture<List<Map<String, Object>>> queryForList(String cql) throws DataAccessException {
+		return query(cql, newAsyncResultSetExtractor(newColumnMapRowMapper()));
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForList(java.lang.String, java.lang.Class)
-	 */
 	@Override
-	public <T> ListenableFuture<List<T>> queryForList(String cql, Class<T> elementType) throws DataAccessException {
-		return query(cql, newResultSetExtractor(newSingleColumnRowMapper(elementType)));
+	public <T> CompletableFuture<List<T>> queryForList(String cql, Class<T> elementType) throws DataAccessException {
+		return query(cql, newAsyncResultSetExtractor(newSingleColumnRowMapper(elementType)));
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForMap(java.lang.String)
-	 */
 	@Override
-	public ListenableFuture<Map<String, Object>> queryForMap(String cql) throws DataAccessException {
+	public CompletableFuture<Map<String, Object>> queryForMap(String cql) throws DataAccessException {
 		return queryForObject(cql, newColumnMapRowMapper());
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForObject(java.lang.String, java.lang.Class)
-	 */
 	@Override
-	public <T> ListenableFuture<T> queryForObject(String cql, Class<T> requiredType) throws DataAccessException {
+	public <T> CompletableFuture<T> queryForObject(String cql, Class<T> requiredType) throws DataAccessException {
 		return queryForObject(cql, newSingleColumnRowMapper(requiredType));
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForObject(java.lang.String, org.springframework.data.cassandra.core.cql.RowMapper)
-	 */
 	@Override
-	public <T> ListenableFuture<T> queryForObject(String cql, RowMapper<T> rowMapper) throws DataAccessException {
+	public <T> CompletableFuture<T> queryForObject(String cql, RowMapper<T> rowMapper) throws DataAccessException {
 
-		ListenableFuture<List<T>> results = query(cql, newResultSetExtractor(rowMapper));
+		CompletableFuture<List<T>> results = query(cql, newAsyncResultSetExtractor(rowMapper));
 
-		return new ExceptionTranslatingListenableFutureAdapter<>(
-				new MappingListenableFutureAdapter<>(results, DataAccessUtils::requiredSingleResult), getExceptionTranslator());
+		return results.thenApply(DataAccessUtils::nullableSingleResult);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForResultSet(java.lang.String)
-	 */
 	@Override
-	public ListenableFuture<ResultSet> queryForResultSet(String cql) throws DataAccessException {
-		return query(cql, rs -> rs);
+	public CompletableFuture<AsyncResultSet> queryForResultSet(String cql) throws DataAccessException {
+		return query(cql, AsyncCqlTemplate::toResultSet);
 	}
 
 	// -------------------------------------------------------------------------
-	// Methods dealing with com.datastax.driver.core.Statement
+	// Methods dealing with com.datastax.oss.driver.api.core.cql.Statement
 	// -------------------------------------------------------------------------
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#execute(com.datastax.driver.core.Statement)
-	 */
 	@Override
-	public ListenableFuture<Boolean> execute(Statement statement) throws DataAccessException {
+	public CompletableFuture<Boolean> execute(Statement<?> statement) throws DataAccessException {
 
 		Assert.notNull(statement, "CQL Statement must not be null");
 
-		return new MappingListenableFutureAdapter<>(queryForResultSet(statement), ResultSet::wasApplied);
+		return queryForResultSet(statement).thenApply(AsyncResultSet::wasApplied);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(com.datastax.driver.core.Statement, org.springframework.data.cassandra.core.cql.ResultSetExtractor)
-	 */
 	@Override
-	public <T> ListenableFuture<T> query(Statement statement, ResultSetExtractor<T> resultSetExtractor)
+	public <T> CompletableFuture<T> query(Statement<?> statement, AsyncResultSetExtractor<T> resultSetExtractor)
 			throws DataAccessException {
 
 		Assert.notNull(statement, "CQL Statement must not be null");
-		Assert.notNull(resultSetExtractor, "ResultSetExtractor must not be null");
+		Assert.notNull(resultSetExtractor, "AsyncResultSetExtractor must not be null");
 
 		try {
 			if (logger.isDebugEnabled()) {
-				logger.debug("Executing CQL Statement [{}]", statement);
+				logger.debug(String.format("Executing statement [%s]", toCql(statement)));
 			}
 
-			ResultSetFuture results = getCurrentSession().executeAsync(applyStatementSettings(statement));
+			CompletionStage<T> results = getCurrentSession() //
+					.executeAsync(applyStatementSettings(statement)) //
+					.thenApply(resultSetExtractor::extractData) //
+					.thenCompose(Function.identity());
 
-			return new ExceptionTranslatingListenableFutureAdapter<>(
-					new MappingListenableFutureAdapter<>(
-							new GuavaListenableFutureAdapter<>(results,
-									ex -> translateExceptionIfPossible("Query", statement.toString(), ex)),
-							resultSetExtractor::extractData),
-					getExceptionTranslator());
+			return results
+					.exceptionallyCompose(exceptionComposition(ex -> translateExceptionIfPossible("Query", toCql(statement), ex)))
+					.toCompletableFuture();
 		} catch (DriverException e) {
-			throw translateException("Query", statement.toString(), e);
+			throw translateException("Query", toCql(statement), e);
 		}
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(com.datastax.driver.core.Statement, org.springframework.data.cassandra.core.cql.RowCallbackHandler)
-	 */
 	@Override
-	public ListenableFuture<Void> query(Statement statement, RowCallbackHandler rowCallbackHandler)
+	public CompletableFuture<Void> query(Statement<?> statement, RowCallbackHandler rowCallbackHandler)
 			throws DataAccessException {
 
-		ListenableFuture<?> result = query(statement, newResultSetExtractor(rowCallbackHandler));
+		CompletableFuture<?> result = query(statement, newAsyncResultSetExtractor(rowCallbackHandler));
 
-		return new ExceptionTranslatingListenableFutureAdapter<>(new MappingListenableFutureAdapter<>(result, o -> null),
-				getExceptionTranslator());
+		return result.thenApply(it -> null);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(com.datastax.driver.core.Statement, org.springframework.data.cassandra.core.cql.RowMapper)
-	 */
 	@Override
-	public <T> ListenableFuture<List<T>> query(Statement statement, RowMapper<T> rowMapper) throws DataAccessException {
-		return query(statement, newResultSetExtractor(rowMapper));
-	}
-
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForList(com.datastax.driver.core.Statement)
-	 */
-	@Override
-	public ListenableFuture<List<Map<String, Object>>> queryForList(Statement statement) throws DataAccessException {
-		return query(statement, newResultSetExtractor(newColumnMapRowMapper()));
-	}
-
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForList(com.datastax.driver.core.Statement, java.lang.Class)
-	 */
-	@Override
-	public <T> ListenableFuture<List<T>> queryForList(Statement statement, Class<T> elementType)
+	public <T> CompletableFuture<List<T>> query(Statement<?> statement, RowMapper<T> rowMapper)
 			throws DataAccessException {
-		return query(statement, newResultSetExtractor(newSingleColumnRowMapper(elementType)));
+		return query(statement, newAsyncResultSetExtractor(rowMapper));
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForMap(com.datastax.driver.core.Statement)
-	 */
 	@Override
-	public ListenableFuture<Map<String, Object>> queryForMap(Statement statement) throws DataAccessException {
+	public CompletableFuture<List<Map<String, Object>>> queryForList(Statement<?> statement) throws DataAccessException {
+		return query(statement, newAsyncResultSetExtractor(newColumnMapRowMapper()));
+	}
+
+	@Override
+	public <T> CompletableFuture<List<T>> queryForList(Statement<?> statement, Class<T> elementType)
+			throws DataAccessException {
+		return query(statement, newAsyncResultSetExtractor(newSingleColumnRowMapper(elementType)));
+	}
+
+	@Override
+	public CompletableFuture<Map<String, Object>> queryForMap(Statement<?> statement) throws DataAccessException {
 		return queryForObject(statement, newColumnMapRowMapper());
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForObject(com.datastax.driver.core.Statement, java.lang.Class)
-	 */
 	@Override
-	public <T> ListenableFuture<T> queryForObject(Statement statement, Class<T> requiredType) throws DataAccessException {
+	public <T> CompletableFuture<T> queryForObject(Statement<?> statement, Class<T> requiredType)
+			throws DataAccessException {
 		return queryForObject(statement, newSingleColumnRowMapper(requiredType));
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForObject(com.datastax.driver.core.Statement, org.springframework.data.cassandra.core.cql.RowMapper)
-	 */
 	@Override
-	public <T> ListenableFuture<T> queryForObject(Statement statement, RowMapper<T> rowMapper)
+	public <T> CompletableFuture<T> queryForObject(Statement<?> statement, RowMapper<T> rowMapper)
 			throws DataAccessException {
 
-		ListenableFuture<List<T>> results = query(statement, newResultSetExtractor(rowMapper));
+		CompletableFuture<List<T>> results = query(statement, newAsyncResultSetExtractor(rowMapper));
 
-		return new ExceptionTranslatingListenableFutureAdapter<>(
-				new MappingListenableFutureAdapter<>(results, DataAccessUtils::requiredSingleResult), getExceptionTranslator());
+		return results.thenApply(DataAccessUtils::nullableSingleResult);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForResultSet(com.datastax.driver.core.Statement)
-	 */
 	@Override
-	public ListenableFuture<ResultSet> queryForResultSet(Statement statement) throws DataAccessException {
-		return query(statement, rs -> rs);
+	public CompletableFuture<AsyncResultSet> queryForResultSet(Statement<?> statement) throws DataAccessException {
+		return query(statement, AsyncCqlTemplate::toResultSet);
 	}
 
 	// -------------------------------------------------------------------------
 	// Methods dealing with com.datastax.driver.core.PreparedStatement
 	// -------------------------------------------------------------------------
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#execute(org.springframework.data.cassandra.core.cql.AsyncPreparedStatementCreator)
-	 */
 	@Override
-	public ListenableFuture<Boolean> execute(AsyncPreparedStatementCreator preparedStatementCreator)
+	public CompletableFuture<Boolean> execute(AsyncPreparedStatementCreator preparedStatementCreator)
 			throws DataAccessException {
 
-		return query(preparedStatementCreator, ResultSet::wasApplied);
+		return query(preparedStatementCreator, AsyncCqlTemplate::toResultSet).thenApply(AsyncResultSet::wasApplied);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#execute(java.lang.String, java.lang.Object[])
-	 */
 	@Override
-	public ListenableFuture<Boolean> execute(String cql, Object... args) throws DataAccessException {
+	public CompletableFuture<Boolean> execute(String cql, Object... args) throws DataAccessException {
 		return execute(cql, newPreparedStatementBinder(args));
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#execute(java.lang.String, org.springframework.data.cassandra.core.cql.@Nullablender)
-	 */
 	@Override
-	public ListenableFuture<Boolean> execute(String cql, @Nullable PreparedStatementBinder psb)
+	public CompletableFuture<Boolean> execute(String cql, @Nullable PreparedStatementBinder psb)
 			throws DataAccessException {
 
-		return query(newAsyncPreparedStatementCreator(cql), psb, ResultSet::wasApplied);
+		return query(newAsyncPreparedStatementCreator(cql), psb, AsyncCqlTemplate::toResultSet)
+				.thenApply(AsyncResultSet::wasApplied);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#execute(java.lang.String, org.springframework.data.cassandra.core.cql.PreparedStatementCallback)
-	 */
 	@Override
-	public <T> ListenableFuture<T> execute(String cql, PreparedStatementCallback<T> action) throws DataAccessException {
+	public <T> CompletableFuture<T> execute(String cql, PreparedStatementCallback<T> action) throws DataAccessException {
 		return execute(newAsyncPreparedStatementCreator(cql), action);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#execute(org.springframework.data.cassandra.core.cql.AsyncPreparedStatementCreator, org.springframework.data.cassandra.core.cql.PreparedStatementCallback)
-	 */
 	@Override
-	public <T> ListenableFuture<T> execute(AsyncPreparedStatementCreator preparedStatementCreator,
+	public <T> CompletableFuture<T> execute(AsyncPreparedStatementCreator preparedStatementCreator,
 			PreparedStatementCallback<T> action) throws DataAccessException {
 
 		Assert.notNull(preparedStatementCreator, "PreparedStatementCreator must not be null");
@@ -448,70 +338,56 @@ public class AsyncCqlTemplate extends CassandraAccessor implements AsyncCqlOpera
 				toCql(preparedStatementCreator), ex);
 		try {
 			if (logger.isDebugEnabled()) {
-				logger.debug("Preparing statement [{}] using {}", toCql(preparedStatementCreator), preparedStatementCreator);
+				logger.debug(String.format("Preparing statement [%s] using %s", toCql(preparedStatementCreator),
+						preparedStatementCreator));
 			}
 
-			Session currentSession = getCurrentSession();
-			return new ExceptionTranslatingListenableFutureAdapter<>(new MappingListenableFutureAdapter<>(
-					preparedStatementCreator.createPreparedStatement(currentSession), preparedStatement -> {
-						try {
-							return action.doInPreparedStatement(currentSession, applyStatementSettings(preparedStatement));
-						} catch (DriverException e) {
-							throw translateException(exceptionTranslator, e);
-						}
-					}), getExceptionTranslator());
+			CqlSession currentSession = getCurrentSession();
+
+			return preparedStatementCreator.createPreparedStatement(currentSession).thenApply(preparedStatement -> {
+				try {
+					return action.doInPreparedStatement(currentSession, preparedStatement);
+				} catch (DriverException e) {
+					throw translateException(exceptionTranslator, e);
+				}
+			}).toCompletableFuture()
+					.exceptionallyCompose(exceptionComposition(exceptionTranslator::translateExceptionIfPossible));
 
 		} catch (DriverException e) {
 			throw translateException(exceptionTranslator, e);
 		}
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(org.springframework.data.cassandra.core.cql.AsyncPreparedStatementCreator, org.springframework.data.cassandra.core.cql.ResultSetExtractor)
-	 */
 	@Override
-	public <T> ListenableFuture<T> query(AsyncPreparedStatementCreator preparedStatementCreator,
-			ResultSetExtractor<T> resultSetExtractor) throws DataAccessException {
+	public <T> CompletableFuture<T> query(AsyncPreparedStatementCreator preparedStatementCreator,
+			AsyncResultSetExtractor<T> resultSetExtractor) throws DataAccessException {
 
 		return query(preparedStatementCreator, null, resultSetExtractor);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(org.springframework.data.cassandra.core.cql.AsyncPreparedStatementCreator, org.springframework.data.cassandra.core.cql.RowCallbackHandler)
-	 */
 	@Override
-	public ListenableFuture<Void> query(AsyncPreparedStatementCreator preparedStatementCreator,
+	public CompletableFuture<Void> query(AsyncPreparedStatementCreator preparedStatementCreator,
 			RowCallbackHandler rowCallbackHandler) throws DataAccessException {
 
-		ListenableFuture<?> results = query(preparedStatementCreator, null, newResultSetExtractor(rowCallbackHandler));
+		CompletableFuture<?> results = query(preparedStatementCreator, null,
+				newAsyncResultSetExtractor(rowCallbackHandler));
 
-		return new ExceptionTranslatingListenableFutureAdapter<>(new MappingListenableFutureAdapter<>(results, o -> null),
-				getExceptionTranslator());
+		return results.thenApply(o -> null);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(org.springframework.data.cassandra.core.cql.AsyncPreparedStatementCreator, org.springframework.data.cassandra.core.cql.RowMapper)
-	 */
 	@Override
-	public <T> ListenableFuture<List<T>> query(AsyncPreparedStatementCreator preparedStatementCreator,
+	public <T> CompletableFuture<List<T>> query(AsyncPreparedStatementCreator preparedStatementCreator,
 			RowMapper<T> rowMapper) throws DataAccessException {
 
-		return query(preparedStatementCreator, null, newResultSetExtractor(rowMapper));
+		return query(preparedStatementCreator, null, newAsyncResultSetExtractor(rowMapper));
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(org.springframework.data.cassandra.core.cql.AsyncPreparedStatementCreator, org.springframework.data.cassandra.core.cql.PreparedStatementBinder, org.springframework.data.cassandra.core.cql.ResultSetExtractor)
-	 */
 	@Override
-	public <T> ListenableFuture<T> query(AsyncPreparedStatementCreator preparedStatementCreator,
-			@Nullable PreparedStatementBinder psb, ResultSetExtractor<T> resultSetExtractor) throws DataAccessException {
+	public <T> CompletableFuture<T> query(AsyncPreparedStatementCreator preparedStatementCreator,
+			@Nullable PreparedStatementBinder psb, AsyncResultSetExtractor<T> resultSetExtractor) throws DataAccessException {
 
 		Assert.notNull(preparedStatementCreator, "AsyncPreparedStatementCreator must not be null");
-		Assert.notNull(resultSetExtractor, "ResultSetExtractor object must not be null");
+		Assert.notNull(resultSetExtractor, "AsyncResultSetExtractor object must not be null");
 
 		PersistenceExceptionTranslator exceptionTranslator = ex -> translateExceptionIfPossible("Query",
 				toCql(preparedStatementCreator), ex);
@@ -519,236 +395,140 @@ public class AsyncCqlTemplate extends CassandraAccessor implements AsyncCqlOpera
 		try {
 
 			if (logger.isDebugEnabled()) {
-				logger.debug("Preparing statement [{}] using {}", toCql(preparedStatementCreator), preparedStatementCreator);
+				logger.debug(String.format("Preparing statement [%s] using %s", toCql(preparedStatementCreator),
+						preparedStatementCreator));
 			}
 
-			Session session = getCurrentSession();
+			CqlSession session = getCurrentSession();
 
-			ListenableFuture<BoundStatement> statementFuture = new MappingListenableFutureAdapter<>(
-					preparedStatementCreator.createPreparedStatement(session), preparedStatement -> {
+			CompletionStage<Statement<?>> statementFuture = preparedStatementCreator.createPreparedStatement(session)
+					.thenApply(preparedStatement -> {
 						if (logger.isDebugEnabled()) {
-							logger.debug("Executing prepared statement [{}]", preparedStatement);
+							logger.debug(String.format("Executing prepared statement [%s]", toCql(preparedStatement)));
 						}
 
 						return applyStatementSettings(psb != null ? psb.bindValues(preparedStatement) : preparedStatement.bind());
 					});
 
-			SettableListenableFuture<T> settableListenableFuture = new SettableListenableFuture<>();
+			CompletableFuture<T> result = statementFuture.toCompletableFuture() //
+					.thenCompose(session::executeAsync) //
+					.thenApply(resultSetExtractor::extractData) //
+					.thenCompose(Function.identity());
 
-			statementFuture.addCallback(
-					boundStatement -> Futures.addCallback(session.executeAsync(boundStatement), new FutureCallback<ResultSet>() {
-						@Override
-						public void onSuccess(@Nullable ResultSet result) {
-							try {
-								settableListenableFuture.set(result != null ? resultSetExtractor.extractData(result) : null);
-							} catch (DriverException e) {
-								settableListenableFuture.setException(translateException(exceptionTranslator, e));
-							}
-						}
-
-						@Override
-						public void onFailure(Throwable ex) {
-							if (ex instanceof DriverException) {
-								settableListenableFuture.setException(translateException(exceptionTranslator, (DriverException) ex));
-							} else {
-								settableListenableFuture.setException(ex);
-							}
-						}
-					}, ImmediateExecutor.INSTANCE), ex -> {
-						if (ex instanceof DriverException) {
-							settableListenableFuture.setException(translateException(exceptionTranslator, (DriverException) ex));
-						} else {
-							settableListenableFuture.setException(ex);
-						}
-					});
-
-			return settableListenableFuture;
-
+			return result.exceptionallyCompose(exceptionComposition(this::translateExceptionIfPossible));
 		} catch (DriverException e) {
 			throw translateException(exceptionTranslator, e);
 		}
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(org.springframework.data.cassandra.core.cql.AsyncPreparedStatementCreator, org.springframework.data.cassandra.core.cql.PreparedStatementBinder, org.springframework.data.cassandra.core.cql.RowCallbackHandler)
-	 */
 	@Override
-	public ListenableFuture<Void> query(AsyncPreparedStatementCreator preparedStatementCreator,
+	public CompletableFuture<Void> query(AsyncPreparedStatementCreator preparedStatementCreator,
 			@Nullable PreparedStatementBinder psb, RowCallbackHandler rowCallbackHandler) throws DataAccessException {
 
-		ListenableFuture<?> results = query(preparedStatementCreator, psb, newResultSetExtractor(rowCallbackHandler));
+		CompletableFuture<?> results = query(preparedStatementCreator, psb, newAsyncResultSetExtractor(rowCallbackHandler));
 
-		return new ExceptionTranslatingListenableFutureAdapter<>(new MappingListenableFutureAdapter<>(results, o -> null),
-				getExceptionTranslator());
+		return results.thenApply(o -> null);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(org.springframework.data.cassandra.core.cql.AsyncPreparedStatementCreator, org.springframework.data.cassandra.core.cql.PreparedStatementBinder, org.springframework.data.cassandra.core.cql.RowMapper)
-	 */
 	@Override
-	public <T> ListenableFuture<List<T>> query(AsyncPreparedStatementCreator preparedStatementCreator,
+	public <T> CompletableFuture<List<T>> query(AsyncPreparedStatementCreator preparedStatementCreator,
 			@Nullable PreparedStatementBinder psb, RowMapper<T> rowMapper) throws DataAccessException {
-		return query(preparedStatementCreator, psb, newResultSetExtractor(rowMapper));
+		return query(preparedStatementCreator, psb, newAsyncResultSetExtractor(rowMapper));
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(java.lang.String, org.springframework.data.cassandra.core.cql.ResultSetExtractor, java.lang.Object[])
-	 */
 	@Override
-	public <T> ListenableFuture<T> query(String cql, ResultSetExtractor<T> resultSetExtractor, Object... args)
+	public <T> CompletableFuture<T> query(String cql, AsyncResultSetExtractor<T> resultSetExtractor, Object... args)
 			throws DataAccessException {
 		return query(newAsyncPreparedStatementCreator(cql), newPreparedStatementBinder(args), resultSetExtractor);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(java.lang.String, org.springframework.data.cassandra.core.cql.RowCallbackHandler, java.lang.Object[])
-	 */
 	@Override
-	public ListenableFuture<Void> query(String cql, RowCallbackHandler rowCallbackHandler, Object... args)
+	public CompletableFuture<Void> query(String cql, RowCallbackHandler rowCallbackHandler, Object... args)
 			throws DataAccessException {
 
-		ListenableFuture<?> results = query(newAsyncPreparedStatementCreator(cql), newPreparedStatementBinder(args),
-				newResultSetExtractor(rowCallbackHandler));
+		CompletableFuture<?> results = query(newAsyncPreparedStatementCreator(cql), newPreparedStatementBinder(args),
+				newAsyncResultSetExtractor(rowCallbackHandler));
 
-		return new ExceptionTranslatingListenableFutureAdapter<>(new MappingListenableFutureAdapter<>(results, o -> null),
-				getExceptionTranslator());
+		return results.thenApply(o -> null);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(java.lang.String, org.springframework.data.cassandra.core.cql.RowMapper, java.lang.Object[])
-	 */
 	@Override
-	public <T> ListenableFuture<List<T>> query(String cql, RowMapper<T> rowMapper, Object... args)
+	public <T> CompletableFuture<List<T>> query(String cql, RowMapper<T> rowMapper, Object... args)
 			throws DataAccessException {
 		return query(newAsyncPreparedStatementCreator(cql), newPreparedStatementBinder(args),
-				newResultSetExtractor(rowMapper));
+				newAsyncResultSetExtractor(rowMapper));
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(java.lang.String, org.springframework.data.cassandra.core.cql.PreparedStatementBinder, org.springframework.data.cassandra.core.cql.ResultSetExtractor)
-	 */
 	@Override
-	public <T> ListenableFuture<T> query(String cql, @Nullable PreparedStatementBinder psb,
-			ResultSetExtractor<T> resultSetExtractor) throws DataAccessException {
+	public <T> CompletableFuture<T> query(String cql, @Nullable PreparedStatementBinder psb,
+			AsyncResultSetExtractor<T> resultSetExtractor) throws DataAccessException {
 
 		return query(newAsyncPreparedStatementCreator(cql), psb, resultSetExtractor);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(java.lang.String, org.springframework.data.cassandra.core.cql.PreparedStatementBinder, org.springframework.data.cassandra.core.cql.RowCallbackHandler)
-	 */
 	@Override
-	public ListenableFuture<Void> query(String cql, @Nullable PreparedStatementBinder psb,
+	public CompletableFuture<Void> query(String cql, @Nullable PreparedStatementBinder psb,
 			RowCallbackHandler rowCallbackHandler) throws DataAccessException {
 
-		ListenableFuture<?> results = query(newAsyncPreparedStatementCreator(cql), psb,
-				newResultSetExtractor(rowCallbackHandler));
+		CompletableFuture<?> results = query(newAsyncPreparedStatementCreator(cql), psb,
+				newAsyncResultSetExtractor(rowCallbackHandler));
 
-		return new ExceptionTranslatingListenableFutureAdapter<>(new MappingListenableFutureAdapter<>(results, o -> null),
-				getExceptionTranslator());
+		return results.thenApply(o -> null);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#query(java.lang.String, org.springframework.data.cassandra.core.cql.PreparedStatementBinder, org.springframework.data.cassandra.core.cql.RowMapper)
-	 */
 	@Override
-	public <T> ListenableFuture<List<T>> query(String cql, @Nullable PreparedStatementBinder psb, RowMapper<T> rowMapper)
+	public <T> CompletableFuture<List<T>> query(String cql, @Nullable PreparedStatementBinder psb, RowMapper<T> rowMapper)
 			throws DataAccessException {
 
-		return query(newAsyncPreparedStatementCreator(cql), psb, newResultSetExtractor(rowMapper));
+		return query(newAsyncPreparedStatementCreator(cql), psb, newAsyncResultSetExtractor(rowMapper));
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForList(java.lang.String, java.lang.Object[])
-	 */
 	@Override
-	public ListenableFuture<List<Map<String, Object>>> queryForList(String cql, Object... args)
+	public CompletableFuture<List<Map<String, Object>>> queryForList(String cql, Object... args)
 			throws DataAccessException {
 
 		return query(newAsyncPreparedStatementCreator(cql), newPreparedStatementBinder(args),
-				newResultSetExtractor(newColumnMapRowMapper()));
+				newAsyncResultSetExtractor(newColumnMapRowMapper()));
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForList(java.lang.String, java.lang.Class, java.lang.Object[])
-	 */
 	@Override
-	public <T> ListenableFuture<List<T>> queryForList(String cql, Class<T> elementType, Object... args)
+	public <T> CompletableFuture<List<T>> queryForList(String cql, Class<T> elementType, Object... args)
 			throws DataAccessException {
 
 		return query(newAsyncPreparedStatementCreator(cql), newPreparedStatementBinder(args),
-				newResultSetExtractor(newSingleColumnRowMapper(elementType)));
+				newAsyncResultSetExtractor(newSingleColumnRowMapper(elementType)));
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForMap(java.lang.String, java.lang.Object[])
-	 */
 	@Override
-	public ListenableFuture<Map<String, Object>> queryForMap(String cql, Object... args) throws DataAccessException {
+	public CompletableFuture<Map<String, Object>> queryForMap(String cql, Object... args) throws DataAccessException {
 		return queryForObject(cql, newColumnMapRowMapper(), args);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForObject(java.lang.String, java.lang.Class, java.lang.Object[])
-	 */
 	@Override
-	public <T> ListenableFuture<T> queryForObject(String cql, Class<T> requiredType, Object... args)
+	public <T> CompletableFuture<T> queryForObject(String cql, Class<T> requiredType, Object... args)
 			throws DataAccessException {
 
 		return queryForObject(cql, newSingleColumnRowMapper(requiredType), args);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForObject(java.lang.String, org.springframework.data.cassandra.core.cql.RowMapper, java.lang.Object[])
-	 */
 	@Override
-	public <T> ListenableFuture<T> queryForObject(String cql, RowMapper<T> rowMapper, Object... args)
+	public <T> CompletableFuture<T> queryForObject(String cql, RowMapper<T> rowMapper, Object... args)
 			throws DataAccessException {
 
-		ListenableFuture<List<T>> results = query(newAsyncPreparedStatementCreator(cql), newPreparedStatementBinder(args),
-				newResultSetExtractor(rowMapper, 1));
+		CompletableFuture<List<T>> results = query(newAsyncPreparedStatementCreator(cql), newPreparedStatementBinder(args),
+				newAsyncResultSetExtractor(rowMapper));
 
-		return new ExceptionTranslatingListenableFutureAdapter<>(
-				new MappingListenableFutureAdapter<>(results, DataAccessUtils::requiredSingleResult), getExceptionTranslator());
+		return results.thenApply(DataAccessUtils::nullableSingleResult);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.AsyncCqlOperations#queryForResultSet(java.lang.String, java.lang.Object[])
-	 */
 	@Override
-	public ListenableFuture<ResultSet> queryForResultSet(String cql, Object... args) throws DataAccessException {
-		return query(cql, rs -> rs, args);
+	public CompletableFuture<AsyncResultSet> queryForResultSet(String cql, Object... args) throws DataAccessException {
+		return query(cql, AsyncCqlTemplate::toResultSet, args);
 	}
 
 	// -------------------------------------------------------------------------
 	// Implementation hooks and helper methods
 	// -------------------------------------------------------------------------
-
-	/**
-	 * Create a new CQL-based {@link AsyncPreparedStatementCreator} using the CQL passed in. By default, we'll create an
-	 * {@link SimpleAsyncPreparedStatementCreator}. This method allows for the creation to be overridden by subclasses.
-	 *
-	 * @param cql static CQL to execute, must not be empty or {@literal null}.
-	 * @return the new {@link AsyncPreparedStatementCreator} to use
-	 */
-	protected AsyncPreparedStatementCreator newAsyncPreparedStatementCreator(String cql) {
-		return new SimpleAsyncPreparedStatementCreator(cql,
-				ex -> translateExceptionIfPossible("PrepareStatement", cql, ex));
-	}
 
 	/**
 	 * Translate the given {@link DriverException} into a generic {@link DataAccessException}.
@@ -774,16 +554,82 @@ public class AsyncCqlTemplate extends CassandraAccessor implements AsyncCqlOpera
 	 */
 	@Nullable
 	protected DataAccessException translateExceptionIfPossible(String task, @Nullable String cql, RuntimeException ex) {
-		return (ex instanceof DriverException ? translate(task, cql, (DriverException) ex) : null);
+		return translate(task, cql, ex);
 	}
 
-	private Session getCurrentSession() {
+	/**
+	 * Create a new CQL-based {@link AsyncPreparedStatementCreator} using the CQL passed in. By default, we'll create an
+	 * {@link SimpleAsyncPreparedStatementCreator}. This method allows for the creation to be overridden by subclasses.
+	 *
+	 * @param cql static CQL to execute, must not be empty or {@literal null}.
+	 * @return the new {@link AsyncPreparedStatementCreator} to use
+	 */
+	protected AsyncPreparedStatementCreator newAsyncPreparedStatementCreator(String cql) {
+		return new SimpleAsyncPreparedStatementCreator(
+				(SimpleStatement) applyStatementSettings(SimpleStatement.newInstance(cql)),
+				ex -> translateExceptionIfPossible("PrepareStatement", cql, ex));
+	}
+
+	/**
+	 * Constructs a new instance of the {@link ResultSetExtractor} adapting the given {@link RowCallbackHandler}.
+	 *
+	 * @param rowCallbackHandler {@link RowCallbackHandler} to adapt as a {@link ResultSetExtractor}.
+	 * @return a {@link ResultSetExtractor} implementation adapting an instance of the {@link RowCallbackHandler}.
+	 * @see AsyncRowCallbackHandlerResultSetExtractor
+	 * @see ResultSetExtractor
+	 * @see RowCallbackHandler
+	 */
+	protected AsyncRowCallbackHandlerResultSetExtractor newAsyncResultSetExtractor(
+			RowCallbackHandler rowCallbackHandler) {
+		return new AsyncRowCallbackHandlerResultSetExtractor(rowCallbackHandler);
+	}
+
+	/**
+	 * Constructs a new instance of the {@link ResultSetExtractor} adapting the given {@link RowMapper}.
+	 *
+	 * @param rowMapper {@link RowMapper} to adapt as a {@link ResultSetExtractor}.
+	 * @return a {@link ResultSetExtractor} implementation adapting an instance of the {@link RowMapper}.
+	 * @see ResultSetExtractor
+	 * @see RowMapper
+	 * @see RowMapperResultSetExtractor
+	 */
+	protected <T> AsyncRowMapperResultSetExtractor<T> newAsyncResultSetExtractor(RowMapper<T> rowMapper) {
+		return new AsyncRowMapperResultSetExtractor<>(rowMapper);
+	}
+
+	private CqlSession getCurrentSession() {
 
 		SessionFactory sessionFactory = getSessionFactory();
 
 		Assert.state(sessionFactory != null, "SessionFactory is null");
 
 		return sessionFactory.getSession();
+	}
+
+	private static <T> Function<Throwable, CompletionStage<T>> exceptionComposition(
+			Function<RuntimeException, Exception> exceptionTranslator) {
+		return throwable -> {
+
+			Throwable toTranslate = throwable;
+			Throwable translated = null;
+			if (toTranslate instanceof ExecutionException e) {
+				toTranslate = e.getCause();
+			}
+
+			if (toTranslate instanceof CompletionException e) {
+				toTranslate = e.getCause();
+			}
+
+			if (toTranslate instanceof RuntimeException e) {
+				translated = exceptionTranslator.apply(e);
+			}
+
+			return CompletableFuture.failedFuture(translated != null ? translated : toTranslate);
+		};
+	}
+
+	private static CompletableFuture<AsyncResultSet> toResultSet(AsyncResultSet resultSet) {
+		return CompletableFuture.completedFuture(resultSet);
 	}
 
 	private static RuntimeException translateException(PersistenceExceptionTranslator exceptionTranslator,
@@ -795,44 +641,44 @@ public class AsyncCqlTemplate extends CassandraAccessor implements AsyncCqlOpera
 
 	private static class SimpleAsyncPreparedStatementCreator implements AsyncPreparedStatementCreator, CqlProvider {
 
-		private final PersistenceExceptionTranslator persistenceExceptionTranslator;
+		private final PersistenceExceptionTranslator exceptionTranslator;
 
-		private final String cql;
+		private final SimpleStatement statement;
 
-		private SimpleAsyncPreparedStatementCreator(String cql,
-				PersistenceExceptionTranslator persistenceExceptionTranslator) {
+		private SimpleAsyncPreparedStatementCreator(SimpleStatement statement,
+				PersistenceExceptionTranslator exceptionTranslator) {
 
-			Assert.hasText(cql, "CQL must not be empty");
+			this.statement = statement;
+			this.exceptionTranslator = exceptionTranslator;
+		}
 
-			this.cql = cql;
-			this.persistenceExceptionTranslator = persistenceExceptionTranslator;
+		@Override
+		public CompletableFuture<PreparedStatement> createPreparedStatement(CqlSession session) throws DriverException {
+			return session.prepareAsync(this.statement)
+					.exceptionallyCompose(exceptionComposition(exceptionTranslator::translateExceptionIfPossible))
+					.toCompletableFuture();
 		}
 
 		@Override
 		public String getCql() {
-			return this.cql;
-		}
-
-		@Override
-		public ListenableFuture<PreparedStatement> createPreparedStatement(Session session) throws DriverException {
-
-			return new GuavaListenableFutureAdapter<>(session.prepareAsync(getCql()), this.persistenceExceptionTranslator);
+			return this.statement.getQuery();
 		}
 	}
 
-	private static class MappingListenableFutureAdapter<T, S>
-			extends org.springframework.util.concurrent.ListenableFutureAdapter<T, S> {
+	/**
+	 * Adapter to enable use of a {@link RowCallbackHandler} inside a {@link ResultSetExtractor}.
+	 */
+	protected static class AsyncRowCallbackHandlerResultSetExtractor implements AsyncResultSetExtractor<Void> {
 
-		private final Function<S, T> mapper;
+		private final RowCallbackHandler rowCallbackHandler;
 
-		private MappingListenableFutureAdapter(ListenableFuture<S> adaptee, Function<S, T> mapper) {
-			super(adaptee);
-			this.mapper = mapper;
+		protected AsyncRowCallbackHandlerResultSetExtractor(RowCallbackHandler rowCallbackHandler) {
+			this.rowCallbackHandler = rowCallbackHandler;
 		}
 
 		@Override
-		protected T adapt(S adapteeResult) throws ExecutionException {
-			return mapper.apply(adapteeResult);
+		public CompletableFuture<Void> extractData(AsyncResultSet resultSet) {
+			return AsyncResultStream.from(resultSet).forEach(rowCallbackHandler::processRow);
 		}
 	}
 }

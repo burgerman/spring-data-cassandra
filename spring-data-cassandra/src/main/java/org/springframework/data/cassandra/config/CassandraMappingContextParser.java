@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,17 +45,11 @@ import org.w3c.dom.Element;
  */
 class CassandraMappingContextParser extends AbstractSingleBeanDefinitionParser {
 
-	/* (non-Javadoc)
-	 * @see org.springframework.beans.factory.xml.AbstractSingleBeanDefinitionParser#getBeanClass(org.w3c.dom.Element)
-	 */
 	@Override
 	protected Class<?> getBeanClass(Element element) {
 		return CassandraMappingContext.class;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.beans.factory.xml.AbstractBeanDefinitionParser#resolveId(org.w3c.dom.Element, org.springframework.beans.factory.support.AbstractBeanDefinition, org.springframework.beans.factory.xml.ParserContext)
-	 */
 	@Override
 	protected String resolveId(Element element, AbstractBeanDefinition definition, ParserContext parserContext)
 			throws BeanDefinitionStoreException {
@@ -65,25 +59,23 @@ class CassandraMappingContextParser extends AbstractSingleBeanDefinitionParser {
 		return (StringUtils.hasText(id) ? id : DefaultBeanNames.CONTEXT);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.beans.factory.xml.AbstractSingleBeanDefinitionParser#doParse(org.w3c.dom.Element, org.springframework.beans.factory.xml.ParserContext, org.springframework.beans.factory.support.BeanDefinitionBuilder)
-	 */
 	@Override
 	protected void doParse(Element element, ParserContext parserContext, BeanDefinitionBuilder builder) {
-
-		CassandraMappingXmlBeanFactoryPostProcessorRegistrar.ensureRegistration(element, parserContext);
-
-		parseMapping(element, builder);
+		parseMapping(element, builder, parserContext.getReaderContext().getBeanClassLoader());
+		builder.getRawBeanDefinition().setSource(element);
 	}
 
-	private void parseMapping(Element element, BeanDefinitionBuilder builder) {
+	private void parseMapping(Element element, BeanDefinitionBuilder builder, ClassLoader classLoader) {
 
 		String packages = element.getAttribute("entity-base-packages");
 
 		if (StringUtils.hasText(packages)) {
 			try {
-				Set<Class<?>> entityClasses = CassandraEntityClassScanner
-						.scan(StringUtils.commaDelimitedListToStringArray(packages));
+				CassandraEntityClassScanner scanner = new CassandraEntityClassScanner();
+				scanner.setBeanClassLoader(classLoader);
+				scanner.setEntityBasePackages(StringUtils.commaDelimitedListToSet(packages));
+
+				Set<Class<?>> entityClasses = scanner.scanForEntityClasses();
 
 				builder.addPropertyValue("initialEntitySet", entityClasses);
 			} catch (Exception x) {
@@ -146,10 +138,16 @@ class CassandraMappingContextParser extends AbstractSingleBeanDefinitionParser {
 
 	private BeanDefinition parseUserTypeResolver(Element entity) {
 
+		String sessionRef = entity.getAttribute("session-ref");
+
+		if (StringUtils.hasText(sessionRef)) {
+			BeanDefinitionBuilder builder = BeanDefinitionBuilder.genericBeanDefinition(SimpleUserTypeResolver.class);
+			builder.addConstructorArgReference(sessionRef);
+			return builder.getBeanDefinition();
+		}
+
 		String keyspaceName = entity.getAttribute("keyspace-name");
-
 		Assert.state(StringUtils.hasText(keyspaceName), "keyspace-name attribute must not be null or empty");
-
 		String clusterRef = entity.getAttribute("cluster-ref");
 
 		BeanDefinitionBuilder builder = BeanDefinitionBuilder.genericBeanDefinition(SimpleUserTypeResolver.class);

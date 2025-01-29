@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,21 +15,60 @@
  */
 package org.springframework.data.cassandra.domain;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
 import org.springframework.data.cassandra.core.mapping.UserDefinedType;
+import org.springframework.util.ObjectUtils;
 
 /**
  * @author Mark Paluch
  */
 @UserDefinedType("address")
-@Data
-@AllArgsConstructor
-@NoArgsConstructor
 public class AddressType {
 
 	String city;
 	String country;
+
+	public AddressType(String city, String country) {
+		this.city = city;
+		this.country = country;
+	}
+
+	public AddressType() {}
+
+	public String getCity() {
+		return this.city;
+	}
+
+	public String getCountry() {
+		return this.country;
+	}
+
+	public void setCity(String city) {
+		this.city = city;
+	}
+
+	public void setCountry(String country) {
+		this.country = country;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o)
+			return true;
+		if (o == null || getClass() != o.getClass())
+			return false;
+
+		AddressType that = (AddressType) o;
+
+		if (!ObjectUtils.nullSafeEquals(city, that.city)) {
+			return false;
+		}
+		return ObjectUtils.nullSafeEquals(country, that.country);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = ObjectUtils.nullSafeHashCode(city);
+		result = 31 * result + ObjectUtils.nullSafeHashCode(country);
+		return result;
+	}
 }

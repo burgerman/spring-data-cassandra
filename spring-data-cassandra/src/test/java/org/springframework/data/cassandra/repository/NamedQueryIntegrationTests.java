@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,9 +26,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.ComponentScan.Filter;
 import org.springframework.context.annotation.Configuration;
@@ -40,9 +39,9 @@ import org.springframework.data.cassandra.repository.config.EnableCassandraRepos
 import org.springframework.data.cassandra.repository.support.AbstractSpringDataEmbeddedCassandraIntegrationTest;
 import org.springframework.data.cassandra.repository.support.IntegrationTestConfig;
 import org.springframework.data.cassandra.repository.support.SchemaTestUtils;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
-import com.datastax.driver.core.ResultSet;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
 
 /**
  * Integration tests for use with {@link PersonRepositoryWithNamedQueries}.
@@ -51,8 +50,8 @@ import com.datastax.driver.core.ResultSet;
  * @author Mark Paluch
  * @soundtrack Mary Jane Kelly - Volbeat
  */
-@RunWith(SpringJUnit4ClassRunner.class)
-public class NamedQueryIntegrationTests extends AbstractSpringDataEmbeddedCassandraIntegrationTest {
+@SpringJUnitConfig
+class NamedQueryIntegrationTests extends AbstractSpringDataEmbeddedCassandraIntegrationTest {
 
 	@Configuration
 	@EnableCassandraRepositories(basePackageClasses = PersonRepositoryWithNamedQueries.class,
@@ -75,13 +74,13 @@ public class NamedQueryIntegrationTests extends AbstractSpringDataEmbeddedCassan
 	@Autowired PersonRepositoryWithNamedQueries personRepository;
 	@Autowired CassandraOperations cassandraOperations;
 
-	@Before
-	public void before() {
+	@BeforeEach
+	void before() {
 		SchemaTestUtils.truncate(Person.class, cassandraOperations);
 	}
 
 	@Test
-	public void testListMethodSingleResult() {
+	void testListMethodSingleResult() {
 
 		Person saved = new Person();
 		saved.setFirstname(uuid());
@@ -100,7 +99,7 @@ public class NamedQueryIntegrationTests extends AbstractSpringDataEmbeddedCassan
 	}
 
 	@Test
-	public void testListMethodMultipleResults() {
+	void testListMethodMultipleResults() {
 
 		Person saved = new Person();
 		saved.setFirstname("a");
@@ -128,7 +127,7 @@ public class NamedQueryIntegrationTests extends AbstractSpringDataEmbeddedCassan
 	}
 
 	@Test
-	public void testListOfMapOfStringToObjectMethodSingleResult() {
+	void testListOfMapOfStringToObjectMethodSingleResult() {
 
 		Person saved = new Person();
 		saved.setFirstname(uuid());
@@ -148,7 +147,7 @@ public class NamedQueryIntegrationTests extends AbstractSpringDataEmbeddedCassan
 	}
 
 	@Test
-	public void testEntityMethodResult() {
+	void testEntityMethodResult() {
 
 		Person saved = new Person();
 		saved.setFirstname(uuid());
@@ -164,7 +163,7 @@ public class NamedQueryIntegrationTests extends AbstractSpringDataEmbeddedCassan
 	}
 
 	@Test
-	public void testListOfMapOfStringToObjectMethodMultipleResults() {
+	void testListOfMapOfStringToObjectMethodMultipleResults() {
 
 		Person saved = new Person();
 		saved.setFirstname("a");
@@ -192,7 +191,7 @@ public class NamedQueryIntegrationTests extends AbstractSpringDataEmbeddedCassan
 	}
 
 	@Test
-	public void testStringMethodResult() {
+	void testStringMethodResult() {
 
 		Person saved = new Person();
 		saved.setFirstname(uuid());
@@ -208,7 +207,7 @@ public class NamedQueryIntegrationTests extends AbstractSpringDataEmbeddedCassan
 	}
 
 	@Test
-	public void testBooleanMethodResult() {
+	void testBooleanMethodResult() {
 
 		Person saved = new Person();
 		saved.setFirstname(uuid());
@@ -223,7 +222,7 @@ public class NamedQueryIntegrationTests extends AbstractSpringDataEmbeddedCassan
 	}
 
 	@Test
-	public void testDateMethodResult() {
+	void testDateMethodResult() {
 
 		Person saved = new Person();
 		saved.setFirstname(uuid());
@@ -238,7 +237,7 @@ public class NamedQueryIntegrationTests extends AbstractSpringDataEmbeddedCassan
 	}
 
 	@Test
-	public void testIntMethodResult() {
+	void testIntMethodResult() {
 
 		Person saved = new Person();
 		saved.setFirstname(uuid());
@@ -253,7 +252,7 @@ public class NamedQueryIntegrationTests extends AbstractSpringDataEmbeddedCassan
 	}
 
 	@Test
-	public void testArrayMethodSingleResult() {
+	void testArrayMethodSingleResult() {
 
 		Person saved = new Person();
 		saved.setFirstname(uuid());
@@ -272,7 +271,7 @@ public class NamedQueryIntegrationTests extends AbstractSpringDataEmbeddedCassan
 	}
 
 	@Test
-	public void testEscapeSingleQuoteInQueryParameterValue() {
+	void testEscapeSingleQuoteInQueryParameterValue() {
 
 		Person saved = new Person();
 		saved.setFirstname("Bri'an" + uuid());
@@ -293,7 +292,7 @@ public class NamedQueryIntegrationTests extends AbstractSpringDataEmbeddedCassan
 	}
 
 	@Test
-	public void findOptionalShouldReturnTargetType() {
+	void findOptionalShouldReturnTargetType() {
 
 		Person personToSave = new Person();
 
@@ -310,7 +309,7 @@ public class NamedQueryIntegrationTests extends AbstractSpringDataEmbeddedCassan
 	}
 
 	@Test
-	public void findOptionalShouldAbsentOptional() {
+	void findOptionalShouldAbsentOptional() {
 
 		Optional<Person> optional = personRepository.findOptionalWithLastnameAndFirstname("not", "existent");
 
@@ -318,7 +317,7 @@ public class NamedQueryIntegrationTests extends AbstractSpringDataEmbeddedCassan
 	}
 
 	@Test // DATACASS-297
-	public void streamShouldReturnEntities() {
+	void streamShouldReturnEntities() {
 
 		long before = personRepository.count();
 

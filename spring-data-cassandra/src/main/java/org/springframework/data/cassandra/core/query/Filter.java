@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.springframework.data.cassandra.core.query;
 import java.util.Arrays;
 import java.util.Iterator;
 
+import org.springframework.data.util.Streamable;
 import org.springframework.util.Assert;
 
 /**
@@ -28,7 +29,7 @@ import org.springframework.util.Assert;
  * @since 2.0
  */
 @FunctionalInterface
-public interface Filter extends Iterable<CriteriaDefinition> {
+public interface Filter extends Streamable<CriteriaDefinition> {
 
 	/**
 	 * @return the {@link CriteriaDefinition}s.
@@ -61,9 +62,6 @@ public interface Filter extends Iterable<CriteriaDefinition> {
 		return new DefaultFilter(criteriaDefinitions);
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Iterable#iterator()
-	 */
 	@Override
 	default Iterator<CriteriaDefinition> iterator() {
 		return getCriteriaDefinitions().iterator();

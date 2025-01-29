@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,23 +15,25 @@
  */
 package org.springframework.data.cassandra.repository.support;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 import java.io.Serializable;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
-
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.data.cassandra.core.ReactiveCassandraTemplate;
 import org.springframework.data.cassandra.core.convert.CassandraConverter;
 import org.springframework.data.cassandra.core.mapping.BasicCassandraPersistentEntity;
 import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
 import org.springframework.data.cassandra.domain.Person;
 import org.springframework.data.cassandra.repository.query.CassandraEntityInformation;
+import org.springframework.data.projection.SpelAwareProxyProjectionFactory;
 import org.springframework.data.repository.Repository;
 
 /**
@@ -39,7 +41,8 @@ import org.springframework.data.repository.Repository;
  *
  * @author Mark Paluch
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 @SuppressWarnings({ "rawtypes", "unchecked" })
 public class ReactiveCassandraRepositoryFactoryUnitTests {
 
@@ -48,15 +51,16 @@ public class ReactiveCassandraRepositoryFactoryUnitTests {
 	@Mock CassandraMappingContext mappingContext;
 	@Mock ReactiveCassandraTemplate template;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		when(template.getConverter()).thenReturn(converter);
+		when(converter.getProjectionFactory()).thenReturn(new SpelAwareProxyProjectionFactory());
 		when(converter.getMappingContext()).thenReturn(mappingContext);
 	}
 
 	@Test // DATACASS-335
-	public void usesMappingCassandraEntityInformationIfMappingContextSet() {
+	void usesMappingCassandraEntityInformationIfMappingContextSet() {
 
 		when(mappingContext.getRequiredPersistentEntity(Person.class)).thenReturn(entity);
 
@@ -69,7 +73,7 @@ public class ReactiveCassandraRepositoryFactoryUnitTests {
 	}
 
 	@Test // DATACASS-335
-	public void createsRepositoryWithIdTypeLong() {
+	void createsRepositoryWithIdTypeLong() {
 
 		when(mappingContext.getRequiredPersistentEntity(Person.class)).thenReturn(entity);
 

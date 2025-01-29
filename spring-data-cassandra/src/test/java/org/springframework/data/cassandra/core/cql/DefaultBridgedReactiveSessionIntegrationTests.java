@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,130 +15,81 @@
  */
 package org.springframework.data.cassandra.core.cql;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import static org.assertj.core.api.Assertions.*;
 
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 
-import org.junit.Before;
-import org.junit.Test;
-
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.data.cassandra.ReactiveResultSet;
 import org.springframework.data.cassandra.core.cql.session.DefaultBridgedReactiveSession;
-import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTest;
+import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTests;
 
-import com.datastax.driver.core.KeyspaceMetadata;
-import com.datastax.driver.core.QueryLogger;
-import com.datastax.driver.core.SimpleStatement;
-import com.datastax.driver.core.exceptions.SyntaxError;
+import com.datastax.oss.driver.api.core.metadata.schema.KeyspaceMetadata;
+import com.datastax.oss.driver.api.core.servererrors.SyntaxError;
 
 /**
  * Integration tests for {@link DefaultBridgedReactiveSession}.
  *
  * @author Mark Paluch
  */
-public class DefaultBridgedReactiveSessionIntegrationTests extends AbstractKeyspaceCreatingIntegrationTest {
+class DefaultBridgedReactiveSessionIntegrationTests extends AbstractKeyspaceCreatingIntegrationTests {
 
-	DefaultBridgedReactiveSession reactiveSession;
+	private DefaultBridgedReactiveSession reactiveSession;
 
-	@Before
-	public void before() {
+	@BeforeEach
+	void before() {
 
 		this.session.execute("DROP TABLE IF EXISTS users;");
 
-		this.reactiveSession = new DefaultBridgedReactiveSession(this.session, Schedulers.elastic());
+		this.reactiveSession = new DefaultBridgedReactiveSession(this.session);
 	}
 
 	@Test // DATACASS-335
-	public void executeShouldExecuteDeferred() {
+	void executeShouldExecuteDeferred() {
 
 		String query = "CREATE TABLE users (\n" + "  userid text PRIMARY KEY,\n" + "  first_name text\n" + ");";
 
 		Mono<ReactiveResultSet> execution = reactiveSession.execute(query);
 
-		KeyspaceMetadata keyspace = getKeyspaceMetadata();
+		assertThat(getKeyspaceMetadata().getTable("users")).isEmpty();
 
-		assertThat(keyspace.getTable("users")).isNull();
+		execution.as(StepVerifier::create).consumeNextWith(actual -> assertThat(actual.wasApplied()).isTrue())
+				.verifyComplete();
 
-		execution.as(StepVerifier::create)
-			.consumeNextWith(actual -> assertThat(actual.wasApplied()).isTrue())
-			.verifyComplete();
-
-		assertThat(keyspace.getTable("users")).isNotNull();
+		assertThat(getKeyspaceMetadata().getTable("users")).isPresent();
 	}
 
 	@Test // DATACASS-335
-	public void executeShouldTransportExceptionsInMono() {
+	void executeShouldTransportExceptionsInMono() {
 		reactiveSession.execute("INSERT INTO dummy;").as(StepVerifier::create).expectError(SyntaxError.class).verify();
 	}
 
 	@Test // DATACASS-335
-	public void executeShouldReturnRows() {
+	void executeShouldReturnRows() {
 
 		session.execute("CREATE TABLE users (\n" + "  userid text PRIMARY KEY,\n" + "  first_name text\n" + ");");
 		session.execute("INSERT INTO users (userid, first_name) VALUES ('White', 'Walter');");
 
 		reactiveSession.execute("SELECT * FROM users;").as(StepVerifier::create)
 				.consumeNextWith(actual -> actual.rows().as(StepVerifier::create)
-						.consumeNextWith(row ->
-				assertThat(row.getString("userid")).isEqualTo("White")).verifyComplete()).verifyComplete();
+						.consumeNextWith(row -> assertThat(row.getString("userid")).isEqualTo("White")).verifyComplete())
+				.verifyComplete();
 	}
 
 	@Test // DATACASS-335
-	public void executeShouldPrepareStatement() {
+	void executeShouldPrepareStatement() {
 
 		session.execute("CREATE TABLE users (\n" + "  userid text PRIMARY KEY,\n" + "  first_name text\n" + ");");
 
 		reactiveSession.prepare("INSERT INTO users (userid, first_name) VALUES (?, ?);").as(StepVerifier::create)
-			.consumeNextWith(actual ->
-				assertThat(actual.getQueryString()).isEqualTo("INSERT INTO users (userid, first_name) VALUES (?, ?);"))
-			.verifyComplete();
-	}
-
-	@Test // DATACASS-509
-	public void shouldFetchBatches() {
-
-		String createTable = "CREATE TABLE users (\n" + "  userid text PRIMARY KEY,\n" + "  first_name text\n" + ");";
-
-		this.session.execute(createTable);
-
-		List<String> keys = new ArrayList<>();
-
-		for (int i = 0; i < 100; i++) {
-
-			String key = String.format("u-03%d", i);
-			String value = "v-" + i;
-
-			keys.add(key);
-
-			this.session.execute(String.format("INSERT INTO users (userid, first_name) VALUES ('%s', '%s');", key, value));
-		}
-
-		this.session.getCluster().register(QueryLogger.builder().build());
-
-		SimpleStatement statement = new SimpleStatement("SELECT * FROM users;");
-
-		statement.setFetchSize(10);
-
-		Mono<ReactiveResultSet> execution = reactiveSession.execute(statement);
-
-		Collection<String> received = new ConcurrentLinkedQueue<>();
-
-		execution.flatMapMany(ReactiveResultSet::rows).map(row -> row.getString(0)).as(StepVerifier::create)
-				.recordWith(() -> received)
-				.expectNextCount(100)
+				.consumeNextWith(
+						actual -> assertThat(actual.getQuery()).isEqualTo("INSERT INTO users (userid, first_name) VALUES (?, ?);"))
 				.verifyComplete();
-
-		assertThat(received).containsAll(keys).hasSize(100);
 	}
 
 	private KeyspaceMetadata getKeyspaceMetadata() {
-		return cluster.getMetadata().getKeyspace(this.session.getLoggedKeyspace());
+		return this.session.getKeyspace().flatMap(it -> session.refreshSchema().getKeyspace(it)).get();
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,40 +20,39 @@ import static org.springframework.data.cassandra.core.query.Criteria.*;
 import static org.springframework.data.cassandra.core.query.Query.*;
 import static org.springframework.data.cassandra.core.query.Update.*;
 
-import lombok.Data;
-
 import java.util.Collections;
 
-import org.junit.Before;
-import org.junit.Test;
-
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.cassandra.core.convert.MappingCassandraConverter;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.mapping.Column;
 import org.springframework.data.cassandra.core.mapping.Indexed;
 import org.springframework.data.cassandra.core.mapping.Table;
 import org.springframework.data.cassandra.core.query.Query;
-import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTest;
+import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTests;
+import org.springframework.util.ObjectUtils;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Integration tests for {@link ExecutableUpdateOperationSupport}.
  *
  * @author Mark Paluch
  */
-public class ExecutableUpdateOperationSupportIntegrationTests extends AbstractKeyspaceCreatingIntegrationTest {
+class ExecutableUpdateOperationSupportIntegrationTests extends AbstractKeyspaceCreatingIntegrationTests {
 
-	CassandraAdminTemplate template;
+	private CassandraAdminTemplate template;
 
-	Person han;
-	Person luke;
+	private Person han;
+	private Person luke;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		template = new CassandraAdminTemplate(session, new MappingCassandraConverter());
-		template.dropTable(true, CqlIdentifier.of("person"));
-		template.createTable(false, CqlIdentifier.of("person"), Person.class, Collections.emptyMap());
+		template.dropTable(true, CqlIdentifier.fromCql("person"));
+		template.createTable(false, CqlIdentifier.fromCql("person"), Person.class, Collections.emptyMap());
 
 		han = new Person();
 		han.firstname = "han";
@@ -68,23 +67,23 @@ public class ExecutableUpdateOperationSupportIntegrationTests extends AbstractKe
 	}
 
 	@Test // DATACASS-485
-	public void domainTypeIsRequired() {
+	void domainTypeIsRequired() {
 		assertThatIllegalArgumentException().isThrownBy(() -> this.template.update(null));
 	}
 
 	@Test // DATACASS-485
-	public void queryIsRequired() {
+	void queryIsRequired() {
 		assertThatIllegalArgumentException().isThrownBy(() -> this.template.update(Person.class).matching(null));
 	}
 
 	@Test // DATACASS-485
-	public void tableIsRequiredOnSet() {
+	void tableIsRequiredOnSet() {
 		assertThatIllegalArgumentException()
 				.isThrownBy(() -> this.template.update(Person.class).inTable((CqlIdentifier) null));
 	}
 
 	@Test // DATACASS-485
-	public void updateAllMatching() {
+	void updateAllMatching() {
 
 		WriteResult updateResult = this.template.update(Person.class).matching(queryHan())
 				.apply(update("firstname", "Han"));
@@ -95,7 +94,7 @@ public class ExecutableUpdateOperationSupportIntegrationTests extends AbstractKe
 	}
 
 	@Test // DATACASS-485
-	public void updateWithDifferentDomainClassAndCollection() {
+	void updateWithDifferentDomainClassAndCollection() {
 
 		WriteResult updateResult = this.template.update(Jedi.class).inTable("person")
 				.matching(query(where("id").is(han.getId()))).apply(update("name", "Han"));
@@ -118,15 +117,53 @@ public class ExecutableUpdateOperationSupportIntegrationTests extends AbstractKe
 		return query(where("id").is(person.getId()));
 	}
 
-	@Data
 	@Table
 	static class Person {
 		@Id String id;
 		@Indexed String firstname;
+
+		public Person() {}
+
+		public String getId() {
+			return this.id;
+		}
+
+		public String getFirstname() {
+			return this.firstname;
+		}
+
+		public void setId(String id) {
+			this.id = id;
+		}
+
+		public void setFirstname(String firstname) {
+			this.firstname = firstname;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o)
+				return true;
+			if (o == null || getClass() != o.getClass())
+				return false;
+
+			Person person = (Person) o;
+
+			if (!ObjectUtils.nullSafeEquals(id, person.id)) {
+				return false;
+			}
+			return ObjectUtils.nullSafeEquals(firstname, person.firstname);
+		}
+
+		@Override
+		public int hashCode() {
+			int result = ObjectUtils.nullSafeHashCode(id);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(firstname);
+			return result;
+		}
 	}
 
-	@Data
-	static class Jedi {
-		@Column("firstname") String name;
+	record Jedi(@Column("firstname") String name) {
+
 	}
 }

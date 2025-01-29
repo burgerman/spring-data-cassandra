@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,37 +17,31 @@ package org.springframework.data.cassandra.repository;
 
 import static org.assertj.core.api.Assertions.*;
 
-import io.reactivex.Flowable;
-import io.reactivex.Maybe;
+import io.reactivex.rxjava3.core.Single;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
-import rx.Observable;
-import rx.Single;
 
 import java.util.Arrays;
 import java.util.List;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.ComponentScan.Filter;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.cassandra.domain.User;
 import org.springframework.data.cassandra.repository.config.EnableReactiveCassandraRepositories;
+import org.springframework.data.cassandra.repository.support.AbstractSpringDataEmbeddedCassandraIntegrationTest;
 import org.springframework.data.cassandra.repository.support.IntegrationTestConfig;
-import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTest;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
-import org.springframework.data.repository.reactive.RxJava2CrudRepository;
 import org.springframework.stereotype.Repository;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
-import com.datastax.driver.core.KeyspaceMetadata;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.TableMetadata;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.metadata.schema.TableMetadata;
 
 /**
  * Test for {@link ReactiveCassandraRepository} using reactive wrapper type conversion.
@@ -55,9 +49,8 @@ import com.datastax.driver.core.TableMetadata;
  * @author Mark Paluch
  * @author Christoph Strobl
  */
-@RunWith(SpringJUnit4ClassRunner.class)
-@ContextConfiguration(classes = ConvertingReactiveCassandraRepositoryTests.Config.class)
-public class ConvertingReactiveCassandraRepositoryTests extends AbstractKeyspaceCreatingIntegrationTest {
+@SpringJUnitConfig(classes = ConvertingReactiveCassandraRepositoryTests.Config.class)
+class ConvertingReactiveCassandraRepositoryTests extends AbstractSpringDataEmbeddedCassandraIntegrationTest {
 
 	@EnableReactiveCassandraRepositories(includeFilters = @Filter(value = Repository.class),
 			considerNestedRepositories = true)
@@ -70,22 +63,24 @@ public class ConvertingReactiveCassandraRepositoryTests extends AbstractKeyspace
 		}
 	}
 
-	@Autowired Session session;
+	@Autowired CqlSession session;
 	@Autowired MixedUserRepository reactiveRepository;
 	@Autowired UserRepostitory reactiveUserRepostitory;
-	@Autowired RxJava1UserRepository rxJava1UserRepository;
-	@Autowired RxJava2UserRepository rxJava2UserRepository;
+	@Autowired RxJava3UserRepository rxJava3UserRepository;
 
-	User dave, oliver, carter, boyd;
+	private User dave;
+	private User oliver;
+	private User carter;
+	private User boyd;
 
-	@Before
-	public void setUp() throws Exception {
+	@BeforeEach
+	void setUp() throws Exception {
 
-		KeyspaceMetadata keyspace = session.getCluster().getMetadata().getKeyspace(session.getLoggedKeyspace());
-		TableMetadata person = keyspace.getTable("person");
+		TableMetadata users = session.getKeyspace().flatMap(it -> session.getMetadata().getKeyspace(it))
+				.flatMap(it -> it.getTable(CqlIdentifier.fromCql("users"))).get();
 
-		if (person.getIndex("IX_person_lastname") == null) {
-			session.execute("CREATE INDEX IX_person_lastname ON person (lastname);");
+		if (users.getIndexes().containsKey(CqlIdentifier.fromCql("IX_lastname"))) {
+			session.execute("CREATE INDEX IX_lastname ON users (lastname);");
 			Thread.sleep(500);
 		}
 
@@ -101,17 +96,17 @@ public class ConvertingReactiveCassandraRepositoryTests extends AbstractKeyspace
 	}
 
 	@Test // DATACASS-335
-	public void reactiveStreamsMethodsShouldWork() {
+	void reactiveStreamsMethodsShouldWork() {
 		reactiveUserRepostitory.existsById(dave.getId()).as(StepVerifier::create).expectNext(true).verifyComplete();
 	}
 
 	@Test // DATACASS-335
-	public void reactiveStreamsQueryMethodsShouldWork() {
+	void reactiveStreamsQueryMethodsShouldWork() {
 		StepVerifier.create(reactiveUserRepostitory.findByLastname(boyd.getLastname())).expectNext(boyd).verifyComplete();
 	}
 
 	@Test // DATACASS-360
-	public void dtoProjectionShouldWork() {
+	void dtoProjectionShouldWork() {
 
 		reactiveUserRepostitory.findProjectedByLastname(boyd.getLastname()).as(StepVerifier::create)
 				.consumeNextWith(actual -> {
@@ -122,148 +117,77 @@ public class ConvertingReactiveCassandraRepositoryTests extends AbstractKeyspace
 	}
 
 	@Test // DATACASS-335
-	public void simpleRxJava1MethodsShouldWork() {
+	void simpleRxJava3MethodsShouldWork() throws InterruptedException {
 
-		rxJava1UserRepository.existsById(dave.getId()) //
+		rxJava3UserRepository.existsById(dave.getId()) //
 				.test() //
-				.awaitTerminalEvent() //
+				.await() //
 				.assertResult(true) //
-				.assertCompleted() //
+				.assertComplete() //
 				.assertNoErrors();
 	}
 
 	@Test // DATACASS-335
-	public void existsWithSingleRxJava1IdMethodsShouldWork() {
+	void existsWithSingleRxJava3IdMethodsShouldWork() throws InterruptedException {
 
-		rxJava1UserRepository.existsById(Single.just(dave.getId())) //
+		rxJava3UserRepository.existsById(Single.just(dave.getId())) //
 				.test() //
-				.awaitTerminalEvent() //
+				.await() //
 				.assertResult(true) //
-				.assertCompleted() //
+				.assertComplete() //
 				.assertNoErrors();
 	}
 
 	@Test // DATACASS-335
-	public void singleRxJava1QueryMethodShouldWork() {
+	void singleRxJava3QueryMethodShouldWork() throws InterruptedException {
 
-		rxJava1UserRepository.findManyByLastname(dave.getLastname()) //
+		rxJava3UserRepository.findManyByLastname(dave.getLastname()) //
 				.test() //
-				.awaitTerminalEvent() //
+				.await() //
 				.assertValueCount(2) //
 				.assertNoErrors() //
-				.assertCompleted();
+				.assertComplete();
 	}
 
 	@Test // DATACASS-335
-	public void singleProjectedRxJava1QueryMethodShouldWork() {
+	void singleProjectedRxJava3QueryMethodShouldWork() throws InterruptedException {
 
-		List<ProjectedUser> values = rxJava1UserRepository.findProjectedByLastname(carter.getLastname()) //
+		List<ProjectedUser> values = rxJava3UserRepository.findProjectedByLastname(carter.getLastname()) //
 				.test() //
-				.awaitTerminalEvent() //
+				.await() //
 				.assertValueCount(1) //
-				.assertCompleted() //
+				.assertComplete() //
 				.assertNoErrors() //
-				.getOnNextEvents();
+				.values();
 
 		ProjectedUser projectedUser = values.get(0);
 		assertThat(projectedUser.getFirstname()).isEqualTo(carter.getFirstname());
 	}
 
 	@Test // DATACASS-335
-	public void observableRxJava1QueryMethodShouldWork() {
+	void observableRxJava3QueryMethodShouldWork() throws InterruptedException {
 
-		rxJava1UserRepository.findByLastname(boyd.getLastname()) //
+		rxJava3UserRepository.findByLastname(boyd.getLastname()) //
 				.test() //
-				.awaitTerminalEvent() //
+				.await() //
 				.assertValue(boyd) //
 				.assertNoErrors() //
-				.assertCompleted();
-	}
-
-	@Test // DATACASS-398
-	public void simpleRxJava2MethodsShouldWork() {
-
-		rxJava2UserRepository.existsById(dave.getId()) //
-				.test()//
-				.assertValue(true) //
-				.assertNoErrors() //
-				.assertComplete() //
-				.awaitTerminalEvent();
-	}
-
-	@Test // DATACASS-398
-	public void existsWithSingleRxJava2IdMethodsShouldWork() {
-
-		rxJava2UserRepository.existsById(io.reactivex.Single.just(dave.getId())).test() //
-				.assertValue(true) //
-				.assertNoErrors() //
-				.assertComplete() //
-				.awaitTerminalEvent();
-	}
-
-	@Test // DATACASS-398
-	public void flowableRxJava2QueryMethodShouldWork() {
-
-		rxJava2UserRepository.findManyByLastname(dave.getLastname()) //
-				.test() //
-				.assertValueCount(2) //
-				.assertNoErrors() //
-				.assertComplete() //
-				.awaitTerminalEvent();
-	}
-
-	@Test // DATACASS-398
-	public void singleProjectedRxJava2QueryMethodShouldWork() {
-
-		rxJava2UserRepository.findProjectedByLastname(Maybe.just(carter.getLastname())) //
-				.test() //
-				.assertValue(actual -> {
-					assertThat(actual.getFirstname()).isEqualTo(carter.getFirstname());
-					return true;
-				}) //
-				.assertComplete() //
-				.assertNoErrors() //
-				.awaitTerminalEvent();
-	}
-
-	@Test // DATACASS-398
-	public void observableProjectedRxJava2QueryMethodShouldWork() {
-
-		rxJava2UserRepository.findProjectedByLastname(Single.just(carter.getLastname())) //
-				.test() //
-				.assertValue(actual -> {
-					assertThat(actual.getFirstname()).isEqualTo(carter.getFirstname());
-					return true;
-				}) //
-				.assertComplete() //
-				.assertNoErrors() //
-				.awaitTerminalEvent();
-	}
-
-	@Test // DATACASS-398
-	public void maybeRxJava2QueryMethodShouldWork() {
-
-		rxJava2UserRepository.findByLastname(boyd.getLastname()) //
-				.test() //
-				.assertValue(boyd) //
-				.assertNoErrors() //
-				.assertComplete() //
-				.awaitTerminalEvent();
+				.assertComplete();
 	}
 
 	@Test // DATACASS-335
-	public void mixedRepositoryShouldWork() {
+	void mixedRepositoryShouldWork() throws InterruptedException {
 
 		reactiveRepository.findByLastname(boyd.getLastname()) //
 				.test() //
-				.awaitTerminalEvent() //
+				.await() //
 				.assertValue(boyd) //
-				.assertCompleted() //
+				.assertComplete() //
 				.assertNoErrors();
 	}
 
 	@Test // DATACASS-335
-	public void shouldFindByIdByPublisherOfLastName() {
+	void shouldFindByIdByPublisherOfLastName() {
 
 		reactiveRepository.findByLastname(Single.just(this.carter.getLastname())).as(StepVerifier::create) //
 				.expectNext(carter) //
@@ -279,29 +203,17 @@ public class ConvertingReactiveCassandraRepositoryTests extends AbstractKeyspace
 	}
 
 	@Repository
-	interface RxJava1UserRepository extends org.springframework.data.repository.Repository<User, String> {
+	interface RxJava3UserRepository extends org.springframework.data.repository.Repository<User, String> {
 
-		Observable<User> findManyByLastname(String lastname);
+		io.reactivex.rxjava3.core.Observable<User> findManyByLastname(String lastname);
 
-		Single<User> findByLastname(String lastname);
+		io.reactivex.rxjava3.core.Single<User> findByLastname(String lastname);
 
-		Single<ProjectedUser> findProjectedByLastname(String lastname);
+		io.reactivex.rxjava3.core.Single<ProjectedUser> findProjectedByLastname(String lastname);
 
-		Single<Boolean> existsById(String id);
+		io.reactivex.rxjava3.core.Single<Boolean> existsById(String id);
 
-		Single<Boolean> existsById(Single<String> id);
-	}
-
-	@Repository
-	interface RxJava2UserRepository extends RxJava2CrudRepository<User, String> {
-
-		Flowable<User> findManyByLastname(String lastname);
-
-		Maybe<User> findByLastname(String lastname);
-
-		io.reactivex.Single<ProjectedUser> findProjectedByLastname(Maybe<String> lastname);
-
-		io.reactivex.Observable<ProjectedUser> findProjectedByLastname(Single<String> lastname);
+		io.reactivex.rxjava3.core.Single<Boolean> existsById(io.reactivex.rxjava3.core.Single<String> id);
 	}
 
 	@Repository
@@ -312,16 +224,17 @@ public class ConvertingReactiveCassandraRepositoryTests extends AbstractKeyspace
 		Mono<User> findByLastname(Single<String> lastname);
 	}
 
-	interface ProjectedUser {
+	private interface ProjectedUser {
 
 		String getId();
 
 		String getFirstname();
 	}
 
-	static class UserDto {
+	private static class UserDto {
 
-		public String firstname, lastname;
+		private String firstname;
+		private String lastname;
 
 		public UserDto(String firstname, String lastname) {
 

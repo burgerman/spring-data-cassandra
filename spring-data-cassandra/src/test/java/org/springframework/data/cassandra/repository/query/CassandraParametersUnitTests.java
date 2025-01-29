@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,76 +16,80 @@
 package org.springframework.data.cassandra.repository.query;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.springframework.data.cassandra.core.mapping.CassandraType.*;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.reflect.Method;
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.cassandra.core.mapping.CassandraType;
 import org.springframework.data.cassandra.domain.Person;
-
-import com.datastax.driver.core.DataType.Name;
+import org.springframework.data.repository.Repository;
+import org.springframework.data.repository.core.support.DefaultRepositoryMetadata;
+import org.springframework.data.repository.query.ParametersSource;
 
 /**
  * Unit tests for {@link CassandraParameters}.
  *
  * @author Mark Paluch
  */
-@RunWith(MockitoJUnitRunner.class)
-public class CassandraParametersUnitTests {
+@ExtendWith(MockitoExtension.class)
+class CassandraParametersUnitTests {
 
 	@Mock CassandraQueryMethod queryMethod;
 
 	@Test // DATACASS-296
-	public void shouldReturnUnknownDataTypeForSimpleType() throws Exception {
+	void shouldReturnUnknownDataTypeForSimpleType() throws Exception {
 
 		Method method = PersonRepository.class.getMethod("findByFirstname", String.class);
-		CassandraParameters cassandraParameters = new CassandraParameters(method);
+		CassandraParameters cassandraParameters = new CassandraParameters(
+				ParametersSource.of(method));
 
 		assertThat(cassandraParameters.getParameter(0).getCassandraType()).isNull();
 	}
 
 	@Test // DATACASS-296
-	public void shouldReturnDataTypeForAnnotatedSimpleType() throws Exception {
+	void shouldReturnDataTypeForAnnotatedSimpleType() throws Exception {
 
 		Method method = PersonRepository.class.getMethod("findByFirstTime", String.class);
-		CassandraParameters cassandraParameters = new CassandraParameters(method);
+		CassandraParameters cassandraParameters = new CassandraParameters(
+				ParametersSource.of(method));
 
 		assertThat(cassandraParameters.getParameter(0).getCassandraType().type()).isEqualTo(Name.TIME);
 	}
 
 	@Test // DATACASS-296
-	public void shouldReturnNoTypeForComplexType() throws Exception {
+	void shouldReturnNoTypeForComplexType() throws Exception {
 
 		Method method = PersonRepository.class.getMethod("findByObject", Object.class);
-		CassandraParameters cassandraParameters = new CassandraParameters(method);
+		CassandraParameters cassandraParameters = new CassandraParameters(ParametersSource.of(method));
 
 		assertThat(cassandraParameters.getParameter(0).getCassandraType()).isNull();
 	}
 
 	@Test // DATACASS-296
-	public void shouldReturnTypeForAnnotatedType() throws Exception {
+	void shouldReturnTypeForAnnotatedType() throws Exception {
 
 		Method method = PersonRepository.class.getMethod("findByAnnotatedObject", Object.class);
-		CassandraParameters cassandraParameters = new CassandraParameters(method);
+		CassandraParameters cassandraParameters = new CassandraParameters(ParametersSource.of(method));
 
 		assertThat(cassandraParameters.getParameter(0).getCassandraType().type()).isEqualTo(Name.TIME);
 	}
 
 	@Test // DATACASS-296
-	public void shouldReturnTypeForComposedAnnotationType() throws Exception {
+	void shouldReturnTypeForComposedAnnotationType() throws Exception {
 
 		Method method = PersonRepository.class.getMethod("findByComposedAnnotationObject", Object.class);
-		CassandraParameters cassandraParameters = new CassandraParameters(method);
+		CassandraParameters cassandraParameters = new CassandraParameters(ParametersSource.of(method));
 
 		assertThat(cassandraParameters.getParameter(0).getCassandraType().type()).isEqualTo(Name.BOOLEAN);
 	}
 
-	interface PersonRepository {
+	interface PersonRepository extends Repository<Person, String> {
 
 		Person findByFirstname(String firstname);
 
@@ -100,6 +104,6 @@ public class CassandraParametersUnitTests {
 
 	@Retention(RetentionPolicy.RUNTIME)
 	@CassandraType(type = Name.BOOLEAN)
-	@interface ComposedCassandraTypeAnnotation {
+	private @interface ComposedCassandraTypeAnnotation {
 	}
 }

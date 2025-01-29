@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,28 +15,29 @@
  */
 package org.springframework.data.cassandra.core.query;
 
-import static java.util.stream.StreamSupport.*;
 import static org.springframework.util.ObjectUtils.*;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import org.springframework.data.cassandra.core.cql.QueryOptions;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.Sort.Order;
+import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.PagingState;
-
 /**
- * Query object representing {@link CriteriaDefinition}s, {@link Columns}, {@link Sort}, {@link PagingState} and
- * {@link QueryOptions} for a CQL query. {@link Query} is created with a fluent API creating immutable objects.
+ * Query object representing {@link CriteriaDefinition}s, {@link Columns}, {@link Sort}, {@link ByteBuffer paging state}
+ * and {@link QueryOptions} for a CQL query. {@link Query} is created with a fluent API creating immutable objects.
  *
  * @author Mark Paluch
  * @see org.springframework.data.cassandra.core.query.Filter
@@ -46,7 +47,7 @@ import com.datastax.driver.core.PagingState;
 public class Query implements Filter {
 
 	private static final Query EMPTY = new Query(Collections.emptyList(), Columns.empty(), Sort.unsorted(),
-			Optional.empty(), Optional.empty(), Optional.empty(), false);
+			CassandraScrollPosition.initial(), Optional.empty(), Limit.unlimited(), false);
 
 	private final boolean allowFiltering;
 
@@ -54,22 +55,23 @@ public class Query implements Filter {
 
 	private final List<CriteriaDefinition> criteriaDefinitions;
 
-	private final Optional<Long> limit;
+	private final Limit limit;
 
-	private final Optional<PagingState> pagingState;
+	private final CassandraScrollPosition scrollPosition;
 
 	private final Optional<QueryOptions> queryOptions;
 
 	private final Sort sort;
 
 	private Query(List<CriteriaDefinition> criteriaDefinitions, Columns columns, Sort sort,
-			Optional<PagingState> pagingState, Optional<QueryOptions> queryOptions, Optional<Long> limit,
-			boolean allowFiltering) {
+			CassandraScrollPosition pagingState, Optional<QueryOptions> queryOptions, Limit limit, boolean allowFiltering) {
+
+		Assert.notNull(limit, "Limit must not be null");
 
 		this.criteriaDefinitions = criteriaDefinitions;
 		this.columns = columns;
 		this.sort = sort;
-		this.pagingState = pagingState;
+		this.scrollPosition = pagingState;
 		this.queryOptions = queryOptions;
 		this.limit = limit;
 		this.allowFiltering = allowFiltering;
@@ -107,10 +109,11 @@ public class Query implements Filter {
 
 		Assert.notNull(criteriaDefinitions, "CriteriaDefinitions must not be null");
 
-		List<CriteriaDefinition> collect = stream(criteriaDefinitions.spliterator(), false).collect(Collectors.toList());
+		List<CriteriaDefinition> collect = StreamSupport.stream(criteriaDefinitions.spliterator(), false)
+				.collect(Collectors.toList());
 
-		return new Query(collect, Columns.empty(), Sort.unsorted(), Optional.empty(), Optional.empty(), Optional.empty(),
-				false);
+		return new Query(collect, Columns.empty(), Sort.unsorted(), CassandraScrollPosition.initial(), Optional.empty(),
+				Limit.unlimited(), false);
 	}
 
 	/**
@@ -131,13 +134,10 @@ public class Query implements Filter {
 			criteriaDefinitions.add(criteriaDefinition);
 		}
 
-		return new Query(criteriaDefinitions, this.columns, this.sort, this.pagingState, this.queryOptions, this.limit,
+		return new Query(criteriaDefinitions, this.columns, this.sort, this.scrollPosition, this.queryOptions, this.limit,
 				this.allowFiltering);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.query.Filter#getCriteriaDefinitions()
-	 */
 	@Override
 	public Iterable<CriteriaDefinition> getCriteriaDefinitions() {
 		return Collections.unmodifiableCollection(criteriaDefinitions);
@@ -154,7 +154,7 @@ public class Query implements Filter {
 
 		Assert.notNull(columns, "Columns must not be null");
 
-		return new Query(this.criteriaDefinitions, this.columns.and(columns), this.sort, this.pagingState,
+		return new Query(this.criteriaDefinitions, this.columns.and(columns), this.sort, this.scrollPosition,
 				this.queryOptions, this.limit, this.allowFiltering);
 	}
 
@@ -182,8 +182,8 @@ public class Query implements Filter {
 			}
 		}
 
-		return new Query(this.criteriaDefinitions, this.columns, this.sort.and(sort), this.pagingState, this.queryOptions,
-				this.limit, this.allowFiltering);
+		return new Query(this.criteriaDefinitions, this.columns, this.sort.and(sort), this.scrollPosition,
+				this.queryOptions, this.limit, this.allowFiltering);
 	}
 
 	/**
@@ -196,7 +196,7 @@ public class Query implements Filter {
 	/**
 	 * Create a {@link Query} initialized with a {@link PageRequest} to fetch the first page of results or advance in
 	 * paging along with sorting. Reads (and overrides, if set) {@link Pageable#getPageSize() page size} into
-	 * {@link QueryOptions#getFetchSize()} and sets {@link PagingState} and {@link Sort}.
+	 * {@code QueryOptions#getPageSize()} and sets {@code pagingState} and {@link Sort}.
 	 *
 	 * @param pageable must not be {@literal null}.
 	 * @return a new {@link Query} object containing the former settings with {@link PageRequest} applied.
@@ -208,38 +208,57 @@ public class Query implements Filter {
 
 		CassandraPageRequest.validatePageable(pageable);
 
-		PagingState pagingState = this.pagingState.orElse(null);
+		CassandraScrollPosition scrollPosition = getScrollPosition();
 
-		if (pageable instanceof CassandraPageRequest) {
-			pagingState = ((CassandraPageRequest) pageable).getPagingState();
+		if (pageable instanceof CassandraPageRequest cpr) {
+			scrollPosition = cpr.getScrollPosition();
 		}
 
 		QueryOptions queryOptions = this.queryOptions.map(QueryOptions::mutate).orElse(QueryOptions.builder())
-				.fetchSize(pageable.getPageSize()).build();
+				.pageSize(pageable.getPageSize()).build();
 
-		return new Query(this.criteriaDefinitions, this.columns, this.sort.and(pageable.getSort()),
-				Optional.ofNullable(pagingState), Optional.of(queryOptions), this.limit, this.allowFiltering);
+		return new Query(this.criteriaDefinitions, this.columns, this.sort.and(pageable.getSort()), scrollPosition,
+				Optional.of(queryOptions), this.limit, this.allowFiltering);
 	}
 
 	/**
-	 * Set the {@link PagingState} to skip rows.
+	 * Set the {@code paging state} to skip rows.
+	 *
+	 * @param scrollPosition must not be {@literal null}.
+	 * @return a new {@link Query} object containing the former settings with paging state applied.
+	 */
+	public Query pagingState(CassandraScrollPosition scrollPosition) {
+
+		Assert.notNull(scrollPosition, "CassandraScrollPosition must not be null");
+
+		return new Query(this.criteriaDefinitions, this.columns, this.sort, scrollPosition, this.queryOptions, this.limit,
+				this.allowFiltering);
+	}
+
+	/**
+	 * Set the {@link ByteBuffer paging state} to skip rows.
 	 *
 	 * @param pagingState must not be {@literal null}.
-	 * @return a new {@link Query} object containing the former settings with {@link PagingState} applied.
+	 * @return a new {@link Query} object containing the former settings with {@link ByteBuffer paging state} applied.
 	 */
-	public Query pagingState(PagingState pagingState) {
+	public Query pagingState(ByteBuffer pagingState) {
 
 		Assert.notNull(pagingState, "PagingState must not be null");
 
-		return new Query(this.criteriaDefinitions, this.columns, this.sort, Optional.of(pagingState), this.queryOptions,
-				this.limit, this.allowFiltering);
+		return new Query(this.criteriaDefinitions, this.columns, this.sort, CassandraScrollPosition.of(pagingState),
+				this.queryOptions, this.limit, this.allowFiltering);
 	}
 
 	/**
-	 * @return the optional {@link PagingState}.
+	 * @return the optional {@link ByteBuffer paging state}.
 	 */
-	public Optional<PagingState> getPagingState() {
-		return this.pagingState;
+	public Optional<ByteBuffer> getPagingState() {
+
+		if (this.scrollPosition.isInitial()) {
+			return Optional.empty();
+		}
+
+		return Optional.of(this.scrollPosition.getPagingState());
 	}
 
 	/**
@@ -252,7 +271,7 @@ public class Query implements Filter {
 
 		Assert.notNull(queryOptions, "QueryOptions must not be null");
 
-		return new Query(this.criteriaDefinitions, this.columns, this.sort, this.pagingState, Optional.of(queryOptions),
+		return new Query(this.criteriaDefinitions, this.columns, this.sort, this.scrollPosition, Optional.of(queryOptions),
 				this.limit, this.allowFiltering);
 	}
 
@@ -270,15 +289,33 @@ public class Query implements Filter {
 	 * @return a new {@link Query} object containing the former settings with {@code limit} applied.
 	 */
 	public Query limit(long limit) {
-		return new Query(this.criteriaDefinitions, this.columns, this.sort, this.pagingState, this.queryOptions,
-				Optional.of(limit), this.allowFiltering);
+		return new Query(this.criteriaDefinitions, this.columns, this.sort, this.scrollPosition, this.queryOptions,
+				Limit.of(Math.toIntExact(limit)), this.allowFiltering);
+	}
+
+	/**
+	 * Limit the number of returned rows to {@link Limit}.
+	 *
+	 * @param limit
+	 * @return a new {@link Query} object containing the former settings with {@code limit} applied.
+	 */
+	public Query limit(Limit limit) {
+		return new Query(this.criteriaDefinitions, this.columns, this.sort, this.scrollPosition, this.queryOptions, limit,
+				this.allowFiltering);
 	}
 
 	/**
 	 * @return the maximum number of rows to be returned.
 	 */
 	public long getLimit() {
-		return this.limit.orElse(0L);
+		return this.limit.isLimited() ? this.limit.max() : 0;
+	}
+
+	/**
+	 * @return {@code true} if the query is limited.
+	 */
+	public boolean isLimited() {
+		return this.limit.isLimited();
 	}
 
 	/**
@@ -287,8 +324,8 @@ public class Query implements Filter {
 	 * @return a new {@link Query} object containing the former settings with {@code allowFiltering} applied.
 	 */
 	public Query withAllowFiltering() {
-		return new Query(this.criteriaDefinitions, this.columns, this.sort, this.pagingState, this.queryOptions, this.limit,
-				true);
+		return new Query(this.criteriaDefinitions, this.columns, this.sort, this.scrollPosition, this.queryOptions,
+				this.limit, true);
 	}
 
 	/**
@@ -298,11 +335,16 @@ public class Query implements Filter {
 		return this.allowFiltering;
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#equals(java.lang.Object)
+	/**
+	 * @return the paging state as {@link CassandraScrollPosition}.
+	 * @since 4.2
 	 */
+	private CassandraScrollPosition getScrollPosition() {
+		return scrollPosition;
+	}
+
 	@Override
-	public boolean equals(Object obj) {
+	public boolean equals(@Nullable Object obj) {
 
 		if (this == obj) {
 			return true;
@@ -326,7 +368,7 @@ public class Query implements Filter {
 		boolean criteriaEqual = this.criteriaDefinitions.equals(that.criteriaDefinitions);
 		boolean columnsEqual = nullSafeEquals(this.columns, that.columns);
 		boolean sortEqual = nullSafeEquals(this.sort, that.sort);
-		boolean pagingStateEqual = nullSafeEquals(this.pagingState, that.pagingState);
+		boolean pagingStateEqual = nullSafeEquals(this.scrollPosition, that.scrollPosition);
 		boolean queryOptionsEqual = nullSafeEquals(this.queryOptions, that.queryOptions);
 		boolean limitEqual = this.limit == that.limit;
 		boolean allowFilteringEqual = this.allowFiltering == that.allowFiltering;
@@ -335,32 +377,23 @@ public class Query implements Filter {
 				&& allowFilteringEqual;
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#hashCode()
-	 */
 	@Override
 	public int hashCode() {
-
 		int result = 17;
-
 		result += 31 * criteriaDefinitions.hashCode();
 		result += 31 * nullSafeHashCode(columns);
 		result += 31 * nullSafeHashCode(sort);
-		result += 31 * nullSafeHashCode(pagingState);
+		result += 31 * nullSafeHashCode(scrollPosition);
 		result += 31 * nullSafeHashCode(queryOptions);
 		result += 31 * nullSafeHashCode(limit);
 		result += (allowFiltering ? 0 : 1);
-
 		return result;
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#toString()
-	 */
 	@Override
 	public String toString() {
 
-		String query = stream(this.spliterator(), false).map(SerializationUtils::serializeToCqlSafely)
+		String query = StreamSupport.stream(this.spliterator(), false).map(SerializationUtils::serializeToCqlSafely)
 				.collect(Collectors.joining(" AND "));
 
 		return String.format("Query: %s, Columns: %s, Sort: %s, Limit: %d", query, getColumns(), getSort(), getLimit());

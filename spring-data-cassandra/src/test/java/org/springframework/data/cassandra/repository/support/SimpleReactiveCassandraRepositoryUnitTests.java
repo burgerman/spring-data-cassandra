@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 the original author or authors.
+ * Copyright 2019-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,24 +15,17 @@
  */
 package org.springframework.data.cassandra.repository.support;
 
-import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
-import java.io.Serializable;
-
-import lombok.Data;
+import static org.mockito.Mockito.*;
 
 import reactor.core.publisher.Mono;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import java.io.Serializable;
 
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.cassandra.core.EntityWriteResult;
@@ -43,38 +36,35 @@ import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity;
 import org.springframework.data.cassandra.core.mapping.UserTypeResolver;
 
-import com.datastax.driver.core.UserType;
-import com.datastax.driver.core.querybuilder.Insert;
+import com.datastax.oss.driver.api.core.type.UserDefinedType;
 
 /**
  * Unit tests for {@link SimpleReactiveCassandraRepository}.
  *
  * @author Mark Paluch
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
 @SuppressWarnings("unchecked")
-public class SimpleReactiveCassandraRepositoryUnitTests {
+class SimpleReactiveCassandraRepositoryUnitTests {
 
-	CassandraMappingContext mappingContext = new CassandraMappingContext();
-	MappingCassandraConverter converter = new MappingCassandraConverter(mappingContext);
+	private CassandraMappingContext mappingContext = new CassandraMappingContext();
+	private MappingCassandraConverter converter = new MappingCassandraConverter(mappingContext);
 
-	SimpleReactiveCassandraRepository<Object, ? extends Serializable> repository;
+	private SimpleReactiveCassandraRepository<Object, ? extends Serializable> repository;
 
 	@Mock ReactiveCassandraOperations cassandraOperations;
 	@Mock UserTypeResolver userTypeResolver;
-	@Mock UserType userType;
+	@Mock UserDefinedType userType;
 	@Mock EntityWriteResult writeResult;
 
-	@Captor ArgumentCaptor<Insert> insertCaptor;
-
-	@Before
-	public void before() {
+	@BeforeEach
+	void before() {
 		mappingContext.setUserTypeResolver(userTypeResolver);
 		when(cassandraOperations.getConverter()).thenReturn(converter);
 	}
 
 	@Test // DATACASS-576
-	public void shouldInsertNewVersionedEntity() {
+	void shouldInsertNewVersionedEntity() {
 
 		when(cassandraOperations.insert(any(), any(InsertOptions.class))).thenReturn(Mono.just(writeResult));
 
@@ -92,7 +82,7 @@ public class SimpleReactiveCassandraRepositoryUnitTests {
 	}
 
 	@Test // DATACASS-576
-	public void shouldUpdateExistingVersionedEntity() {
+	void shouldUpdateExistingVersionedEntity() {
 
 		CassandraPersistentEntity<?> entity = converter.getMappingContext()
 				.getRequiredPersistentEntity(VersionedPerson.class);
@@ -109,10 +99,25 @@ public class SimpleReactiveCassandraRepositoryUnitTests {
 		verify(cassandraOperations).update(versionedPerson);
 	}
 
-	@Data
 	static class VersionedPerson {
 
 		@Id String id;
 		@Version long version;
+
+		public String getId() {
+			return id;
+		}
+
+		public void setId(String id) {
+			this.id = id;
+		}
+
+		public long getVersion() {
+			return version;
+		}
+
+		public void setVersion(long version) {
+			this.version = version;
+		}
 	}
 }

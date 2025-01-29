@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ import org.springframework.data.annotation.Persistent;
  *
  * @author Alex Shvid
  * @author Matthew T. Adams
+ * @author Mark Paluch
  */
 @Documented
 @Persistent
@@ -38,12 +39,27 @@ import org.springframework.data.annotation.Persistent;
 public @interface Table {
 
 	/**
-	 * The name of the table; must be a valid CQL identifier or quoted identifier.
+	 * The keyspace for the table; table uses the session-keyspace if empty; must be a valid CQL identifier or quoted
+	 * identifier. The value can be either a string or a {@link org.springframework.data.expression.ValueExpression Value
+	 * Expression}.
+	 *
+	 * @since 4.4
+	 */
+	String keyspace() default "";
+
+	/**
+	 * The name of the table; must be a valid CQL identifier or quoted identifier. The value can be either a string or a
+	 * {@link org.springframework.data.expression.ValueExpression Value Expression}.
 	 */
 	String value() default "";
 
 	/**
 	 * Whether to cause the table name to be force-quoted.
+	 *
+	 * @deprecated since 3.0. The table name gets converted into {@link com.datastax.oss.driver.api.core.CqlIdentifier}
+	 *             hence it no longer requires an indication whether the name should be quoted.
+	 * @see com.datastax.oss.driver.api.core.CqlIdentifier#fromInternal(String)
 	 */
+	@Deprecated
 	boolean forceQuote() default false;
 }

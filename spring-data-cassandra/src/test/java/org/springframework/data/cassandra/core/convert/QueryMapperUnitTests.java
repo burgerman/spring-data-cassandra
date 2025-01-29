@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,11 @@
 package org.springframework.data.cassandra.core.convert;
 
 import static org.assertj.core.api.Assertions.*;
-import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.*;
+import static org.springframework.data.domain.Sort.Order.*;
 
-import lombok.AllArgsConstructor;
-
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Currency;
@@ -28,20 +28,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.joda.time.LocalDate;
-import org.joda.time.LocalTime;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
-
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity;
 import org.springframework.data.cassandra.core.mapping.Column;
 import org.springframework.data.cassandra.core.mapping.Element;
+import org.springframework.data.cassandra.core.mapping.Embedded;
+import org.springframework.data.cassandra.core.mapping.PrimaryKeyColumn;
 import org.springframework.data.cassandra.core.mapping.Tuple;
 import org.springframework.data.cassandra.core.mapping.UserDefinedType;
 import org.springframework.data.cassandra.core.mapping.UserTypeResolver;
@@ -54,62 +54,65 @@ import org.springframework.data.cassandra.core.query.CriteriaDefinition.Operator
 import org.springframework.data.cassandra.core.query.Filter;
 import org.springframework.data.cassandra.core.query.Query;
 import org.springframework.data.cassandra.domain.TypeWithKeyClass;
-import org.springframework.data.cassandra.support.UserTypeBuilder;
+import org.springframework.data.cassandra.support.UserDefinedTypeBuilder;
+import org.springframework.data.convert.PropertyValueConverter;
+import org.springframework.data.convert.ValueConverter;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.Sort.Direction;
 import org.springframework.data.domain.Sort.Order;
+import org.springframework.lang.Nullable;
 
-import com.datastax.driver.core.DataType;
-import com.datastax.driver.core.TupleValue;
-import com.datastax.driver.core.UDTValue;
-import com.datastax.driver.core.UserType;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.data.TupleValue;
+import com.datastax.oss.driver.api.core.data.UdtValue;
+import com.datastax.oss.driver.api.core.type.DataTypes;
 
 /**
  * Unit tests for {@link QueryMapper}.
  *
  * @author Mark Paluch
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public class QueryMapperUnitTests {
 
-	CassandraMappingContext mappingContext = new CassandraMappingContext();
+	private final CassandraMappingContext mappingContext = new CassandraMappingContext();
 
-	CassandraPersistentEntity<?> persistentEntity;
+	private CassandraPersistentEntity<?> personPersistentEntity;
 
-	MappingCassandraConverter cassandraConverter;
+	private QueryMapper queryMapper;
 
-	QueryMapper queryMapper;
-
-	UserType userType = UserTypeBuilder.forName("address").withField("street", DataType.varchar()).build();
+	private final com.datastax.oss.driver.api.core.type.UserDefinedType userType = UserDefinedTypeBuilder
+			.forName("address").withField("street", DataTypes.TEXT).build();
 
 	@Mock UserTypeResolver userTypeResolver;
 
-	@Before
-	public void before() {
+	@BeforeEach
+	void before() {
 
 		CassandraCustomConversions customConversions = new CassandraCustomConversions(
 				Collections.singletonList(CurrencyConverter.INSTANCE));
 
+		when(userTypeResolver.resolveType(any(CqlIdentifier.class))).thenReturn(userType);
+
 		mappingContext.setCustomConversions(customConversions);
 		mappingContext.setUserTypeResolver(userTypeResolver);
 
-		cassandraConverter = new MappingCassandraConverter(mappingContext);
+		MappingCassandraConverter cassandraConverter = new MappingCassandraConverter(mappingContext);
+
 		cassandraConverter.setCustomConversions(customConversions);
 		cassandraConverter.afterPropertiesSet();
 
 		queryMapper = new QueryMapper(cassandraConverter);
-
-		when(userTypeResolver.resolveType(any(CqlIdentifier.class))).thenReturn(userType);
-
-		persistentEntity = mappingContext.getRequiredPersistentEntity(Person.class);
+		personPersistentEntity = mappingContext.getRequiredPersistentEntity(Person.class);
 	}
 
 	@Test // DATACASS-343
-	public void shouldMapSimpleQuery() {
+	void shouldMapSimpleQuery() {
 
 		Query query = Query.query(Criteria.where("foo_name").is("bar"));
 
-		Filter mappedObject = queryMapper.getMappedObject(query, persistentEntity);
+		Filter mappedObject = queryMapper.getMappedObject(query, personPersistentEntity);
 
 		CriteriaDefinition mappedCriteriaDefinition = mappedObject.iterator().next();
 
@@ -118,11 +121,11 @@ public class QueryMapperUnitTests {
 	}
 
 	@Test // DATACASS-343
-	public void shouldMapEnumToString() {
+	void shouldMapEnumToString() {
 
 		Query query = Query.query(Criteria.where("foo_name").is(State.Active));
 
-		Filter mappedObject = queryMapper.getMappedObject(query, persistentEntity);
+		Filter mappedObject = queryMapper.getMappedObject(query, personPersistentEntity);
 
 		CriteriaDefinition mappedCriteriaDefinition = mappedObject.iterator().next();
 
@@ -130,11 +133,11 @@ public class QueryMapperUnitTests {
 	}
 
 	@Test // DATACASS-343
-	public void shouldMapEnumToNumber() {
+	void shouldMapEnumToNumber() {
 
 		Query query = Query.query(Criteria.where("number").is(State.Inactive));
 
-		Filter mappedObject = queryMapper.getMappedObject(query, persistentEntity);
+		Filter mappedObject = queryMapper.getMappedObject(query, personPersistentEntity);
 
 		CriteriaDefinition mappedCriteriaDefinition = mappedObject.iterator().next();
 
@@ -142,11 +145,11 @@ public class QueryMapperUnitTests {
 	}
 
 	@Test // DATACASS-343
-	public void shouldMapEnumToNumberIn() {
+	void shouldMapEnumToNumberIn() {
 
 		Query query = Query.query(Criteria.where("number").in(State.Inactive));
 
-		Filter mappedObject = queryMapper.getMappedObject(query, persistentEntity);
+		Filter mappedObject = queryMapper.getMappedObject(query, personPersistentEntity);
 
 		CriteriaDefinition mappedCriteriaDefinition = mappedObject.iterator().next();
 
@@ -155,11 +158,11 @@ public class QueryMapperUnitTests {
 	}
 
 	@Test // DATACASS-343
-	public void shouldMapApplyingCustomConversion() {
+	void shouldMapApplyingCustomConversion() {
 
 		Query query = Query.query(Criteria.where("foo_name").is(Currency.getInstance("EUR")));
 
-		Filter mappedObject = queryMapper.getMappedObject(query, persistentEntity);
+		Filter mappedObject = queryMapper.getMappedObject(query, personPersistentEntity);
 
 		CriteriaDefinition mappedCriteriaDefinition = mappedObject.iterator().next();
 
@@ -168,11 +171,11 @@ public class QueryMapperUnitTests {
 	}
 
 	@Test // DATACASS-343
-	public void shouldMapApplyingCustomConversionInCollection() {
+	void shouldMapApplyingCustomConversionInCollection() {
 
 		Query query = Query.query(Criteria.where("foo_name").in(Currency.getInstance("EUR")));
 
-		Filter mappedObject = queryMapper.getMappedObject(query, persistentEntity);
+		Filter mappedObject = queryMapper.getMappedObject(query, personPersistentEntity);
 
 		CriteriaDefinition mappedCriteriaDefinition = mappedObject.iterator().next();
 
@@ -181,118 +184,139 @@ public class QueryMapperUnitTests {
 	}
 
 	@Test // DATACASS-343
-	public void shouldMapApplyingUdtValueConversion() {
+	void shouldMapApplyingUdtValueConversion() {
 
 		Query query = Query.query(Criteria.where("address").is(new Address("21 Jump-Street")));
 
-		Filter mappedObject = queryMapper.getMappedObject(query, persistentEntity);
+		Filter mappedObject = queryMapper.getMappedObject(query, personPersistentEntity);
 
 		CriteriaDefinition mappedCriteriaDefinition = mappedObject.iterator().next();
+		CriteriaDefinition.Predicate predicate = mappedCriteriaDefinition.getPredicate();
 
-		assertThat(mappedCriteriaDefinition.getPredicate().getOperator()).isEqualTo(Operators.EQ);
-		assertThat(mappedCriteriaDefinition.getPredicate().getValue()).isInstanceOf(UDTValue.class);
-		assertThat(mappedCriteriaDefinition.getPredicate().getValue().toString()).isEqualTo("{street:'21 Jump-Street'}");
+		assertThat(predicate.getOperator()).isEqualTo(Operators.EQ);
+		assertThat(predicate.getValue()).isInstanceOf(UdtValue.class);
+		assertThat(predicate.as(UdtValue.class::cast).getFormattedContents()).isEqualTo("{street:'21 Jump-Street'}");
 	}
 
 	@Test // DATACASS-343
-	public void shouldMapApplyingUdtValueCollectionConversion() {
+	@SuppressWarnings("unchecked")
+	void shouldMapApplyingUdtValueCollectionConversion() {
 
 		Query query = Query.query(Criteria.where("address").in(new Address("21 Jump-Street")));
 
-		Filter mappedObject = queryMapper.getMappedObject(query, persistentEntity);
+		Filter mappedObject = queryMapper.getMappedObject(query, personPersistentEntity);
 
 		CriteriaDefinition mappedCriteriaDefinition = mappedObject.iterator().next();
 
-		assertThat(mappedCriteriaDefinition.getPredicate().getOperator()).isEqualTo(Operators.IN);
-		assertThat(mappedCriteriaDefinition.getPredicate().getValue()).isInstanceOf(Collection.class);
-		assertThat(mappedCriteriaDefinition.getPredicate().getValue().toString()).isEqualTo("[{street:'21 Jump-Street'}]");
+		CriteriaDefinition.Predicate predicate = mappedCriteriaDefinition.getPredicate();
+
+		assertThat(predicate.getOperator()).isEqualTo(Operators.IN);
+		assertThat(predicate.getValue()).isInstanceOf(Collection.class);
+		assertThat((List<UdtValue>) predicate.getValue()).extracting(UdtValue::getFormattedContents)
+				.contains("{street:'21 Jump-Street'}");
 	}
 
 	@Test // DATACASS-343
-	public void shouldMapCollectionApplyingUdtValueCollectionConversion() {
+	@SuppressWarnings("unchecked")
+	void shouldMapCollectionApplyingUdtValueCollectionConversion() {
 
-		Query query = Query.query(Criteria.where("addresses").in(new Address("21 Jump-Street")));
+		Query query = Query.query(Criteria.where("address").in(new Address("21 Jump-Street")));
 
-		Filter mappedObject = queryMapper.getMappedObject(query, persistentEntity);
+		Filter mappedObject = queryMapper.getMappedObject(query, personPersistentEntity);
 
 		CriteriaDefinition mappedCriteriaDefinition = mappedObject.iterator().next();
+		CriteriaDefinition.Predicate predicate = mappedCriteriaDefinition.getPredicate();
 
-		assertThat(mappedCriteriaDefinition.getPredicate().getOperator()).isEqualTo(Operators.IN);
-		assertThat(mappedCriteriaDefinition.getPredicate().getValue()).isInstanceOf(Collection.class);
-		assertThat(mappedCriteriaDefinition.getPredicate().getValue().toString()).isEqualTo("[{street:'21 Jump-Street'}]");
+		assertThat(predicate.getOperator()).isEqualTo(Operators.IN);
+		assertThat(predicate.getValue()).isInstanceOf(Collection.class);
+		assertThat((List<UdtValue>) predicate.getValue()).extracting(UdtValue::getFormattedContents)
+				.contains("{street:'21 Jump-Street'}");
 	}
 
 	@Test // DATACASS-487
-	public void shouldMapUdtMapContainsKey() {
+	void shouldMapUdtMapContainsKey() {
 
 		Query query = Query.query(Criteria.where("relocations").containsKey(new Address("21 Jump-Street")));
 
-		Filter mappedObject = queryMapper.getMappedObject(query, persistentEntity);
+		Filter mappedObject = queryMapper.getMappedObject(query, personPersistentEntity);
 
 		CriteriaDefinition mappedCriteriaDefinition = mappedObject.iterator().next();
 
 		assertThat(mappedCriteriaDefinition.getPredicate().getOperator()).isEqualTo(Operators.CONTAINS_KEY);
-		assertThat(mappedCriteriaDefinition.getPredicate().getValue()).isInstanceOf(UDTValue.class);
-		assertThat(mappedCriteriaDefinition.getPredicate().getValue().toString()).isEqualTo("{street:'21 Jump-Street'}");
+		assertThat(mappedCriteriaDefinition.getPredicate().getValue()).isInstanceOf(UdtValue.class);
+		assertThat(((UdtValue) mappedCriteriaDefinition.getPredicate().getValue()).getFormattedContents())
+				.isEqualTo("{street:'21 Jump-Street'}");
 	}
 
 	@Test // DATACASS-487
-	public void shouldMapUdtMapContains() {
+	void shouldMapUdtMapContains() {
 
 		Query query = Query.query(Criteria.where("relocations").contains(new Address("21 Jump-Street")));
 
-		Filter mappedObject = queryMapper.getMappedObject(query, persistentEntity);
+		Filter mappedObject = queryMapper.getMappedObject(query, personPersistentEntity);
 
 		CriteriaDefinition mappedCriteriaDefinition = mappedObject.iterator().next();
 
 		assertThat(mappedCriteriaDefinition.getPredicate().getOperator()).isEqualTo(Operators.CONTAINS);
-		assertThat(mappedCriteriaDefinition.getPredicate().getValue()).isInstanceOf(UDTValue.class);
-		assertThat(mappedCriteriaDefinition.getPredicate().getValue().toString()).isEqualTo("{street:'21 Jump-Street'}");
+		assertThat(mappedCriteriaDefinition.getPredicate().getValue()).isInstanceOf(UdtValue.class);
+		assertThat(((UdtValue) mappedCriteriaDefinition.getPredicate().getValue()).getFormattedContents())
+				.isEqualTo("{street:'21 Jump-Street'}");
 	}
 
 	@Test // DATACASS-343
-	public void shouldMapPropertyToColumnName() {
+	void shouldMapPropertyToColumnName() {
 
 		Query query = Query.query(Criteria.where("firstName").is("bar"));
 
-		Filter mappedObject = queryMapper.getMappedObject(query, persistentEntity);
+		Filter mappedObject = queryMapper.getMappedObject(query, personPersistentEntity);
 
 		CriteriaDefinition mappedCriteriaDefinition = mappedObject.iterator().next();
 
-		assertThat(mappedCriteriaDefinition.getColumnName()).isEqualTo(ColumnName.from(CqlIdentifier.of("first_name")));
+		assertThat(mappedCriteriaDefinition.getColumnName())
+				.isEqualTo(ColumnName.from(CqlIdentifier.fromCql("first_name")));
 		assertThat(mappedCriteriaDefinition.getColumnName().toString()).isEqualTo("first_name");
 	}
 
-	@Test // DATACASS-343
-	public void shouldCreateSelectExpression() {
+	@Test // GH-1449
+	void shouldConsiderPropertyValueConverter() {
 
-		List<Selector> selectors = queryMapper.getMappedSelectors(Columns.empty(), persistentEntity);
+		Query query = Query.query(Criteria.where("reverseName").is("Heisenberg"));
+
+		Filter mappedObject = queryMapper.getMappedObject(query, personPersistentEntity);
+
+		CriteriaDefinition mappedCriteriaDefinition = mappedObject.iterator().next();
+		assertThat(mappedCriteriaDefinition.getPredicate().getValue()).isEqualTo("grebnesieH");
+	}
+
+	@Test // DATACASS-343
+	void shouldCreateSelectExpression() {
+
+		List<Selector> selectors = queryMapper.getMappedSelectors(Columns.empty(), personPersistentEntity);
 
 		assertThat(selectors).isEmpty();
 	}
 
 	@Test // DATACASS-343
-	public void shouldCreateSelectExpressionWithTTL() {
+	void shouldCreateSelectExpressionWithTTL() {
 
 		List<String> selectors = queryMapper
-				.getMappedSelectors(Columns.from("number", "foo").ttl("firstName"),
-						mappingContext.getRequiredPersistentEntity(Person.class))
-				.stream().map(Selector::toString).collect(Collectors.toList());
+				.getMappedSelectors(Columns.from("number", "foo").ttl("firstName"), personPersistentEntity).stream()
+				.map(Selector::toString).collect(Collectors.toList());
 
 		assertThat(selectors).contains("number").contains("foo").contains("TTL(first_name)");
 	}
 
 	@Test // DATACASS-343
-	public void shouldIncludeColumnsSelectExpressionWithTTL() {
+	void shouldIncludeColumnsSelectExpressionWithTTL() {
 
-		List<String> selectors = queryMapper.getMappedColumnNames(Columns.from("number", "foo").ttl("firstName"),
-				persistentEntity);
+		List<CqlIdentifier> selectors = queryMapper.getMappedColumnNames(Columns.from("number", "foo").ttl("firstName"),
+				personPersistentEntity);
 
-		assertThat(selectors).contains("number").contains("foo").hasSize(2);
+		assertThat(selectors).contains(CqlIdentifier.fromCql("number"), CqlIdentifier.fromCql("foo")).hasSize(2);
 	}
 
 	@Test // DATACASS-343
-	public void shouldMapQueryWithCompositePrimaryKeyClass() {
+	void shouldMapQueryWithCompositePrimaryKeyClass() {
 
 		Filter filter = Filter.from(Criteria.where("key.firstname").is("foo"));
 
@@ -303,7 +327,7 @@ public class QueryMapperUnitTests {
 	}
 
 	@Test // DATACASS-343
-	public void shouldMapSortWithCompositePrimaryKeyClass() {
+	void shouldMapSortWithCompositePrimaryKeyClass() {
 
 		Sort sort = Sort.by("key.firstname");
 
@@ -313,37 +337,39 @@ public class QueryMapperUnitTests {
 		assertThat(mappedObject).contains(new Order(Direction.ASC, "first_name"));
 	}
 
-	@Test(expected = IllegalArgumentException.class) // DATACASS-343
-	public void shouldFailMappingSortByCompositePrimaryKeyClass() {
+	@Test // DATACASS-828
+	void allowSortByCompositeKey() {
 
 		Sort sort = Sort.by("key");
+		Query.empty().columns(Columns.from("key"));
 
-		queryMapper.getMappedSort(sort, mappingContext.getRequiredPersistentEntity(TypeWithKeyClass.class));
+		Sort mappedSort = queryMapper.getMappedSort(sort,
+				mappingContext.getRequiredPersistentEntity(TypeWithKeyClass.class));
+		assertThat(mappedSort).isEqualTo(Sort.by(asc("first_name"), asc("lastname")));
 	}
 
 	@Test // DATACASS-343
-	public void shouldMapColumnWithCompositePrimaryKeyClass() {
+	void shouldMapColumnWithCompositePrimaryKeyClass() {
 
 		Columns columnNames = Columns.from("key.firstname");
 
-		List<String> mappedObject = queryMapper.getMappedColumnNames(columnNames,
+		List<CqlIdentifier> mappedObject = queryMapper.getMappedColumnNames(columnNames,
 				mappingContext.getRequiredPersistentEntity(TypeWithKeyClass.class));
 
-		assertThat(mappedObject).contains("first_name");
+		assertThat(mappedObject).contains(CqlIdentifier.fromCql("first_name"));
 	}
 
 	@Test // DATACASS-523
-	public void shouldMapTuple() {
+	@SuppressWarnings("all")
+	void shouldMapTuple() {
 
 		MappedTuple tuple = new MappedTuple("foo");
 
 		Filter filter = Filter.from(Criteria.where("tuple").is(tuple));
 
-		Filter mappedObject = this.queryMapper.getMappedObject(filter,
-				this.mappingContext.getRequiredPersistentEntity(Person.class));
+		Filter mappedObject = this.queryMapper.getMappedObject(filter, this.personPersistentEntity);
 
-		TupleValue tupleValue = this.mappingContext.getRequiredPersistentEntity(MappedTuple.class).getTupleType()
-				.newValue();
+		TupleValue tupleValue = DataTypes.tupleOf(DataTypes.TEXT).newValue();
 
 		tupleValue.setString(0, "foo");
 
@@ -351,23 +377,61 @@ public class QueryMapperUnitTests {
 	}
 
 	@Test // DATACASS-302
-	public void shouldMapTime() {
+	// NOTE: DataStax Cassandra OSS Java Driver is already capable of handling Java Time types since 4.x. (at least).
+	// see https://docs.datastax.com/en/drivers/java/4.13/com/datastax/oss/driver/api/core/type/codec/TypeCodecs.html
+	// Therefore java.time.LocalTime on an entity property type maps to java.time.LocalTime in a CQL query.
+	void shouldMapTime() {
 
-		Filter filter = Filter.from(Criteria.where("localDate").gt(LocalTime.fromMillisOfDay(1000)));
+		LocalTime time = LocalTime.ofNanoOfDay(1000);
 
-		Filter mappedObject = this.queryMapper.getMappedObject(filter,
-				this.mappingContext.getRequiredPersistentEntity(Person.class));
+		Filter filter = Filter.from(Criteria.where("localTime").gt(time));
 
-		assertThat(mappedObject).contains(Criteria.where("localdate").gt(1000L));
+		Filter mappedFilter = this.queryMapper.getMappedObject(filter, this.personPersistentEntity);
+
+		assertThat(mappedFilter).contains(Criteria.where("localtime").gt(time));
 	}
 
 	@Test // DATACASS-523
-	public void referencingTupleElementsInQueryShouldFail() {
-		assertThatIllegalArgumentException()
-				.isThrownBy(() -> this.queryMapper.getMappedObject(Filter.from(Criteria.where("tuple.zip").is("123")),
-						this.mappingContext.getRequiredPersistentEntity(Person.class)));
+	void referencingTupleElementsInQueryShouldFail() {
+		assertThatIllegalArgumentException().isThrownBy(() -> this.queryMapper
+				.getMappedObject(Filter.from(Criteria.where("tuple.zip").is("123")), this.personPersistentEntity));
 	}
 
+	@Test // DATACASS-167
+	void shouldMapEmbeddedType() {
+
+		Filter filter = Filter.from(Criteria.where("nested.firstname").is("spring"));
+
+		Filter mappedObject = this.queryMapper.getMappedObject(filter,
+				this.mappingContext.getRequiredPersistentEntity(WithNullableEmbeddedType.class));
+
+		assertThat(mappedObject.iterator().next().getColumnName()).isEqualTo(ColumnName.from("firstname"));
+	}
+
+	@Test // DATACASS-167
+	void shouldMapPrefixedEmbeddedType() {
+
+		Filter filter = Filter.from(Criteria.where("nested.firstname").is("spring"));
+
+		Filter mappedObject = this.queryMapper.getMappedObject(filter,
+				this.mappingContext.getRequiredPersistentEntity(WithPrefixedNullableEmbeddedType.class));
+
+		assertThat(mappedObject.iterator().next().getColumnName()).isEqualTo(ColumnName.from("prefixfirstname"));
+	}
+
+	@Test // GH-1383
+	void shouldConvertPrimaryKeyValues() {
+
+		Filter filter = Filter.from(Criteria.where("id.foo").is(42));
+
+		Filter mappedObject = this.queryMapper.getMappedObject(filter,
+				this.mappingContext.getRequiredPersistentEntity(WithPrimaryKeyClass.class));
+
+		assertThat(mappedObject.iterator().next().getColumnName()).isEqualTo(ColumnName.from("foo"));
+		assertThat(mappedObject.iterator().next().getPredicate().getValue()).isEqualTo(42L);
+	}
+
+	@SuppressWarnings("unused")
 	static class Person {
 
 		@Id String id;
@@ -381,25 +445,99 @@ public class QueryMapperUnitTests {
 		Integer number;
 
 		LocalDate localDate;
+		LocalTime localTime;
 
 		MappedTuple tuple;
 
 		@Column("first_name") String firstName;
+
+		@ValueConverter(ReversingValueConverter.class) String reverseName;
+
+	}
+
+	static class ReversingValueConverter implements PropertyValueConverter<String, String, CassandraConversionContext> {
+
+		@Nullable
+		@Override
+		public String read(@Nullable String value, CassandraConversionContext context) {
+			return reverse(value);
+		}
+
+		@Nullable
+		@Override
+		public String write(@Nullable String value, CassandraConversionContext context) {
+			return reverse(value);
+		}
+
+		private String reverse(String source) {
+
+			if (source == null) {
+				return null;
+			}
+
+			return new StringBuilder(source).reverse().toString();
+		}
+	}
+
+	static class WithPrimaryKeyClass {
+
+		@Id MyPrimaryKeyClass id;
+
+	}
+
+	static class MyPrimaryKeyClass {
+
+		@PrimaryKeyColumn long foo;
+
+		@PrimaryKeyColumn long bar;
 	}
 
 	@Tuple
-	@AllArgsConstructor
-	static class MappedTuple {
-		@Element(0) String zip;
+	record MappedTuple(@Element(0) String zip) {
 	}
 
 	@UserDefinedType
-	@AllArgsConstructor
-	static class Address {
-		String street;
+	record Address(String street) {
+
 	}
 
 	enum State {
-		Active, Inactive;
+		Active, Inactive
+	}
+
+	static class WithNullableEmbeddedType {
+
+		@Id String id;
+
+		@Embedded.Nullable EmbeddedWithSimpleTypes nested;
+	}
+
+	static class WithPrefixedNullableEmbeddedType {
+
+		@Id String id;
+
+		@Embedded.Nullable(prefix = "prefix") EmbeddedWithSimpleTypes nested;
+	}
+
+	static class EmbeddedWithSimpleTypes {
+
+		String firstname;
+		Integer age;
+
+		public String getFirstname() {
+			return this.firstname;
+		}
+
+		public Integer getAge() {
+			return this.age;
+		}
+
+		public void setFirstname(String firstname) {
+			this.firstname = firstname;
+		}
+
+		public void setAge(Integer age) {
+			this.age = age;
+		}
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,10 @@ package org.springframework.data.cassandra.core.query;
 
 import java.util.Optional;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Value object representing a column name. Column names can be expressed either through {@link CqlIdentifier} or a
@@ -29,7 +31,7 @@ import org.springframework.util.Assert;
  * Implementing classes must provide either {@link #getColumnName()} or {@link #getCqlIdentifier()}.
  *
  * @author Mark Paluch
- * @see org.springframework.data.cassandra.core.cql.CqlIdentifier
+ * @see com.datastax.oss.driver.api.core.CqlIdentifier
  * @since 2.0
  */
 public abstract class ColumnName {
@@ -80,11 +82,8 @@ public abstract class ColumnName {
 	 */
 	public abstract String toCql();
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.query.Criteria#equals(java.lang.Object)
-	 */
 	@Override
-	public boolean equals(Object obj) {
+	public boolean equals(@Nullable Object obj) {
 
 		if (this == obj) {
 			return true;
@@ -99,9 +98,6 @@ public abstract class ColumnName {
 		return toCql().equals(that.toCql());
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#hashCode()
-	 */
 	@Override
 	public int hashCode() {
 		int hashValue = 17;
@@ -122,33 +118,21 @@ public abstract class ColumnName {
 			this.columnName = columnName;
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.ColumnName#getColumnName()
-		 */
 		@Override
 		public Optional<String> getColumnName() {
 			return Optional.of(columnName);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.ColumnName#getCqlIdentifier()
-		 */
 		@Override
 		public Optional<CqlIdentifier> getCqlIdentifier() {
 			return Optional.empty();
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.ColumnName#toCql()
-		 */
 		@Override
 		public String toCql() {
 			return this.columnName;
 		}
 
-		/* (non-Javadoc)
-		 * @see java.lang.Object#toString()
-		 */
 		@Override
 		public String toString() {
 			return this.columnName;
@@ -168,33 +152,21 @@ public abstract class ColumnName {
 			this.cqlIdentifier = cqlIdentifier;
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.ColumnName#getColumnName()
-		 */
 		@Override
 		public Optional<String> getColumnName() {
 			return Optional.empty();
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.ColumnName#getCqlIdentifier()
-		 */
 		@Override
 		public Optional<CqlIdentifier> getCqlIdentifier() {
 			return Optional.of(this.cqlIdentifier);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.ColumnName#toCql()
-		 */
 		@Override
 		public String toCql() {
-			return this.cqlIdentifier.toCql();
+			return this.cqlIdentifier.toString();
 		}
 
-		/* (non-Javadoc)
-		 * @see java.lang.Object#toString()
-		 */
 		@Override
 		public String toString() {
 			return this.cqlIdentifier.toString();

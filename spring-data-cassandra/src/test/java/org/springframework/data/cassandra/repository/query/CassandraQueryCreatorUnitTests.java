@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,9 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.junit.Before;
-import org.junit.Test;
-
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.cassandra.core.StatementFactory;
@@ -35,8 +34,8 @@ import org.springframework.data.cassandra.core.convert.CassandraConverter;
 import org.springframework.data.cassandra.core.convert.MappingCassandraConverter;
 import org.springframework.data.cassandra.core.convert.UpdateMapper;
 import org.springframework.data.cassandra.core.cql.PrimaryKeyType;
+import org.springframework.data.cassandra.core.cql.util.StatementBuilder;
 import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
-import org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity;
 import org.springframework.data.cassandra.core.mapping.Column;
 import org.springframework.data.cassandra.core.mapping.PrimaryKey;
 import org.springframework.data.cassandra.core.mapping.PrimaryKeyClass;
@@ -45,24 +44,24 @@ import org.springframework.data.cassandra.core.mapping.Table;
 import org.springframework.data.cassandra.core.mapping.UserTypeResolver;
 import org.springframework.data.cassandra.core.query.Query;
 import org.springframework.data.cassandra.domain.Person;
-import org.springframework.data.cassandra.repository.support.MappingCassandraEntityInformation;
 import org.springframework.data.domain.Range;
 import org.springframework.data.repository.query.parser.PartTree;
 
-import com.datastax.driver.core.RegularStatement;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
+import com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry;
 
 /**
  * Unit tests for {@link CassandraQueryCreator}.
  *
  * @author Mark Paluch
  */
-public class CassandraQueryCreatorUnitTests {
+class CassandraQueryCreatorUnitTests {
 
-	CassandraMappingContext context;
-	CassandraConverter converter;
+	private CassandraMappingContext context;
+	private CassandraConverter converter;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		context = new CassandraMappingContext();
 		context.setUserTypeResolver(mock(UserTypeResolver.class));
@@ -71,221 +70,223 @@ public class CassandraQueryCreatorUnitTests {
 	}
 
 	@Test // DATACASS-7
-	public void createsQueryCorrectly() {
+	void createsQueryCorrectly() {
 
 		String query = createQuery("findByFirstname", Person.class, "Walter");
 
-		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname='Walter';");
+		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname='Walter'");
 	}
 
 	@Test // DATACASS-7
-	public void createsQueryWithSortCorrectly() {
+	void createsQueryWithSortCorrectly() {
 
 		String query = createQuery("findByFirstnameOrderByLastname", Person.class, "Walter");
 
-		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname='Walter' ORDER BY lastname ASC;");
+		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname='Walter' ORDER BY lastname ASC");
 	}
 
 	@Test // DATACASS-7
-	public void createsAndQueryCorrectly() {
+	void createsAndQueryCorrectly() {
 
 		String query = createQuery("findByFirstnameAndLastname", Person.class, "Walter", "White");
 
-		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname='Walter' AND lastname='White';");
-	}
-
-	@Test(expected = InvalidDataAccessApiUsageException.class) // DATACASS-7
-	public void rejectsNegatingQuery() {
-		createQuery("findByFirstnameNot", Person.class, "Walter");
-	}
-
-	@Test(expected = InvalidDataAccessApiUsageException.class) // DATACASS-7
-	public void rejectsOrQuery() {
-		createQuery("findByFirstnameOrLastname", Person.class, "Walter", "White");
+		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname='Walter' AND lastname='White'");
 	}
 
 	@Test // DATACASS-7
-	public void createsGreaterThanQueryCorrectly() {
+	void rejectsNegatingQuery() {
+		assertThatExceptionOfType(InvalidDataAccessApiUsageException.class)
+				.isThrownBy(() -> createQuery("findByFirstnameNot", Person.class, "Walter"));
+	}
+
+	@Test // DATACASS-7
+	void rejectsOrQuery() {
+		assertThatExceptionOfType(InvalidDataAccessApiUsageException.class)
+				.isThrownBy(() -> createQuery("findByFirstnameOrLastname", Person.class, "Walter", "White"));
+	}
+
+	@Test // DATACASS-7
+	void createsGreaterThanQueryCorrectly() {
 
 		String query = createQuery("findByFirstnameGreaterThan", Person.class, "Walter");
 
-		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname>'Walter';");
+		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname>'Walter'");
 	}
 
 	@Test // DATACASS-7
-	public void createsGreaterThanEqualQueryCorrectly() {
+	void createsGreaterThanEqualQueryCorrectly() {
 
 		String query = createQuery("findByFirstnameGreaterThanEqual", Person.class, "Walter");
 
-		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname>='Walter';");
+		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname>='Walter'");
 	}
 
 	@Test // DATACASS-7
-	public void createsLessThanQueryCorrectly() {
+	void createsLessThanQueryCorrectly() {
 
 		String query = createQuery("findByFirstnameLessThan", Person.class, "Walter");
 
-		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname<'Walter';");
+		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname<'Walter'");
 	}
 
 	@Test // DATACASS-7
-	public void createsLessThanEqualQueryCorrectly() {
+	void createsLessThanEqualQueryCorrectly() {
 
 		String query = createQuery("findByFirstnameLessThanEqual", Person.class, "Walter");
 
-		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname<='Walter';");
+		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname<='Walter'");
 	}
 
 	@Test // DATACASS-627
-	public void createsBetweenQueryCorrectly() {
+	void createsBetweenQueryCorrectly() {
 
-		String query = createQuery("findByFirstnameBetween", Person.class, 1, 2);
+		String query = createQuery("findByNumberOfChildrenBetween", Person.class, 1, 2);
 
-		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname>1 AND firstname<2;");
+		assertThat(query).isEqualTo("SELECT * FROM person WHERE numberofchildren>1 AND numberofchildren<2");
 	}
 
 	@Test // DATACASS-627
-	public void createsBetweenQueryWithRangeCorrectly() {
+	void createsBetweenQueryWithRangeCorrectly() {
 
-		String query = createQuery("findByFirstnameBetween", Person.class,
+		String query = createQuery("findByNumberOfChildrenBetween", Person.class,
 				Range.from(Range.Bound.inclusive(1)).to(Range.Bound.exclusive(2)));
 
-		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname>=1 AND firstname<2;");
+		assertThat(query).isEqualTo("SELECT * FROM person WHERE numberofchildren>=1 AND numberofchildren<2");
 	}
 
 	@Test // DATACASS-7
-	public void createsInQueryCorrectly() {
+	void createsInQueryCorrectly() {
 
 		String query = createQuery("findByFirstnameIn", Person.class, "Walter");
 
-		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname IN ('Walter');");
+		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname IN ('Walter')");
 	}
 
 	@Test // DATACASS-7
-	public void createsInQueryWithListCorrectly() {
+	void createsInQueryWithListCorrectly() {
 
 		String query = createQuery("findByFirstnameIn", Person.class, Arrays.asList("Walter", "Gus"));
 
-		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname IN ('Walter','Gus');");
+		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname IN ('Walter','Gus')");
 	}
 
 	@Test // DATACASS-7
-	public void createsInQueryWithArrayCorrectly() {
+	void createsInQueryWithArrayCorrectly() {
 
 		String query = createQuery("findByFirstnameInAndLastname", Person.class, new String[] { "Walter", "Gus" }, "Fring");
 
-		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname IN ('Walter','Gus') AND lastname='Fring';");
+		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname IN ('Walter','Gus') AND lastname='Fring'");
 	}
 
 	@Test // DATACASS-7
-	public void createsLikeQueryCorrectly() {
+	void createsLikeQueryCorrectly() {
 
 		assertThat(createQuery("findByFirstnameLike", Person.class, "Wal%ter"))
-				.isEqualTo("SELECT * FROM person WHERE firstname LIKE 'Wal%ter';");
+				.isEqualTo("SELECT * FROM person WHERE firstname LIKE 'Wal%ter'");
 
 		assertThat(createQuery("findByFirstnameLike", Person.class, "Walter"))
-				.isEqualTo("SELECT * FROM person WHERE firstname LIKE 'Walter';");
+				.isEqualTo("SELECT * FROM person WHERE firstname LIKE 'Walter'");
 	}
 
 	@Test // DATACASS-7
-	public void createsStartsWithQueryCorrectly() {
+	void createsStartsWithQueryCorrectly() {
 
 		String query = createQuery("findByFirstnameStartsWith", Person.class, "Walter");
 
-		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname LIKE 'Walter%';");
+		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname LIKE 'Walter%'");
 	}
 
 	@Test // DATACASS-7
-	public void createsEndsWithQueryCorrectly() {
+	void createsEndsWithQueryCorrectly() {
 
 		String query = createQuery("findByFirstnameEndsWith", Person.class, "Walter");
 
-		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname LIKE '%Walter';");
+		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname LIKE '%Walter'");
 	}
 
 	@Test // DATACASS-7
-	public void createsContainsQueryOnSimplePropertyCorrectly() {
+	void createsContainsQueryOnSimplePropertyCorrectly() {
 
 		String query = createQuery("findByFirstnameContains", Person.class, "Walter");
 
-		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname LIKE '%Walter%';");
+		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname LIKE '%Walter%'");
 	}
 
 	@Test // DATACASS-7
-	public void createsContainsQueryOnSetPropertyCorrectly() {
+	void createsContainsQueryOnSetPropertyCorrectly() {
 
 		String query = createQuery("findByMysetContains", TypeWithSet.class, "Walter");
 
-		assertThat(query).isEqualTo("SELECT * FROM typewithset WHERE myset CONTAINS 'Walter';");
+		assertThat(query).isEqualTo("SELECT * FROM typewithset WHERE myset CONTAINS 'Walter'");
 	}
 
 	@Test // DATACASS-7
-	public void createsContainsQueryOnListPropertyCorrectly() {
+	void createsContainsQueryOnListPropertyCorrectly() {
 
 		String query = createQuery("findByMylistContains", TypeWithList.class, "Walter");
 
-		assertThat(query).isEqualTo("SELECT * FROM typewithlist WHERE mylist CONTAINS 'Walter';");
+		assertThat(query).isEqualTo("SELECT * FROM typewithlist WHERE mylist CONTAINS 'Walter'");
 	}
 
 	@Test // DATACASS-7
-	public void createsContainsQueryOnMapPropertyCorrectly() {
+	void createsContainsQueryOnMapPropertyCorrectly() {
 
 		String query = createQuery("findByMymapContains", TypeWithMap.class, "Walter");
 
-		assertThat(query).isEqualTo("SELECT * FROM typewithmap WHERE mymap CONTAINS 'Walter';");
+		assertThat(query).isEqualTo("SELECT * FROM typewithmap WHERE mymap CONTAINS 'Walter'");
 	}
 
 	@Test // DATACASS-7
-	public void createsIsTrueQueryCorrectly() {
+	void createsIsTrueQueryCorrectly() {
 
-		String query = createQuery("findByFirstnameIsTrue", Person.class, "Walter");
+		String query = createQuery("findByCoolIsTrue", Person.class, "Walter");
 
-		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname=true;");
+		assertThat(query).isEqualTo("SELECT * FROM person WHERE cool=true");
 	}
 
 	@Test // DATACASS-7
-	public void createsIsFalseQueryCorrectly() {
+	void createsIsFalseQueryCorrectly() {
 
-		String query = createQuery("findByFirstnameIsFalse", Person.class, "Walter");
+		String query = createQuery("findByCoolIsFalse", Person.class, "Walter");
 
-		assertThat(query).isEqualTo("SELECT * FROM person WHERE firstname=false;");
+		assertThat(query).isEqualTo("SELECT * FROM person WHERE cool=false");
 	}
 
 	@Test // DATACASS-7
-	public void createsQueryUsingQuotingCorrectly() {
+	void createsQueryUsingQuotingCorrectly() {
 
-		String query = createQuery("findByIdAndSet", QuotedType.class, "Walter", "White");
+		String query = createQuery("findByIdAndSet", QuotedType.class, "Walter", Arrays.asList("White"));
 
-		assertThat(query).isEqualTo("SELECT * FROM \"myTable\" WHERE \"my_id\"='Walter' AND \"set\"='White';");
+		assertThat(query).isEqualTo("SELECT * FROM \"myTable\" WHERE my_id='Walter' AND \"set\"={'White'}");
 	}
 
 	@Test // DATACASS-7
-	public void createsFindByPrimaryKeyPartCorrectly() {
+	void createsFindByPrimaryKeyPartCorrectly() {
 
 		String query = createQuery("findByKeyFirstname", TypeWithCompositeId.class, "Walter");
 
-		assertThat(query).isEqualTo("SELECT * FROM typewithcompositeid WHERE firstname='Walter';");
+		assertThat(query).isEqualTo("SELECT * FROM typewithcompositeid WHERE firstname='Walter'");
 	}
 
 	@Test // DATACASS-7
-	public void createsFindByPrimaryKeyPartWithSortCorrectly() {
+	void createsFindByPrimaryKeyPartWithSortCorrectly() {
 
 		String query = createQuery("findByKeyFirstnameOrderByKeyLastnameAsc", TypeWithCompositeId.class, "Walter");
 
-		assertThat(query).isEqualTo("SELECT * FROM typewithcompositeid WHERE firstname='Walter' ORDER BY lastname ASC;");
+		assertThat(query).isEqualTo("SELECT * FROM typewithcompositeid WHERE firstname='Walter' ORDER BY lastname ASC");
 	}
 
 	@Test // DATACASS-7
-	public void createsFindByPrimaryKeyPartOfPrimaryKeyClassCorrectly() {
+	void createsFindByPrimaryKeyPartOfPrimaryKeyClassCorrectly() {
 
 		String query = createQuery("findByFirstname", Key.class, "Walter");
 
 		// ⊙_ʘ rly? ヾ( •́д•̀ ;)ﾉ
-		assertThat(query).isEqualTo("SELECT * FROM key WHERE firstname='Walter';");
+		assertThat(query).isEqualTo("SELECT * FROM key WHERE firstname='Walter'");
 	}
 
 	@Test // DATACASS-7
-	public void createsFindByPrimaryKey2PartCorrectly() {
+	void createsFindByPrimaryKey2PartCorrectly() {
 		assertThatIllegalArgumentException()
 				.isThrownBy(() -> createQuery("findByKey", TypeWithCompositeId.class, new Key()));
 	}
@@ -298,14 +299,9 @@ public class CassandraQueryCreatorUnitTests {
 		StatementFactory factory = new StatementFactory(new UpdateMapper(converter));
 		Query query = creator.createQuery();
 
-		RegularStatement select = factory.select(query, context.getRequiredPersistentEntity(entityClass));
-		return select.toString();
-	}
-
-	@SuppressWarnings("unchecked")
-	private <T> CassandraEntityInformation<T, Serializable> getEntityInformation(final Class<T> entityClass) {
-		return new MappingCassandraEntityInformation<>(
-				(CassandraPersistentEntity) context.getRequiredPersistentEntity(entityClass), converter);
+		SimpleStatement statement = factory.select(query, context.getRequiredPersistentEntity(entityClass))
+				.build(StatementBuilder.ParameterHandling.INLINE, CodecRegistry.DEFAULT);
+		return statement.getQuery();
 	}
 
 	@Table

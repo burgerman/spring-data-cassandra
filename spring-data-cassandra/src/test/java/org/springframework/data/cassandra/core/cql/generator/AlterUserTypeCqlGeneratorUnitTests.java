@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,60 +16,61 @@
 package org.springframework.data.cassandra.core.cql.generator;
 
 import static org.assertj.core.api.Assertions.*;
-import static org.springframework.data.cassandra.core.cql.generator.AlterUserTypeCqlGenerator.*;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.springframework.data.cassandra.core.cql.keyspace.AlterUserTypeSpecification;
+import org.springframework.data.cassandra.core.cql.keyspace.SpecificationBuilder;
 
-import com.datastax.driver.core.DataType;
+import com.datastax.oss.driver.api.core.type.DataTypes;
 
 /**
  * Unit tests for {@link AlterUserTypeCqlGenerator}.
  *
  * @author Mark Paluch
  */
-public class AlterUserTypeCqlGeneratorUnitTests {
+class AlterUserTypeCqlGeneratorUnitTests {
 
 	@Test // DATACASS-172
-	public void alterTypeShouldAddField() {
+	void alterTypeShouldAddField() {
 
-		AlterUserTypeSpecification spec = AlterUserTypeSpecification.alterType("address") //
-				.add("zip", DataType.varchar());
+		AlterUserTypeSpecification spec = SpecificationBuilder.alterType("address") //
+				.add("zip", DataTypes.TEXT);
 
-		assertThat(toCql(spec)).isEqualTo("ALTER TYPE address ADD zip varchar;");
+		assertThat(CqlGenerator.toCql(spec)).isEqualTo("ALTER TYPE address ADD zip text;");
 	}
 
 	@Test // DATACASS-172
-	public void alterTypeShouldAlterField() {
+	void alterTypeShouldAlterField() {
 
-		AlterUserTypeSpecification spec = AlterUserTypeSpecification.alterType("address") //
-				.alter("zip", DataType.varchar());
+		AlterUserTypeSpecification spec = SpecificationBuilder.alterType("address") //
+				.alter("zip", DataTypes.TEXT);
 
-		assertThat(toCql(spec)).isEqualTo("ALTER TYPE address ALTER zip TYPE varchar;");
+		assertThat(CqlGenerator.toCql(spec)).isEqualTo("ALTER TYPE address ALTER zip TYPE text;");
 	}
 
 	@Test // DATACASS-172
-	public void alterTypeShouldRenameField() {
+	void alterTypeShouldRenameField() {
 
-		AlterUserTypeSpecification spec = AlterUserTypeSpecification.alterType("address") //
+		AlterUserTypeSpecification spec = SpecificationBuilder.alterType("address") //
 				.rename("zip", "zap");
 
-		assertThat(toCql(spec)).isEqualTo("ALTER TYPE address RENAME zip TO zap;");
+		assertThat(CqlGenerator.toCql(spec)).isEqualTo("ALTER TYPE address RENAME zip TO zap;");
 	}
 
 	@Test // DATACASS-172
-	public void alterTypeShouldRenameFields() {
+	void alterTypeShouldRenameFields() {
 
-		AlterUserTypeSpecification spec = AlterUserTypeSpecification.alterType("address") //
+		AlterUserTypeSpecification spec = SpecificationBuilder.alterType("address") //
 				.rename("zip", "zap") //
 				.rename("city", "county");
 
-		assertThat(toCql(spec)).isEqualTo("ALTER TYPE address RENAME zip TO zap AND city TO county;");
+		assertThat(CqlGenerator.toCql(spec)).isEqualTo("ALTER TYPE address RENAME zip TO zap AND city TO county;");
 	}
 
 
 	@Test // DATACASS-172
-	public void generationFailsWithoutFields() {
-		assertThatIllegalArgumentException().isThrownBy(() -> toCql(AlterUserTypeSpecification.alterType("hello")));
+	void generationFailsWithoutFields() {
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> AlterUserTypeCqlGenerator.toCql(AlterUserTypeSpecification.alterType("hello")));
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,30 +15,36 @@
  */
 package org.springframework.data.cassandra.core.mapping;
 
-import static org.springframework.data.cassandra.core.cql.CqlIdentifier.*;
-
+import java.lang.annotation.Annotation;
 import java.util.Comparator;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiFunction;
 
 import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.context.expression.BeanFactoryAccessor;
-import org.springframework.context.expression.BeanFactoryResolver;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
-import org.springframework.data.cassandra.util.SpelUtils;
+import org.springframework.core.annotation.AnnotationUtils;
+import org.springframework.core.annotation.MergedAnnotations;
+import org.springframework.data.expression.ValueEvaluationContext;
+import org.springframework.data.expression.ValueExpressionParser;
 import org.springframework.data.mapping.Association;
 import org.springframework.data.mapping.AssociationHandler;
 import org.springframework.data.mapping.MappingException;
+import org.springframework.data.mapping.Parameter;
 import org.springframework.data.mapping.model.BasicPersistentEntity;
+import org.springframework.data.spel.ExpressionDependencies;
 import org.springframework.data.util.TypeInformation;
+import org.springframework.expression.EvaluationContext;
+import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
-import org.springframework.util.StringUtils;
 
-import com.datastax.driver.core.TupleType;
-import com.datastax.driver.core.UserType;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Cassandra specific {@link BasicPersistentEntity} implementation that adds Cassandra specific metadata.
@@ -51,15 +57,23 @@ import com.datastax.driver.core.UserType;
 public class BasicCassandraPersistentEntity<T> extends BasicPersistentEntity<T, CassandraPersistentProperty>
 		implements CassandraPersistentEntity<T>, ApplicationContextAware {
 
+	static final ValueExpressionParser PARSER = ValueExpressionParser.create(SpelExpressionParser::new);
+
 	private static final CassandraPersistentEntityMetadataVerifier DEFAULT_VERIFIER = new CompositeCassandraPersistentEntityMetadataVerifier();
+
+	private final CqlIdentifierGenerator namingAccessor = new CqlIdentifierGenerator();
+
+	private @Nullable ApplicationContext applicationContext;
 
 	private Boolean forceQuote;
 
 	private CassandraPersistentEntityMetadataVerifier verifier = DEFAULT_VERIFIER;
 
+	private @Nullable CqlIdentifier keyspace;
+
 	private CqlIdentifier tableName;
 
-	private @Nullable StandardEvaluationContext spelContext;
+	private final Map<Parameter<?, CassandraPersistentProperty>, CassandraPersistentProperty> constructorProperties = new ConcurrentHashMap<>();
 
 	/**
 	 * Create a new {@link BasicCassandraPersistentEntity} given {@link TypeInformation}.
@@ -103,54 +117,74 @@ public class BasicCassandraPersistentEntity<T> extends BasicPersistentEntity<T, 
 	}
 
 	protected CqlIdentifier determineTableName() {
+		return determineName(NamingStrategy::getTableName, findAnnotation(Table.class), "value").getRequiredIdentifier();
+	}
 
-		Table annotation = findAnnotation(Table.class);
+	@Nullable
+	protected CqlIdentifier determineKeyspace() {
+		return determineName(NamingStrategy::getKeyspace, findAnnotation(Table.class), "keyspace").getIdentifier();
+	}
+
+	CqlIdentifierGenerator.GeneratedName determineName(
+			BiFunction<NamingStrategy, CassandraPersistentEntity<?>, String> defaultNameGenerator,
+			@Nullable Annotation annotation, String annotationAttribute) {
 
 		if (annotation != null) {
-			return determineName(annotation.value(), annotation.forceQuote());
+			return this.namingAccessor.generate((String) AnnotationUtils.getValue(annotation, annotationAttribute),
+					(Boolean) AnnotationUtils.getValue(annotation, "forceQuote"), defaultNameGenerator, this, PARSER,
+					this::getValueEvaluationContext);
 		}
 
-		return of(getType().getSimpleName(), false);
+		return this.namingAccessor.generate(null, forceQuote != null ? forceQuote : false, defaultNameGenerator, this,
+				PARSER, this::getValueEvaluationContext);
 	}
 
-	CqlIdentifier determineName(String value, boolean forceQuote) {
+	@Override
+	protected EvaluationContext getEvaluationContext(Object rootObject) {
+		return postProcess(super.getEvaluationContext(rootObject == null ? applicationContext : rootObject));
+	}
 
-		if (!StringUtils.hasText(value)) {
-			return of(getType().getSimpleName(), forceQuote);
+	@Override
+	protected EvaluationContext getEvaluationContext(Object rootObject, ExpressionDependencies dependencies) {
+		return postProcess(super.getEvaluationContext(rootObject == null ? applicationContext : rootObject, dependencies));
+	}
+
+	// TODO: Do we want to keep the Context customization? Ideally, we align with EvaluationContextProvider.
+	private EvaluationContext postProcess(EvaluationContext evaluationContext) {
+
+		if (evaluationContext instanceof StandardEvaluationContext sec) {
+
+			if (sec.getRootObject().getValue() instanceof BeanFactory) {
+				sec.addPropertyAccessor(new BeanFactoryAccessor());
+			}
 		}
 
-		String name = Optional.ofNullable(this.spelContext).map(it -> SpelUtils.evaluate(value, it)).orElse(value);
-
-		Assert.state(name != null, () -> String.format("Cannot determine default name for %s", this));
-
-		return CqlIdentifier.of(name, forceQuote);
+		return evaluationContext;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.mapping.model.BasicPersistentEntity#addAssociation(org.springframework.data.mapping.Association)
-	 */
+	@Override
+	protected ValueEvaluationContext getValueEvaluationContext(Object rootObject) {
+		return super.getValueEvaluationContext(rootObject);
+	}
+
+	@Override
+	protected ValueEvaluationContext getValueEvaluationContext(Object rootObject, ExpressionDependencies dependencies) {
+		return super.getValueEvaluationContext(rootObject, dependencies);
+	}
+
 	@Override
 	public void addAssociation(Association<CassandraPersistentProperty> association) {
 		throw new UnsupportedCassandraOperationException("Cassandra does not support associations");
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.mapping.model.BasicPersistentEntity#doWithAssociations(org.springframework.data.mapping.AssociationHandler)
-	 */
 	@Override
 	public void doWithAssociations(AssociationHandler<CassandraPersistentProperty> handler) {}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity#isCompositePrimaryKey()
-	 */
 	@Override
 	public boolean isCompositePrimaryKey() {
 		return isAnnotationPresent(PrimaryKeyClass.class);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.mapping.model.BasicPersistentEntity#verify()
-	 */
 	@Override
 	public void verify() throws MappingException {
 
@@ -161,25 +195,17 @@ public class BasicCassandraPersistentEntity<T> extends BasicPersistentEntity<T, 
 		if (this.tableName == null) {
 			setTableName(determineTableName());
 		}
+
+		if (this.keyspace == null) {
+			setKeyspace(determineKeyspace());
+		}
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.context.ApplicationContextAware#setApplicationContext(org.springframework.context.ApplicationContext)
-	 */
 	@Override
 	public void setApplicationContext(ApplicationContext context) throws BeansException {
-
-		Assert.notNull(context, "ApplicationContext must not be null");
-
-		spelContext = new StandardEvaluationContext();
-		spelContext.addPropertyAccessor(new BeanFactoryAccessor());
-		spelContext.setBeanResolver(new BeanFactoryResolver(context));
-		spelContext.setRootObject(context);
+		this.applicationContext = context;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity#setForceQuote(boolean)
-	 */
 	@Override
 	public void setForceQuote(boolean forceQuote) {
 
@@ -188,13 +214,30 @@ public class BasicCassandraPersistentEntity<T> extends BasicPersistentEntity<T, 
 		this.forceQuote = forceQuote;
 
 		if (changed) {
-			setTableName(of(getTableName().getUnquoted(), forceQuote));
+			setTableName(CqlIdentifierGenerator.createIdentifier(getTableName().asInternal(), forceQuote));
+
+			if (hasKeyspace()) {
+				setKeyspace(CqlIdentifierGenerator.createIdentifier(getKeyspace().asInternal(), forceQuote));
+			}
 		}
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity#setTableName(org.springframework.data.cassandra.core.cql.CqlIdentifier)
-	 */
+	@Nullable
+	@Override
+	public CqlIdentifier getKeyspace() {
+		return Optional.ofNullable(this.keyspace).orElseGet(this::determineKeyspace);
+	}
+
+	@Override
+	public void setKeyspace(CqlIdentifier keyspace) {
+		this.keyspace = keyspace;
+	}
+
+	@Override
+	public CqlIdentifier getTableName() {
+		return Optional.ofNullable(this.tableName).orElseGet(this::determineTableName);
+	}
+
 	@Override
 	public void setTableName(CqlIdentifier tableName) {
 
@@ -203,12 +246,14 @@ public class BasicCassandraPersistentEntity<T> extends BasicPersistentEntity<T, 
 		this.tableName = tableName;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity#getTableName()
+	/**
+	 * Set the {@link NamingStrategy} to use.
+	 *
+	 * @param namingStrategy must not be {@literal null}.
+	 * @since 3.0
 	 */
-	@Override
-	public CqlIdentifier getTableName() {
-		return Optional.ofNullable(this.tableName).orElseGet(this::determineTableName);
+	public void setNamingStrategy(NamingStrategy namingStrategy) {
+		this.namingAccessor.setNamingStrategy(namingStrategy);
 	}
 
 	/**
@@ -226,37 +271,39 @@ public class BasicCassandraPersistentEntity<T> extends BasicPersistentEntity<T, 
 		return this.verifier;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity#isTupleType()
-	 */
 	@Override
 	public boolean isTupleType() {
 		return false;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity#getTupleType()
-	 */
-	@Override
-	@Nullable
-	public TupleType getTupleType() {
-		return null;
-	}
-
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity#isUserDefinedType()
-	 */
 	@Override
 	public boolean isUserDefinedType() {
 		return false;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity#getUserType()
-	 */
 	@Override
-	@Nullable
-	public UserType getUserType() {
-		return null;
+	public CassandraPersistentProperty getProperty(Parameter<?, CassandraPersistentProperty> parameter) {
+
+		if (parameter.getName() == null) {
+			return null;
+		}
+
+		MergedAnnotations annotations = parameter.getAnnotations();
+		if (annotations.isPresent(Column.class) || annotations.isPresent(Element.class)) {
+
+			return constructorProperties.computeIfAbsent(parameter, it -> {
+
+				CassandraPersistentProperty property = getPersistentProperty(it.getName());
+				return new AnnotatedCassandraConstructorProperty(
+						property == null ? new CassandraConstructorProperty(it, this) : property, it.getAnnotations());
+			});
+		}
+
+		return getPersistentProperty(parameter.getName());
+	}
+
+	@Override
+	public String toString() {
+		return getName();
 	}
 }

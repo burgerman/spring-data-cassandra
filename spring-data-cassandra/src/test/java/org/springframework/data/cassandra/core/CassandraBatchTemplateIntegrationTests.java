@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,24 +15,30 @@
  */
 package org.springframework.data.cassandra.core;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.fail;
+import static org.assertj.core.api.Assertions.*;
 
 import java.util.Arrays;
-import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import org.springframework.data.cassandra.CassandraConnectionFailureException;
+import org.springframework.data.cassandra.core.cql.QueryOptions;
 import org.springframework.data.cassandra.core.cql.WriteOptions;
 import org.springframework.data.cassandra.domain.FlatGroup;
 import org.springframework.data.cassandra.domain.Group;
 import org.springframework.data.cassandra.domain.GroupKey;
 import org.springframework.data.cassandra.repository.support.SchemaTestUtils;
-import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTest;
+import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTests;
 
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
+import com.datastax.oss.driver.api.core.AllNodesFailedException;
+import com.datastax.oss.driver.api.core.ConsistencyLevel;
+import com.datastax.oss.driver.api.core.cql.BatchType;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
+import com.datastax.oss.driver.api.core.cql.Row;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
 
 /**
  * Integration tests for {@link CassandraBatchTemplate}.
@@ -40,15 +46,15 @@ import com.datastax.driver.core.Row;
  * @author Mark Paluch
  * @author Anup Sabbi
  */
-public class CassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCreatingIntegrationTest {
+class CassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCreatingIntegrationTests {
 
-	CassandraTemplate template;
+	private CassandraTemplate template;
 
-	Group walter = new Group(new GroupKey("users", "0x1", "walter"));
-	Group mike = new Group(new GroupKey("users", "0x1", "mike"));
+	private Group walter = new Group(new GroupKey("users", "0x1", "walter"));
+	private Group mike = new Group(new GroupKey("users", "0x1", "mike"));
 
-	@Before
-	public void setUp() throws Exception {
+	@BeforeEach
+	void setUp() throws Exception {
 
 		template = new CassandraTemplate(session);
 
@@ -62,10 +68,37 @@ public class CassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCrea
 		template.insert(mike);
 	}
 
-	@Test // DATACASS-288
-	public void shouldInsertEntities() {
+	@Test // GH-1499
+	void shouldAddStatements() {
 
-		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template);
+		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template, BatchType.LOGGED);
+
+		List<SimpleStatement> statements = List.of(SimpleStatement
+				.newInstance("INSERT INTO GROUP (groupname, hash_prefix, username) VALUES('users', '0x1', 'walter')"));
+
+		batchOperations.addStatements(statements).execute();
+
+		Group loaded = template.selectOneById(walter.getId(), Group.class);
+
+		assertThat(loaded.getId().getUsername()).isEqualTo(walter.getId().getUsername());
+	}
+
+	@Test // GH-1499
+	void insertUpdateDeleteShouldRejectStatements() {
+
+		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template, BatchType.LOGGED);
+
+		SimpleStatement statement = SimpleStatement.newInstance("FOO");
+
+		assertThatIllegalArgumentException().isThrownBy(() -> batchOperations.insert(statement));
+		assertThatIllegalArgumentException().isThrownBy(() -> batchOperations.update(statement));
+		assertThatIllegalArgumentException().isThrownBy(() -> batchOperations.delete(statement));
+	}
+
+	@Test // DATACASS-288
+	void shouldInsertEntities() {
+
+		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template, BatchType.LOGGED);
 		batchOperations.insert(walter).insert(mike).execute();
 
 		Group loaded = template.selectOneById(walter.getId(), Group.class);
@@ -73,8 +106,14 @@ public class CassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCrea
 		assertThat(loaded.getId().getUsername()).isEqualTo(walter.getId().getUsername());
 	}
 
+	@Test // #1135
+	void insertAsVarargsShouldRejectQueryOptions() {
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> template.batchOps().insert(mike, walter, InsertOptions.empty()));
+	}
+
 	@Test // DATACASS-288
-	public void shouldInsertEntitiesWithLwt() {
+	void shouldInsertEntitiesWithLwt() {
 
 		InsertOptions lwtOptions = InsertOptions.builder().withIfNotExists().build();
 
@@ -84,8 +123,9 @@ public class CassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCrea
 
 		walter.setAge(100);
 
-		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template);
-		WriteResult writeResult = batchOperations.insert(Collections.singleton(walter), lwtOptions).insert(mike).execute();
+		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template, BatchType.LOGGED);
+
+		WriteResult writeResult = batchOperations.insert(walter, lwtOptions).insert(mike).execute();
 
 		Group loadedWalter = template.selectOneById(walter.getId(), Group.class);
 		Group loadedMike = template.selectOneById(mike.getId(), Group.class);
@@ -100,9 +140,9 @@ public class CassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCrea
 	}
 
 	@Test // DATACASS-288
-	public void shouldInsertCollectionOfEntities() {
+	void shouldInsertCollectionOfEntities() {
 
-		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template);
+		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template, BatchType.LOGGED);
 		batchOperations.insert(Arrays.asList(walter, mike)).execute();
 
 		Group loaded = template.selectOneById(walter.getId(), Group.class);
@@ -111,7 +151,7 @@ public class CassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCrea
 	}
 
 	@Test // DATACASS-443
-	public void shouldInsertCollectionOfEntitiesWithTtl() {
+	void shouldInsertCollectionOfEntitiesWithTtl() {
 
 		walter.setEmail("walter@white.com");
 		mike.setEmail("mike@sauls.com");
@@ -119,7 +159,7 @@ public class CassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCrea
 		int ttl = 30;
 		WriteOptions options = WriteOptions.builder().ttl(30).build();
 
-		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template);
+		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template, BatchType.LOGGED);
 		batchOperations.insert(Arrays.asList(walter, mike), options).execute();
 
 		ResultSet resultSet = template.getCqlOperations().queryForResultSet("SELECT TTL(email) FROM group;");
@@ -131,13 +171,19 @@ public class CassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCrea
 		}
 	}
 
+	@Test // #1135
+	void updateAsVarargsShouldRejectQueryOptions() {
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> template.batchOps().update(mike, walter, InsertOptions.empty()));
+	}
+
 	@Test // DATACASS-288
-	public void shouldUpdateEntities() {
+	void shouldUpdateEntities() {
 
 		walter.setEmail("walter@white.com");
 		mike.setEmail("mike@sauls.com");
 
-		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template);
+		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template, BatchType.LOGGED);
 		batchOperations.update(walter).update(mike).execute();
 
 		Group loaded = template.selectOneById(walter.getId(), Group.class);
@@ -146,12 +192,12 @@ public class CassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCrea
 	}
 
 	@Test // DATACASS-288
-	public void shouldUpdateCollectionOfEntities() {
+	void shouldUpdateCollectionOfEntities() {
 
 		walter.setEmail("walter@white.com");
 		mike.setEmail("mike@sauls.com");
 
-		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template);
+		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template, BatchType.LOGGED);
 		batchOperations.update(Arrays.asList(walter, mike)).execute();
 
 		Group loaded = template.selectOneById(walter.getId(), Group.class);
@@ -160,7 +206,7 @@ public class CassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCrea
 	}
 
 	@Test // DATACASS-443
-	public void shouldUpdateCollectionOfEntitiesWithTtl() {
+	void shouldUpdateCollectionOfEntitiesWithTtl() {
 
 		walter.setEmail("walter@white.com");
 		mike.setEmail("mike@sauls.com");
@@ -168,20 +214,25 @@ public class CassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCrea
 		int ttl = 30;
 		WriteOptions options = WriteOptions.builder().ttl(ttl).build();
 
-		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template);
-		batchOperations.update(Arrays.asList(walter, mike), options).execute();
+		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template, BatchType.LOGGED);
+		batchOperations.update(walter, options).execute();
 
-		ResultSet resultSet = template.getCqlOperations().queryForResultSet("SELECT TTL(email) FROM group;");
+		ResultSet resultSet = template.getCqlOperations().queryForResultSet("SELECT TTL(email), email FROM group");
 
 		assertThat(resultSet.getAvailableWithoutFetching()).isEqualTo(2);
 
 		for (Row row : resultSet) {
-			assertThat(row.getInt(0)).isBetween(1, ttl);
+
+			if (walter.getEmail().equals(row.getString("email"))) {
+				assertThat(row.getInt(0)).isBetween(1, ttl);
+			} else {
+				assertThat(row.getInt(0)).isZero();
+			}
 		}
 	}
 
 	@Test // DATACASS-288
-	public void shouldUpdatesCollectionOfEntities() {
+	void shouldUpdatesCollectionOfEntities() {
 
 		FlatGroup walter = new FlatGroup("users", "0x1", "walter");
 		FlatGroup mike = new FlatGroup("users", "0x1", "mike");
@@ -192,7 +243,7 @@ public class CassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCrea
 		walter.setEmail("walter@white.com");
 		mike.setEmail("mike@sauls.com");
 
-		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template);
+		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template, BatchType.LOGGED);
 		batchOperations.update(Arrays.asList(walter, mike)).execute();
 
 		FlatGroup loaded = template.selectOneById(walter, FlatGroup.class);
@@ -200,10 +251,16 @@ public class CassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCrea
 		assertThat(loaded.getEmail()).isEqualTo(walter.getEmail());
 	}
 
-	@Test // DATACASS-288
-	public void shouldDeleteEntities() {
+	@Test // #1135
+	void deleteAsVarargsShouldRejectQueryOptions() {
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> template.batchOps().delete(mike, walter, InsertOptions.empty()));
+	}
 
-		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template);
+	@Test // DATACASS-288
+	void shouldDeleteEntities() {
+
+		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template, BatchType.LOGGED);
 
 		batchOperations.delete(walter).delete(mike).execute();
 
@@ -213,9 +270,9 @@ public class CassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCrea
 	}
 
 	@Test // DATACASS-288
-	public void shouldDeleteCollectionOfEntities() {
+	void shouldDeleteCollectionOfEntities() {
 
-		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template);
+		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template, BatchType.LOGGED);
 
 		batchOperations.delete(Arrays.asList(walter, mike)).execute();
 
@@ -225,14 +282,14 @@ public class CassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCrea
 	}
 
 	@Test // DATACASS-288
-	public void shouldApplyTimestampToAllEntities() {
+	void shouldApplyTimestampToAllEntities() {
 
 		walter.setEmail("walter@white.com");
 		mike.setEmail("mike@sauls.com");
 
 		long timestamp = (System.currentTimeMillis() + TimeUnit.DAYS.toMillis(1)) * 1000;
 
-		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template);
+		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template, BatchType.LOGGED);
 		batchOperations.insert(walter).insert(mike).withTimestamp(timestamp).execute();
 
 		ResultSet resultSet = template.getCqlOperations().queryForResultSet("SELECT writetime(email) FROM group;");
@@ -244,25 +301,33 @@ public class CassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCrea
 		}
 	}
 
-	@Test(expected = IllegalStateException.class) // DATACASS-288
-	public void shouldNotExecuteTwice() {
+	@Test // GH-1192
+	void shouldApplyQueryOptions() {
 
-		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template);
-		batchOperations.insert(walter).execute();
+		QueryOptions options = QueryOptions.builder().consistencyLevel(ConsistencyLevel.THREE).build();
 
-		batchOperations.execute();
+		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template, BatchType.LOGGED);
+		CassandraBatchOperations ops = batchOperations.insert(walter).withQueryOptions(options);
 
-		fail("Missing IllegalStateException");
+		assertThatExceptionOfType(CassandraConnectionFailureException.class).isThrownBy(ops::execute)
+				.withRootCauseInstanceOf(AllNodesFailedException.class);
 	}
 
-	@Test(expected = IllegalStateException.class) // DATACASS-288
-	public void shouldNotAllowModificationAfterExecution() {
+	@Test // GH-1192
+	void shouldNotExecuteTwice() {
 
-		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template);
+		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template, BatchType.LOGGED);
 		batchOperations.insert(walter).execute();
 
-		batchOperations.update(new Group());
+		assertThatIllegalStateException().isThrownBy(() -> batchOperations.execute());
+	}
 
-		fail("Missing IllegalStateException");
+	@Test // DATACASS-288
+	void shouldNotAllowModificationAfterExecution() {
+
+		CassandraBatchOperations batchOperations = new CassandraBatchTemplate(template, BatchType.LOGGED);
+		batchOperations.insert(walter).execute();
+
+		assertThatIllegalStateException().isThrownBy(() -> batchOperations.update(new Group()));
 	}
 }

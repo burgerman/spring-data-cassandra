@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,26 +22,24 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.annotation.AliasFor;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
-import org.springframework.data.util.ClassTypeInformation;
+import org.springframework.data.util.TypeInformation;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Unit tests for {@link CassandraUserTypePersistentEntity}.
  *
  * @author Mark Paluch
  */
-@RunWith(MockitoJUnitRunner.class)
-public class CassandraUserTypePersistentEntityUnitTests {
-
-	@Mock UserTypeResolver userTypeResolverMock;
+@ExtendWith(MockitoExtension.class)
+class CassandraUserTypePersistentEntityUnitTests {
 
 	@Test // DATACASS-172
-	public void isUserDefinedTypeShouldReportTrue() {
+	void isUserDefinedTypeShouldReportTrue() {
 
 		CassandraUserTypePersistentEntity<MappedUdt> type = getEntity(MappedUdt.class);
 
@@ -49,62 +47,59 @@ public class CassandraUserTypePersistentEntityUnitTests {
 	}
 
 	@Test // DATACASS-172
-	public void getTableNameShouldReturnDefaultName() {
+	void getTableNameShouldReturnDefaultName() {
 
 		CassandraUserTypePersistentEntity<MappedUdt> type = getEntity(MappedUdt.class);
 
-		assertThat(type.getTableName()).isEqualTo(CqlIdentifier.of("mappedudt"));
-		assertThat(type.getTableName()).isEqualTo(CqlIdentifier.of("Mappedudt"));
+		assertThat(type.getTableName()).isEqualTo(CqlIdentifier.fromCql("mappedudt"));
 	}
 
 	@Test // DATACASS-172
-	public void getTableNameShouldReturnDefinedName() {
+	void getTableNameShouldReturnDefinedName() {
 
 		CassandraUserTypePersistentEntity<WithName> type = getEntity(WithName.class);
 
-		assertThat(type.getTableName()).isEqualTo(CqlIdentifier.of("withname"));
-		assertThat(type.getTableName()).isEqualTo(CqlIdentifier.of("Withname"));
+		assertThat(type.getTableName()).isEqualTo(CqlIdentifier.fromCql("withname"));
 	}
 
 	@Test // DATACASS-172
-	public void getTableNameShouldReturnDefinedNameUsingForceQuote() {
+	void getTableNameShouldReturnDefinedNameUsingForceQuote() {
 
 		CassandraUserTypePersistentEntity<WithForceQuote> type = getEntity(WithForceQuote.class);
 
-		assertThat(type.getTableName()).isNotEqualTo(CqlIdentifier.of("upperCase", true));
-		assertThat(type.getTableName()).isEqualTo(CqlIdentifier.of("UpperCase", true));
+		assertThat(type.getTableName()).isEqualTo(CqlIdentifier.fromInternal("UpperCase"));
 	}
 
 	@Test // DATACASS-259
-	public void shouldConsiderComposedUserDefinedTypeAnnotation() {
+	void shouldConsiderComposedUserDefinedTypeAnnotation() {
 
 		CassandraUserTypePersistentEntity<TypeWithComposedAnnotation> type = getEntity(TypeWithComposedAnnotation.class);
 
-		assertThat(type.getTableName()).isEqualTo(CqlIdentifier.of("mytype", true));
+		assertThat(type.getTableName()).isEqualTo(CqlIdentifier.fromCql("mytype"));
 	}
 
 	private <T> CassandraUserTypePersistentEntity<T> getEntity(Class<T> entityClass) {
-		return new CassandraUserTypePersistentEntity<>(ClassTypeInformation.from(entityClass), null, userTypeResolverMock);
+		return new CassandraUserTypePersistentEntity<>(TypeInformation.of(entityClass), null);
 	}
 
 	@UserDefinedType
-	static class MappedUdt {}
+	private static class MappedUdt {}
 
 	@UserDefinedType("withname")
-	static class WithName {}
+	private static class WithName {}
 
 	@UserDefinedType(value = "UpperCase", forceQuote = true)
-	static class WithForceQuote {}
+	private static class WithForceQuote {}
 
 	@Retention(RetentionPolicy.RUNTIME)
 	@Target({ ElementType.TYPE })
 	@UserDefinedType(forceQuote = true)
-	@interface ComposedUserDefinedTypeAnnotation {
+	private @interface ComposedUserDefinedTypeAnnotation {
 
 		@AliasFor(annotation = UserDefinedType.class)
 		String value() default "mytype";
 	}
 
 	@ComposedUserDefinedTypeAnnotation()
-	static class TypeWithComposedAnnotation {}
+	private static class TypeWithComposedAnnotation {}
 }

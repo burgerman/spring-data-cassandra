@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,10 @@
  */
 package org.springframework.data.cassandra.core.mapping.event;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import java.io.Serial;
 
-import com.datastax.driver.core.Statement;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.cql.Statement;
 
 /**
  * Event being thrown after a single or a set of rows has/have been deleted.
@@ -28,7 +29,7 @@ import com.datastax.driver.core.Statement;
  */
 public class AfterDeleteEvent<T> extends AbstractDeleteEvent<T> {
 
-	private static final long serialVersionUID = 1L;
+	@Serial private static final long serialVersionUID = 1L;
 
 	/**
 	 * Create a new {@link AfterDeleteEvent}.
@@ -37,7 +38,7 @@ public class AfterDeleteEvent<T> extends AbstractDeleteEvent<T> {
 	 * @param type must not be {@literal null}.
 	 * @param tableName must not be {@literal null}.
 	 */
-	public AfterDeleteEvent(Statement source, Class<T> type, CqlIdentifier tableName) {
+	public AfterDeleteEvent(Statement<?> source, Class<T> type, CqlIdentifier tableName) {
 		super(source, type, tableName);
 	}
 }

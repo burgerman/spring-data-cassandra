@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,14 @@ package org.springframework.data.cassandra.core.cql;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.exceptions.DriverException;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.DriverException;
+import com.datastax.oss.driver.api.core.cql.PreparedStatement;
 
 /**
  * This {@link PreparedStatementCreator} maintains a static cache of all prepared statements for the duration of the JVM
@@ -36,16 +37,14 @@ import com.datastax.driver.core.exceptions.DriverException;
  *
  * @author David Webb
  * @author Mark Paluch
- * @deprecated since 2.0. This class uses an unsafe, static held cache and is not able to prepare
- *             {@link com.datastax.driver.core.querybuilder.BuiltStatement}. Use
- *             {@link org.springframework.data.cassandra.core.cql.support.CachedPreparedStatementCreator}.
+ * @deprecated since 2.0. This class uses an unsafe, static held cache.
  */
 @Deprecated
 public class CachedPreparedStatementCreator implements PreparedStatementCreator {
 
-	private static final Map<Session, Map<String, PreparedStatement>> CACHE = new ConcurrentHashMap<>();
+	private static final Map<CqlSession, Map<String, PreparedStatement>> CACHE = new ConcurrentHashMap<>();
 
-	protected final Logger log = LoggerFactory.getLogger(getClass());
+	protected final Log log = LogFactory.getLog(getClass());
 
 	private final String cql;
 
@@ -70,15 +69,13 @@ public class CachedPreparedStatementCreator implements PreparedStatementCreator 
 		return this.cql;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.PreparedStatementCreator#createPreparedStatement(com.datastax.driver.core.Session)
-	 */
 	@Override
-	public PreparedStatement createPreparedStatement(Session session) throws DriverException {
+	public PreparedStatement createPreparedStatement(CqlSession session) throws DriverException {
 
-		String cacheKey = String.valueOf(session.getLoggedKeyspace()).concat("|").concat(this.cql);
+		CqlIdentifier keyspace = session.getKeyspace().orElse(CqlIdentifier.fromCql("unknown"));
+		String cacheKey = keyspace.asInternal().concat("|").concat(this.cql);
 
-		log.debug("Cacheable PreparedStatement in Keyspace {}", session.getLoggedKeyspace());
+		log.debug(String.format("Cacheable PreparedStatement in Keyspace %s", keyspace.asCql(true)));
 
 		Map<String, PreparedStatement> sessionCache = getOrCreateSessionLocalCache(session);
 
@@ -86,7 +83,7 @@ public class CachedPreparedStatementCreator implements PreparedStatementCreator 
 	}
 
 	@SuppressWarnings("all")
-	private Map<String, PreparedStatement> getOrCreateSessionLocalCache(Session session) {
+	private Map<String, PreparedStatement> getOrCreateSessionLocalCache(CqlSession session) {
 
 		Map<String, PreparedStatement> sessionMap = CACHE.get(session);
 
@@ -107,7 +104,7 @@ public class CachedPreparedStatementCreator implements PreparedStatementCreator 
 	}
 
 	@SuppressWarnings("all")
-	private PreparedStatement getOrPrepareStatement(Session session, String cacheKey,
+	private PreparedStatement getOrPrepareStatement(CqlSession session, String cacheKey,
 			Map<String, PreparedStatement> sessionCache) {
 
 		PreparedStatement preparedStatement = sessionCache.get(cacheKey);

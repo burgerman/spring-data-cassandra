@@ -1,5 +1,5 @@
 /*
- *  Copyright 2016-2019 the original author or authors.
+ *  Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,169 +15,132 @@
  */
 package org.springframework.data.cassandra.core.cql;
 
+import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import java.nio.ByteBuffer;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.Mockito;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.datastax.driver.core.ConsistencyLevel;
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.Statement;
-import com.datastax.driver.core.policies.FallthroughRetryPolicy;
-import com.datastax.driver.core.querybuilder.Delete;
-import com.datastax.driver.core.querybuilder.Insert;
-import com.datastax.driver.core.querybuilder.Update;
-import com.datastax.driver.core.querybuilder.Using;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.DefaultConsistencyLevel;
+import com.datastax.oss.driver.api.core.cql.BatchStatement;
+import com.datastax.oss.driver.api.core.cql.BoundStatement;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
 
 /**
  * Unit tests for {@link QueryOptionsUtil}.
  *
  * @author John Blum
  * @author Mark Paluch
+ * @author Tomasz Lelek
+ * @author Sam Lightfoot
  */
-@RunWith(MockitoJUnitRunner.class)
-@SuppressWarnings("unchecked")
-public class QueryOptionsUtilUnitTests {
+@ExtendWith(MockitoExtension.class)
+class QueryOptionsUtilUnitTests {
 
-	@Mock Insert mockInsert;
-	@Mock PreparedStatement mockPreparedStatement;
-	@Mock Session mockSession;
-	@Mock Statement mockStatement;
-	@Mock Update mockUpdate;
-	@Mock Delete mockDelete;
+	@Mock SimpleStatement simpleStatement;
+	@Mock BatchStatement batchStatement;
+	@Mock BoundStatement boundStatement;
 
-	@Test // DATACASS-202
-	public void addPreparedStatementOptionsShouldAddDriverQueryOptions() {
+	@Test // DATACASS-202, DATACASS-708
+	void addPreparedStatementOptionsShouldAddDriverQueryOptions() {
+
+		when(simpleStatement.setConsistencyLevel(any())).thenReturn(simpleStatement);
+		when(simpleStatement.setSerialConsistencyLevel(any())).thenReturn(simpleStatement);
+		when(simpleStatement.setExecutionProfileName(anyString())).thenReturn(simpleStatement);
 
 		QueryOptions queryOptions = QueryOptions.builder() //
-				.consistencyLevel(ConsistencyLevel.EACH_QUORUM) //
-				.retryPolicy(FallthroughRetryPolicy.INSTANCE) //
+				.consistencyLevel(DefaultConsistencyLevel.EACH_QUORUM) //
+				.serialConsistencyLevel(DefaultConsistencyLevel.LOCAL_ONE) //
+				.executionProfile("foo") //
 				.build();
 
-		QueryOptionsUtil.addPreparedStatementOptions(mockPreparedStatement, queryOptions);
+		QueryOptionsUtil.addQueryOptions(simpleStatement, queryOptions);
 
-		verify(mockPreparedStatement).setConsistencyLevel(ConsistencyLevel.EACH_QUORUM);
-		verify(mockPreparedStatement).setRetryPolicy(FallthroughRetryPolicy.INSTANCE);
+		verify(simpleStatement).setConsistencyLevel(DefaultConsistencyLevel.EACH_QUORUM);
+		verify(simpleStatement).setSerialConsistencyLevel(DefaultConsistencyLevel.LOCAL_ONE);
+		verify(simpleStatement).setExecutionProfileName("foo");
 	}
 
 	@Test // DATACASS-202
-	public void addPreparedStatementOptionsShouldAddOurQueryOptions() {
-
-		QueryOptions queryOptions = QueryOptions.builder().retryPolicy(FallthroughRetryPolicy.INSTANCE)
-				.consistencyLevel(ConsistencyLevel.LOCAL_QUORUM).build();
-
-		QueryOptionsUtil.addPreparedStatementOptions(mockPreparedStatement, queryOptions);
-
-		verify(mockPreparedStatement).setRetryPolicy(FallthroughRetryPolicy.INSTANCE);
-		verify(mockPreparedStatement).setConsistencyLevel(ConsistencyLevel.LOCAL_QUORUM);
-	}
-
-	@Test // DATACASS-202
-	public void addStatementQueryOptionsShouldAddDriverQueryOptions() {
-
-		QueryOptions queryOptions = QueryOptions.builder().consistencyLevel(ConsistencyLevel.EACH_QUORUM) //
-				.retryPolicy(FallthroughRetryPolicy.INSTANCE) //
-				.build();
-
-		QueryOptionsUtil.addQueryOptions(mockStatement, queryOptions);
-
-		verify(mockStatement).setConsistencyLevel(ConsistencyLevel.EACH_QUORUM);
-		verify(mockStatement).setRetryPolicy(FallthroughRetryPolicy.INSTANCE);
-	}
-
-	@Test // DATACASS-202
-	public void addStatementQueryOptionsShouldAddOurQueryOptions() {
-
-		QueryOptions queryOptions = QueryOptions.builder().retryPolicy(FallthroughRetryPolicy.INSTANCE)
-				.consistencyLevel(ConsistencyLevel.LOCAL_QUORUM).build();
-
-		QueryOptionsUtil.addQueryOptions(mockStatement, queryOptions);
-
-		verify(mockStatement).setRetryPolicy(FallthroughRetryPolicy.INSTANCE);
-		verify(mockStatement).setConsistencyLevel(ConsistencyLevel.LOCAL_QUORUM);
-	}
-
-	@Test // DATACASS-202
-	public void addStatementQueryOptionsShouldNotAddOptions() {
+	void addStatementQueryOptionsShouldNotAddOptions() {
 
 		QueryOptions queryOptions = QueryOptions.builder().build();
 
-		QueryOptionsUtil.addQueryOptions(mockStatement, queryOptions);
+		QueryOptionsUtil.addQueryOptions(simpleStatement, queryOptions);
 
-		verifyZeroInteractions(mockStatement);
+		verifyNoInteractions(simpleStatement);
 	}
 
-	@Test // DATACASS-202
-	public void addStatementQueryOptionsShouldAddGenericQueryOptions() {
+	@Test // DATACASS-202, GH-1220
+	void addStatementQueryOptionsShouldAddGenericQueryOptions() {
+
+		when(simpleStatement.setPageSize(anyInt())).thenReturn(simpleStatement);
+		when(simpleStatement.setTimeout(any())).thenReturn(simpleStatement);
+		when(simpleStatement.setTracing(anyBoolean())).thenReturn(simpleStatement);
+		when(simpleStatement.setIdempotent(anyBoolean())).thenReturn(simpleStatement);
+		when(simpleStatement.setRoutingKeyspace(any(CqlIdentifier.class))).thenReturn(simpleStatement);
+		when(simpleStatement.setRoutingKey(any(ByteBuffer.class))).thenReturn(simpleStatement);
 
 		QueryOptions queryOptions = QueryOptions.builder() //
-				.fetchSize(10) //
+				.pageSize(10) //
 				.readTimeout(1, TimeUnit.MINUTES) //
 				.withTracing() //
+				.idempotent(true) //
+				.routingKeyspace(CqlIdentifier.fromCql("routing_ks")) //
+				.routingKey(ByteBuffer.allocate(1)) //
 				.build();
 
-		QueryOptionsUtil.addQueryOptions(mockStatement, queryOptions);
+		QueryOptionsUtil.addQueryOptions(simpleStatement, queryOptions);
 
-		verify(mockStatement).setReadTimeoutMillis(60 * 1000);
-		verify(mockStatement).setFetchSize(10);
-		verify(mockStatement).enableTracing();
+		verify(simpleStatement).setTimeout(Duration.ofMinutes(1));
+		verify(simpleStatement).setPageSize(10);
+		verify(simpleStatement).setTracing(true);
+		verify(simpleStatement).setIdempotent(true);
+		verify(simpleStatement).setRoutingKeyspace(CqlIdentifier.fromCql("routing_ks"));
+		verify(simpleStatement).setRoutingKey(ByteBuffer.allocate(1));
 	}
 
-	@Test // DATACASS-202
-	public void addInsertWriteOptionsShouldAddDriverQueryOptions() {
+	@Test // DATACASS-767
+	void addKeyspaceOptionsOnSimpleStatementShouldAddDriverQueryOptions() {
 
-		WriteOptions writeOptions = WriteOptions.builder() //
-				.consistencyLevel(ConsistencyLevel.EACH_QUORUM) //
-				.retryPolicy(FallthroughRetryPolicy.INSTANCE) //
-				.readTimeout(10) //
-				.ttl(10) //
-				.build();
+		when(simpleStatement.setKeyspace(any(CqlIdentifier.class))).thenReturn(simpleStatement);
 
-		QueryOptionsUtil.addWriteOptions(mockInsert, writeOptions);
+		QueryOptions queryOptions = QueryOptions.builder() //
+				.keyspace(CqlIdentifier.fromCql("ks1")).build();
 
-		verify(mockInsert).setConsistencyLevel(ConsistencyLevel.EACH_QUORUM);
-		verify(mockInsert).setRetryPolicy(FallthroughRetryPolicy.INSTANCE);
-		verify(mockInsert).setReadTimeoutMillis(10);
-		verify(mockInsert).using(Mockito.any(Using.class));
+		QueryOptionsUtil.addQueryOptions(simpleStatement, queryOptions);
+
+		verify(simpleStatement).setKeyspace(CqlIdentifier.fromCql("ks1"));
 	}
 
-	@Test // DATACASS-202
-	public void addUpdateWriteOptionsShouldAddDriverQueryOptions() {
+	@Test // DATACASS-767
+	void addKeyspaceOptionsOnBatchStatementShouldAddDriverQueryOptions() {
 
-		WriteOptions writeOptions = WriteOptions.builder() //
-				.consistencyLevel(ConsistencyLevel.EACH_QUORUM) //
-				.retryPolicy(FallthroughRetryPolicy.INSTANCE) //
-				.ttl(10) //
-				.tracing(false).build();
+		when(batchStatement.setKeyspace(any(CqlIdentifier.class))).thenReturn(batchStatement);
 
-		QueryOptionsUtil.addWriteOptions(mockUpdate, writeOptions);
+		QueryOptions queryOptions = QueryOptions.builder() //
+				.keyspace(CqlIdentifier.fromCql("ks1")).build();
 
-		verify(mockUpdate).setConsistencyLevel(ConsistencyLevel.EACH_QUORUM);
-		verify(mockUpdate).setRetryPolicy(FallthroughRetryPolicy.INSTANCE);
-		verify(mockUpdate).using(Mockito.any(Using.class));
-		verify(mockUpdate).disableTracing();
+		QueryOptionsUtil.addQueryOptions(batchStatement, queryOptions);
+
+		verify(batchStatement).setKeyspace(CqlIdentifier.fromCql("ks1"));
 	}
 
-	@Test // DATACASS-155
-	public void addDeleteWriteOptionsShouldAddDriverQueryOptions() {
+	@Test // DATACASS-767
+	void addKeyspaceOptionsOnBoundStatementShouldThrowException() {
 
-		WriteOptions writeOptions = WriteOptions.builder() //
-				.consistencyLevel(ConsistencyLevel.EACH_QUORUM) //
-				.retryPolicy(FallthroughRetryPolicy.INSTANCE) //
-				.timestamp(42) //
-				.tracing(false).build();
+		QueryOptions queryOptions = QueryOptions.builder() //
+				.keyspace(CqlIdentifier.fromCql("ks1")).build();
 
-		QueryOptionsUtil.addWriteOptions(mockDelete, writeOptions);
-
-		verify(mockDelete).setConsistencyLevel(ConsistencyLevel.EACH_QUORUM);
-		verify(mockDelete).setRetryPolicy(FallthroughRetryPolicy.INSTANCE);
-		verify(mockDelete).using(Mockito.any(Using.class));
-		verify(mockDelete).disableTracing();
+		assertThatThrownBy(() -> QueryOptionsUtil.addQueryOptions(boundStatement, queryOptions))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("Keyspace cannot be set for a BoundStatement");
 	}
 }

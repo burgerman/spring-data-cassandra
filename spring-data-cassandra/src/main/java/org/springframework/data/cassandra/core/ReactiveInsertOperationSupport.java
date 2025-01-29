@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,15 +15,12 @@
  */
 package org.springframework.data.cassandra.core;
 
-import lombok.AccessLevel;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.experimental.FieldDefaults;
 import reactor.core.publisher.Mono;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Implementation of {@link ReactiveInsertOperation}.
@@ -31,14 +28,14 @@ import org.springframework.util.Assert;
  * @author Mark Paluch
  * @since 2.1
  */
-@RequiredArgsConstructor
 class ReactiveInsertOperationSupport implements ReactiveInsertOperation {
 
-	private final @NonNull ReactiveCassandraTemplate template;
+	private final ReactiveCassandraTemplate template;
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveInsertOperation#insert(java.lang.Class)
-	 */
+	public ReactiveInsertOperationSupport(ReactiveCassandraTemplate template) {
+		this.template = template;
+	}
+
 	@Override
 	public <T> ReactiveInsert<T> insert(Class<T> domainType) {
 
@@ -47,21 +44,24 @@ class ReactiveInsertOperationSupport implements ReactiveInsertOperation {
 		return new ReactiveInsertSupport<>(this.template, domainType, InsertOptions.empty(), null);
 	}
 
-	@RequiredArgsConstructor
-	@FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 	static class ReactiveInsertSupport<T> implements ReactiveInsert<T> {
 
-		@NonNull ReactiveCassandraTemplate template;
+		private final ReactiveCassandraTemplate template;
 
-		@NonNull Class<T> domainType;
+		private final Class<T> domainType;
 
-		@NonNull InsertOptions insertOptions;
+		private final InsertOptions insertOptions;
 
-		@Nullable CqlIdentifier tableName;
+		private final @Nullable CqlIdentifier tableName;
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ReactiveInsertOperation.InsertWithTable#inTable(org.springframework.data.cassandra.core.cql.CqlIdentifier)
-		 */
+		public ReactiveInsertSupport(ReactiveCassandraTemplate template, Class<T> domainType, InsertOptions insertOptions,
+				CqlIdentifier tableName) {
+			this.template = template;
+			this.domainType = domainType;
+			this.insertOptions = insertOptions;
+			this.tableName = tableName;
+		}
+
 		@Override
 		public InsertWithOptions<T> inTable(CqlIdentifier tableName) {
 
@@ -70,9 +70,6 @@ class ReactiveInsertOperationSupport implements ReactiveInsertOperation {
 			return new ReactiveInsertSupport<>(this.template, this.domainType, this.insertOptions, tableName);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ReactiveInsertOperation.InsertWithOptions#withOptions(org.springframework.data.cassandra.core.InsertOptions)
-		 */
 		@Override
 		public TerminatingInsert<T> withOptions(InsertOptions insertOptions) {
 
@@ -81,9 +78,6 @@ class ReactiveInsertOperationSupport implements ReactiveInsertOperation {
 			return new ReactiveInsertSupport<>(this.template, this.domainType, insertOptions, this.tableName);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ReactiveInsertOperation.TerminatingInsert#one(java.lang.Object)
-		 */
 		@Override
 		public Mono<EntityWriteResult<T>> one(T object) {
 

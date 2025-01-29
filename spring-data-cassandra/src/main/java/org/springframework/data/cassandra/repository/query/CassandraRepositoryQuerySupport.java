@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,19 +15,17 @@
  */
 package org.springframework.data.cassandra.repository.query;
 
-import lombok.RequiredArgsConstructor;
-
 import java.util.Map;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.data.cassandra.core.CassandraOperations;
 import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty;
 import org.springframework.data.convert.CustomConversions;
-import org.springframework.data.convert.EntityInstantiators;
 import org.springframework.data.mapping.context.MappingContext;
+import org.springframework.data.mapping.model.EntityInstantiators;
 import org.springframework.data.repository.query.RepositoryQuery;
 import org.springframework.data.repository.query.ReturnedType;
 import org.springframework.util.Assert;
@@ -43,13 +41,15 @@ import org.springframework.util.ClassUtils;
  */
 public abstract class CassandraRepositoryQuerySupport implements RepositoryQuery {
 
-	protected final Logger log = LoggerFactory.getLogger(getClass());
+	protected final Log log = LogFactory.getLog(getClass());
 
 	private final CassandraQueryMethod queryMethod;
 
 	private final EntityInstantiators instantiators;
 
 	private final QueryStatementCreator queryStatementCreator;
+
+	private final MappingContext<? extends CassandraPersistentEntity<?>, CassandraPersistentProperty> mappingContext;
 
 	/**
 	 * Create a new {@link AbstractCassandraQuery} from the given {@link CassandraQueryMethod} and
@@ -80,11 +80,9 @@ public abstract class CassandraRepositoryQuerySupport implements RepositoryQuery
 		this.queryMethod = queryMethod;
 		this.instantiators = new EntityInstantiators();
 		this.queryStatementCreator = new QueryStatementCreator(queryMethod, mappingContext);
+		this.mappingContext = mappingContext;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.query.RepositoryQuery#getQueryMethod()
-	 */
 	@Override
 	public CassandraQueryMethod getQueryMethod() {
 		return this.queryMethod;
@@ -98,13 +96,36 @@ public abstract class CassandraRepositoryQuerySupport implements RepositoryQuery
 		return this.queryStatementCreator;
 	}
 
-	@RequiredArgsConstructor
+	protected MappingContext<? extends CassandraPersistentEntity<?>, CassandraPersistentProperty> getMappingContext() {
+		return mappingContext;
+	}
+
 	class CassandraReturnedType {
 
 		private final ReturnedType returnedType;
 		private final CustomConversions customConversions;
 
-		boolean isProjecting() {
+		CassandraReturnedType(ReturnedType returnedType, CustomConversions customConversions) {
+			this.returnedType = returnedType;
+			this.customConversions = customConversions;
+		}
+
+		public Class<?> getResultType() {
+
+			if (isProjecting()) {
+				return returnedType.getDomainType();
+			}
+
+			Class<?> typeToRead = returnedType.getTypeToRead();
+
+			if (typeToRead == null) {
+				return returnedType.getReturnedType();
+			}
+
+			return typeToRead;
+		}
+
+		private boolean isProjecting() {
 
 			if (!this.returnedType.isProjecting()) {
 				return false;
@@ -123,14 +144,6 @@ public abstract class CassandraRepositoryQuerySupport implements RepositoryQuery
 
 			// Don't apply projection on Cassandra simple types
 			return !this.customConversions.isSimpleType(this.returnedType.getReturnedType());
-		}
-
-		Class<?> getDomainType() {
-			return this.returnedType.getDomainType();
-		}
-
-		Class<?> getReturnedType() {
-			return this.returnedType.getReturnedType();
 		}
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,10 @@
  */
 package org.springframework.data.cassandra.core
 
-import com.datastax.driver.core.SimpleStatement
+import com.datastax.oss.driver.api.core.cql.SimpleStatement
 import io.mockk.mockk
 import io.mockk.verify
-import org.junit.Test
+import org.junit.jupiter.api.Test
 import org.springframework.data.cassandra.core.query.Query
 import org.springframework.data.cassandra.core.query.Update
 import org.springframework.data.cassandra.domain.Person
@@ -65,13 +65,13 @@ class ReactiveCassandraOperationsExtensionsUnitTests {
 	}
 
 	// -------------------------------------------------------------------------
-	// Methods dealing with com.datastax.driver.core.Statement
+	// Methods dealing with com.datastax.oss.driver.api.core.cql.Statement
 	// -------------------------------------------------------------------------
 
 	@Test // DATACASS-484
 	fun `select(Statement, KClass) extension should call its Java counterpart`() {
 
-		val statement = SimpleStatement("SELECT * FROM person")
+		val statement = SimpleStatement.newInstance("SELECT * FROM person")
 
 		operations.select(statement, Person::class)
 		verify { operations.select(statement, Person::class.java) }
@@ -80,7 +80,7 @@ class ReactiveCassandraOperationsExtensionsUnitTests {
 	@Test // DATACASS-484
 	fun `select(Statement) with reified type parameter extension should call its Java counterpart`() {
 
-		val statement = SimpleStatement("SELECT * FROM person")
+		val statement = SimpleStatement.newInstance("SELECT * FROM person")
 		operations.select<Person>(statement)
 		verify { operations.select(statement, Person::class.java) }
 	}
@@ -88,7 +88,7 @@ class ReactiveCassandraOperationsExtensionsUnitTests {
 	@Test // DATACASS-484
 	fun `selectOne(Statement, KClass) extension should call its Java counterpart`() {
 
-		val statement = SimpleStatement("SELECT * FROM person")
+		val statement = SimpleStatement.newInstance("SELECT * FROM person")
 
 		operations.selectOne(statement, Person::class)
 		verify { operations.selectOne(statement, Person::class.java) }
@@ -97,7 +97,7 @@ class ReactiveCassandraOperationsExtensionsUnitTests {
 	@Test // DATACASS-484
 	fun `selectOne(Statement) with reified type parameter extension should call its Java counterpart`() {
 
-		val statement = SimpleStatement("SELECT * FROM person")
+		val statement = SimpleStatement.newInstance("SELECT * FROM person")
 
 		operations.selectOne<Person>(statement)
 		verify { operations.selectOne(statement, Person::class.java) }

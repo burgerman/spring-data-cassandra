@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,11 @@
  */
 package org.springframework.data.cassandra.core.convert;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.*;
 
 import java.time.LocalTime;
 
-import org.junit.Test;
-
+import org.junit.jupiter.api.Test;
 import org.springframework.data.cassandra.core.convert.CassandraJsr310Converters.LocalTimeToMillisOfDayConverter;
 import org.springframework.data.cassandra.core.convert.CassandraJsr310Converters.MillisOfDayToLocalTimeConverter;
 
@@ -28,21 +27,20 @@ import org.springframework.data.cassandra.core.convert.CassandraJsr310Converters
  * Unit tests for {@link CassandraJsr310Converters}.
  *
  * @author Mark Paluch
+ * @author Hurelhuyag
  */
-public class CassandraJsr310ConvertersUnitTests {
+class CassandraJsr310ConvertersUnitTests {
 
-	@Test // DATACASS-302
-	public void shouldConvertLongToLocalTime() {
+	@Test // DATACASS-302, DATACASS-694
+	void shouldConvertLongToLocalTime() {
 
-		assertThat(MillisOfDayToLocalTimeConverter.INSTANCE.convert(3723000L))
-				.isEqualTo(LocalTime.of(1, 2, 3));
+		assertThat(MillisOfDayToLocalTimeConverter.INSTANCE.convert(3_723_000_000_000L)).isEqualTo(LocalTime.of(1, 2, 3));
 	}
 
-	@Test // DATACASS-302
-	public void shouldConvertLocalTimeToLong() {
+	@Test // DATACASS-302, DATACASS-694
+	void shouldConvertLocalTimeToLong() {
 
 		assertThat(LocalTimeToMillisOfDayConverter.INSTANCE.convert(LocalTime.MIDNIGHT)).isZero();
-		assertThat(LocalTimeToMillisOfDayConverter.INSTANCE.convert(LocalTime.of(1, 2, 3)))
-				.isEqualTo(3723000L);
+		assertThat(LocalTimeToMillisOfDayConverter.INSTANCE.convert(LocalTime.of(1, 2, 3))).isEqualTo(3_723_000_000_000L);
 	}
 }

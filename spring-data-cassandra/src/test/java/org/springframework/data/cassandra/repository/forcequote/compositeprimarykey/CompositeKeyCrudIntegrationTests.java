@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,31 +22,31 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.data.cassandra.core.CassandraOperations;
 import org.springframework.data.cassandra.core.CassandraTemplate;
 import org.springframework.data.cassandra.core.cql.QueryOptions;
 import org.springframework.data.cassandra.repository.forcequote.compositeprimarykey.entity.CorrelationEntity;
 import org.springframework.data.cassandra.repository.support.SchemaTestUtils;
-import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTest;
+import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTests;
 
-import com.datastax.driver.core.ConsistencyLevel;
-import com.datastax.driver.core.policies.DowngradingConsistencyRetryPolicy;
-import com.datastax.driver.core.querybuilder.QueryBuilder;
-import com.datastax.driver.core.querybuilder.Select;
+import com.datastax.oss.driver.api.core.DefaultConsistencyLevel;
+import com.datastax.oss.driver.api.querybuilder.QueryBuilder;
+import com.datastax.oss.driver.api.querybuilder.relation.Relation;
+import com.datastax.oss.driver.api.querybuilder.select.Select;
 
 /**
  * @author Mark Paluch
  */
-public class CompositeKeyCrudIntegrationTests extends AbstractKeyspaceCreatingIntegrationTest {
+class CompositeKeyCrudIntegrationTests extends AbstractKeyspaceCreatingIntegrationTests {
 
-	CassandraOperations operations;
+	private CassandraOperations operations;
 
 	private CorrelationEntity correlationEntity1, correlationEntity2;
 
-	@Before
-	public void setUp() throws Throwable {
+	@BeforeEach
+	void setUp() {
 
 		operations = new CassandraTemplate(session);
 
@@ -65,25 +65,25 @@ public class CompositeKeyCrudIntegrationTests extends AbstractKeyspaceCreatingIn
 	}
 
 	@Test
-	public void test() {
+	void test() {
 
 		operations.insert(correlationEntity1);
 		operations.insert(correlationEntity2);
 
-		Select select = QueryBuilder.select().from("identity_correlations");
-		select.where(QueryBuilder.eq("type", "a")).and(QueryBuilder.eq("value", "b"));
-		select.setRetryPolicy(DowngradingConsistencyRetryPolicy.INSTANCE);
-		select.setConsistencyLevel(ConsistencyLevel.ONE);
-		List<CorrelationEntity> correlationEntities = operations.select(select, CorrelationEntity.class);
+		Select select = QueryBuilder.selectFrom("identity_correlations").all().where(
+				Relation.column("type").isEqualTo(QueryBuilder.literal("a")),
+				Relation.column("value").isEqualTo(QueryBuilder.literal("b")));
+
+		List<CorrelationEntity> correlationEntities = operations.select(select.build(), CorrelationEntity.class);
 
 		assertThat(correlationEntities).hasSize(2);
 
-		QueryOptions queryOptions = QueryOptions.builder().consistencyLevel(ConsistencyLevel.ONE).build();
+		QueryOptions queryOptions = QueryOptions.builder().consistencyLevel(DefaultConsistencyLevel.ONE).build();
 
 		operations.delete(correlationEntity1, queryOptions);
 		operations.delete(correlationEntity2, queryOptions);
 
-		correlationEntities = operations.select(select, CorrelationEntity.class);
+		correlationEntities = operations.select(select.build(), CorrelationEntity.class);
 
 		assertThat(correlationEntities).isEmpty();
 	}

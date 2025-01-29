@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 package org.springframework.data.cassandra.core.convert;
 
+import static org.springframework.data.cassandra.core.query.Update.*;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -28,20 +30,14 @@ import java.util.Set;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity;
 import org.springframework.data.cassandra.core.query.Filter;
 import org.springframework.data.cassandra.core.query.Update;
-import org.springframework.data.cassandra.core.query.Update.AddToMapOp;
-import org.springframework.data.cassandra.core.query.Update.AddToOp;
-import org.springframework.data.cassandra.core.query.Update.AssignmentOp;
-import org.springframework.data.cassandra.core.query.Update.IncrOp;
-import org.springframework.data.cassandra.core.query.Update.RemoveOp;
-import org.springframework.data.cassandra.core.query.Update.SetAtIndexOp;
-import org.springframework.data.cassandra.core.query.Update.SetAtKeyOp;
-import org.springframework.data.cassandra.core.query.Update.SetOp;
 import org.springframework.data.mapping.PersistentProperty;
 import org.springframework.data.util.TypeInformation;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.DataType;
-import com.datastax.driver.core.DataType.Name;
+import com.datastax.oss.driver.api.core.type.DataType;
+import com.datastax.oss.driver.api.core.type.ListType;
+import com.datastax.oss.driver.api.core.type.SetType;
+import com.datastax.oss.protocol.internal.ProtocolConstants;
 
 /**
  * Map {@link org.springframework.data.cassandra.core.query.Update} to CQL-specific data types.
@@ -93,7 +89,7 @@ public class UpdateMapper extends QueryMapper {
 			mapped.add(getMappedUpdateOperation(assignmentOp, field));
 		}
 
-		return Update.of(mapped);
+		return of(mapped);
 	}
 
 	private AssignmentOp getMappedUpdateOperation(AssignmentOp assignmentOp, Field field) {
@@ -147,7 +143,9 @@ public class UpdateMapper extends QueryMapper {
 			return new SetAtKeyOp(field.getMappedKey(), mappedKey, mappedValue);
 		}
 
-		TypeInformation<?> typeInformation = getTypeInformation(field, rawValue);
+		ColumnType descriptor = getColumnType(field, rawValue,
+				updateOp instanceof SetAtIndexOp ? ColumnTypeTransformer.COLLECTION_COMPONENT_TYPE
+						: ColumnTypeTransformer.AS_IS);
 
 		if (updateOp instanceof SetAtIndexOp) {
 
@@ -156,21 +154,22 @@ public class UpdateMapper extends QueryMapper {
 			Assert.state(op.getValue() != null,
 					() -> String.format("SetAtIndexOp for %s attempts to set null", field.getProperty()));
 
-			Object mappedValue = getConverter().convertToColumnType(op.getValue(), typeInformation);
+			Object mappedValue = getConverter().convertToColumnType(op.getValue(), descriptor);
 
 			return new SetAtIndexOp(field.getMappedKey(), op.getIndex(), mappedValue);
 		}
 
-		if (rawValue instanceof Collection && typeInformation.isCollectionLike()) {
+		if (rawValue instanceof Collection && descriptor.isCollectionLike()) {
 
 			Collection<?> collection = (Collection) rawValue;
 
 			if (collection.isEmpty()) {
 
-				DataType.Name dataType = field.getProperty().map(property -> getMappingContext().getDataType(property))
-						.map(DataType::getName).orElse(Name.LIST);
+				int protocolCode = field.getProperty()
+						.map(property -> getConverter().getColumnTypeResolver().resolve(property).getDataType())
+						.map(DataType::getProtocolCode).orElse(ProtocolConstants.DataType.LIST);
 
-				if (dataType == Name.SET) {
+				if (protocolCode == ProtocolConstants.DataType.SET) {
 					return new SetOp(field.getMappedKey(), Collections.emptySet());
 				}
 
@@ -178,7 +177,7 @@ public class UpdateMapper extends QueryMapper {
 			}
 		}
 
-		Object mappedValue = rawValue == null ? null : getConverter().convertToColumnType(rawValue, typeInformation);
+		Object mappedValue = rawValue == null ? null : getConverter().convertToColumnType(rawValue, descriptor);
 
 		return new SetOp(field.getMappedKey(), mappedValue);
 	}
@@ -186,8 +185,21 @@ public class UpdateMapper extends QueryMapper {
 	private AssignmentOp getMappedUpdateOperation(Field field, RemoveOp updateOp) {
 
 		Object value = updateOp.getValue();
-		TypeInformation<?> typeInformation = getTypeInformation(field, value);
-		Object mappedValue = getConverter().convertToColumnType(value, typeInformation);
+		ColumnType descriptor = getColumnType(field, value, ColumnTypeTransformer.AS_IS);
+		boolean mapLike = false;
+
+		if (field.getProperty().isPresent() && field.getProperty().get().isMapLike()) {
+
+			descriptor = getColumnType(field, value, value instanceof Collection ? ColumnTypeTransformer.ENCLOSING_MAP_KEY_SET
+					: ColumnTypeTransformer.MAP_KEY_TYPE);
+			mapLike = true;
+		}
+
+		Object mappedValue = getConverter().convertToColumnType(value, descriptor);
+
+		if (mapLike && !(mappedValue instanceof Collection)) {
+			mappedValue = Collections.singleton(mappedValue);
+		}
 
 		return new RemoveOp(field.getMappedKey(), mappedValue);
 	}
@@ -196,20 +208,20 @@ public class UpdateMapper extends QueryMapper {
 	private AssignmentOp getMappedUpdateOperation(Field field, AddToOp updateOp) {
 
 		Iterable<Object> value = updateOp.getValue();
-		TypeInformation<?> typeInformation = getTypeInformation(field, value);
-		Collection<Object> mappedValue = (Collection) getConverter().convertToColumnType(value, typeInformation);
+		ColumnType descriptor = getColumnType(field, value, ColumnTypeTransformer.AS_IS);
+		Collection<Object> mappedValue = (Collection) getConverter().convertToColumnType(value, descriptor);
 
 		if (field.getProperty().isPresent()) {
 
-			DataType dataType = getMappingContext().getDataType(field.getProperty().get());
+			DataType dataType = getConverter().getColumnTypeResolver().resolve(field.getProperty().get()).getDataType();
 
-			if (dataType.getName() == Name.SET && !(mappedValue instanceof Set)) {
+			if (dataType instanceof SetType && !(mappedValue instanceof Set)) {
 				Collection<Object> collection = new HashSet<>();
 				collection.addAll(mappedValue);
 				mappedValue = collection;
 			}
 
-			if (dataType.getName() == Name.LIST && !(mappedValue instanceof List)) {
+			if (dataType instanceof ListType && !(mappedValue instanceof List)) {
 				Collection<Object> collection = new ArrayList<>();
 				collection.addAll(mappedValue);
 				mappedValue = collection;

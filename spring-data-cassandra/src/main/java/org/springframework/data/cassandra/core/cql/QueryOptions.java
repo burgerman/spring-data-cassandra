@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,18 @@
  */
 package org.springframework.data.cassandra.core.cql;
 
-import lombok.EqualsAndHashCode;
-
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
+import org.springframework.util.ObjectUtils;
 
-import com.datastax.driver.core.ConsistencyLevel;
-import com.datastax.driver.core.SocketOptions;
-import com.datastax.driver.core.policies.RetryPolicy;
+import com.datastax.oss.driver.api.core.ConsistencyLevel;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.config.DriverExecutionProfile;
 
 /**
  * Cassandra Query Options for queries. {@link QueryOptions} allow tuning of various query options on a per-request
@@ -33,47 +34,48 @@ import com.datastax.driver.core.policies.RetryPolicy;
  *
  * @author David Webb
  * @author Mark Paluch
+ * @author Tomasz Lelek
+ * @author Sam Lightfoot
  */
-@EqualsAndHashCode
 public class QueryOptions {
 
 	private static final QueryOptions EMPTY = QueryOptions.builder().build();
 
-	private final @Nullable Boolean tracing;
-
 	private final @Nullable ConsistencyLevel consistencyLevel;
 
-	private final Duration readTimeout;
+	private final ExecutionProfileResolver executionProfileResolver;
 
-	private final @Nullable Integer fetchSize;
+	private final @Nullable Boolean idempotent;
 
-	private final @Nullable RetryPolicy retryPolicy;
+	private final @Nullable CqlIdentifier keyspace;
 
-	protected QueryOptions(@Nullable ConsistencyLevel consistencyLevel, @Nullable RetryPolicy retryPolicy,
-			@Nullable Boolean tracing, @Nullable Integer fetchSize, Duration readTimeout) {
+	private final @Nullable Integer pageSize;
+
+	private final @Nullable CqlIdentifier routingKeyspace;
+
+	private final @Nullable ByteBuffer routingKey;
+
+	private final @Nullable ConsistencyLevel serialConsistencyLevel;
+
+	private final Duration timeout;
+
+	private final @Nullable Boolean tracing;
+
+	protected QueryOptions(@Nullable ConsistencyLevel consistencyLevel, ExecutionProfileResolver executionProfileResolver,
+			@Nullable Boolean idempotent, @Nullable CqlIdentifier keyspace, @Nullable Integer pageSize,
+			@Nullable CqlIdentifier routingKeyspace, @Nullable ByteBuffer routingKey,
+			@Nullable ConsistencyLevel serialConsistencyLevel, Duration timeout, @Nullable Boolean tracing) {
 
 		this.consistencyLevel = consistencyLevel;
-		this.retryPolicy = retryPolicy;
+		this.executionProfileResolver = executionProfileResolver;
+		this.idempotent = idempotent;
+		this.keyspace = keyspace;
+		this.pageSize = pageSize;
+		this.routingKey = routingKey;
+		this.routingKeyspace = routingKeyspace;
+		this.serialConsistencyLevel = serialConsistencyLevel;
+		this.timeout = timeout;
 		this.tracing = tracing;
-		this.fetchSize = fetchSize;
-		this.readTimeout = readTimeout;
-	}
-
-	/**
-	 * Creates new {@link QueryOptions} for the given {@link ConsistencyLevel} and {@link RetryPolicy}.
-	 *
-	 * @param consistencyLevel the consistency level, may be {@literal null}.
-	 * @param retryPolicy the retry policy, may be {@literal null}.
-	 * @deprecated since 2.0, use {@link #builder()}.
-	 */
-	@Deprecated
-	public QueryOptions(@Nullable ConsistencyLevel consistencyLevel, @Nullable RetryPolicy retryPolicy) {
-
-		this.consistencyLevel = consistencyLevel;
-		this.retryPolicy = retryPolicy;
-		this.tracing = false;
-		this.fetchSize = null;
-		this.readTimeout = Duration.ofMillis(-1);
 	}
 
 	/**
@@ -107,7 +109,7 @@ public class QueryOptions {
 	}
 
 	/**
-	 * @return the the driver {@link ConsistencyLevel}
+	 * @return the driver {@link ConsistencyLevel}.
 	 * @since 1.5
 	 */
 	@Nullable
@@ -116,29 +118,90 @@ public class QueryOptions {
 	}
 
 	/**
+	 * @return the {@link ExecutionProfileResolver}.
+	 * @since 3.0
+	 */
+	protected ExecutionProfileResolver getExecutionProfileResolver() {
+		return this.executionProfileResolver;
+	}
+
+	/**
+	 * @return whether query is idempotent. May be {@literal null} if not set.
+	 * @since 3.4
+	 * @see com.datastax.oss.driver.api.core.cql.Statement#setIdempotent(Boolean)
+	 */
+	@Nullable
+	protected Boolean isIdempotent() {
+		return this.idempotent;
+	}
+
+	/**
+	 * @return the keyspace associated with the query. If it is {@literal null}, it means that either keyspace configured
+	 *         on the statement or from the {@link CqlSession} will be used.
+	 * @since 3.1
+	 */
+	@Nullable
+	public CqlIdentifier getKeyspace() {
+		return keyspace;
+	}
+
+	/**
 	 * @return the number of rows to fetch per chunking request. May be {@literal null} if not set.
 	 * @since 1.5
 	 */
 	@Nullable
-	protected Integer getFetchSize() {
-		return this.fetchSize;
+	protected Integer getPageSize() {
+		return this.pageSize;
 	}
 
 	/**
-	 * @return the read timeout in milliseconds. May be {@literal null} if not set.
+	 * @return the command timeout. May be {@link Duration#isNegative() negative} if not set.
 	 * @since 1.5
+	 * @see com.datastax.oss.driver.api.core.cql.Statement#setTimeout(Duration)
+	 * @deprecated since 3.0, use {@link #getTimeout()} instead.
 	 */
+	@Deprecated
 	protected Duration getReadTimeout() {
-		return this.readTimeout;
+		return getTimeout();
 	}
 
 	/**
-	 * @return the driver {@link RetryPolicy}
-	 * @since 1.5
+	 * @return the keyspace used for token-aware routing. May be {@literal null} if token-aware routing is disabled.
+	 * @since 3.4
+	 * @see com.datastax.oss.driver.api.core.cql.Statement#setRoutingKeyspace(CqlIdentifier)
 	 */
 	@Nullable
-	protected RetryPolicy getRetryPolicy() {
-		return this.retryPolicy;
+	protected CqlIdentifier getRoutingKeyspace() {
+		return this.routingKeyspace;
+	}
+
+	/**
+	 * @return the key used for token-aware routing. May be {@literal null} if token-aware routing is disabled.
+	 * @since 3.4
+	 * @see com.datastax.oss.driver.api.core.cql.Statement#setRoutingKey(ByteBuffer)
+	 */
+	@Nullable
+	protected ByteBuffer getRoutingKey() {
+		return this.routingKey;
+	}
+
+	/**
+	 * @return the command timeout. May be {@link Duration#isNegative() negative} if not set.
+	 * @since 3.0
+	 * @see com.datastax.oss.driver.api.core.cql.Statement#setTimeout(Duration)
+	 */
+	protected Duration getTimeout() {
+		return this.timeout;
+	}
+
+	/**
+	 * @return the serial {@link ConsistencyLevel}.
+	 * @since 3.0
+	 * @see com.datastax.oss.driver.api.core.cql.Statement#setSerialConsistencyLevel(ConsistencyLevel)
+	 */
+	@Nullable
+	protected ConsistencyLevel getSerialConsistencyLevel() {
+		return this.serialConsistencyLevel;
 	}
 
 	/**
@@ -149,32 +212,114 @@ public class QueryOptions {
 		return this.tracing;
 	}
 
+	@Override
+	public boolean equals(@Nullable Object o) {
+
+		if (this == o) {
+			return true;
+		}
+
+		if (!(o instanceof QueryOptions options)) {
+			return false;
+		}
+
+		if (!ObjectUtils.nullSafeEquals(consistencyLevel, options.consistencyLevel)) {
+			return false;
+		}
+
+		if (!ObjectUtils.nullSafeEquals(executionProfileResolver, options.executionProfileResolver)) {
+			return false;
+		}
+
+		if (!ObjectUtils.nullSafeEquals(idempotent, options.idempotent)) {
+			return false;
+		}
+
+		if (!ObjectUtils.nullSafeEquals(pageSize, options.pageSize)) {
+			return false;
+		}
+
+		if (!ObjectUtils.nullSafeEquals(routingKeyspace, options.routingKeyspace)) {
+			return false;
+		}
+
+		if (!ObjectUtils.nullSafeEquals(routingKey, options.routingKey)) {
+			return false;
+		}
+
+		if (!ObjectUtils.nullSafeEquals(serialConsistencyLevel, options.serialConsistencyLevel)) {
+			return false;
+		}
+
+		if (!ObjectUtils.nullSafeEquals(timeout, options.timeout)) {
+			return false;
+		}
+
+		if (!ObjectUtils.nullSafeEquals(tracing, options.tracing)) {
+			return false;
+		}
+
+		return ObjectUtils.nullSafeEquals(keyspace, options.keyspace);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = ObjectUtils.nullSafeHashCode(consistencyLevel);
+		result = 31 * result + ObjectUtils.nullSafeHashCode(executionProfileResolver);
+		result = 31 * result + ObjectUtils.nullSafeHashCode(idempotent);
+		result = 31 * result + ObjectUtils.nullSafeHashCode(keyspace);
+		result = 31 * result + ObjectUtils.nullSafeHashCode(pageSize);
+		result = 31 * result + ObjectUtils.nullSafeHashCode(routingKeyspace);
+		result = 31 * result + ObjectUtils.nullSafeHashCode(routingKey);
+		result = 31 * result + ObjectUtils.nullSafeHashCode(serialConsistencyLevel);
+		result = 31 * result + ObjectUtils.nullSafeHashCode(timeout);
+		result = 31 * result + ObjectUtils.nullSafeHashCode(tracing);
+
+		return result;
+	}
+
 	/**
 	 * Builder for {@link QueryOptions}.
 	 *
 	 * @author Mark Paluch
+	 * @author Seungho Kang
 	 * @since 1.5
 	 */
 	public static class QueryOptionsBuilder {
 
-		protected @Nullable Boolean tracing;
-
 		protected @Nullable ConsistencyLevel consistencyLevel;
 
-		protected Duration readTimeout = Duration.ofMillis(-1);
+		protected ExecutionProfileResolver executionProfileResolver = ExecutionProfileResolver.none();
 
-		protected @Nullable Integer fetchSize;
+		protected @Nullable Boolean idempotent;
 
-		protected @Nullable RetryPolicy retryPolicy;
+		protected @Nullable CqlIdentifier keyspace;
+
+		protected @Nullable ByteBuffer routingKey;
+
+		protected @Nullable CqlIdentifier routingKeyspace;
+
+		protected @Nullable Integer pageSize;
+
+		protected @Nullable ConsistencyLevel serialConsistencyLevel;
+
+		protected Duration timeout = Duration.ofMillis(-1);
+
+		protected @Nullable Boolean tracing;
 
 		QueryOptionsBuilder() {}
 
 		QueryOptionsBuilder(QueryOptions queryOptions) {
 
 			this.consistencyLevel = queryOptions.consistencyLevel;
-			this.fetchSize = queryOptions.fetchSize;
-			this.readTimeout = queryOptions.readTimeout;
-			this.retryPolicy = queryOptions.retryPolicy;
+			this.executionProfileResolver = queryOptions.executionProfileResolver;
+			this.idempotent = queryOptions.idempotent;
+			this.keyspace = queryOptions.keyspace;
+			this.pageSize = queryOptions.pageSize;
+			this.routingKey = queryOptions.routingKey;
+			this.routingKeyspace = queryOptions.routingKeyspace;
+			this.serialConsistencyLevel = queryOptions.serialConsistencyLevel;
+			this.timeout = queryOptions.timeout;
 			this.tracing = queryOptions.tracing;
 		}
 
@@ -194,23 +339,35 @@ public class QueryOptions {
 		}
 
 		/**
-		 * Sets the {@link RetryPolicy driver RetryPolicy} to use. Setting both ( {@link RetryPolicy} and {@link RetryPolicy
-		 * driver RetryPolicy}) retry policies is not supported.
+		 * Sets the {@code execution profile} to use.
 		 *
-		 * @param retryPolicy must not be {@literal null}.
+		 * @param profileName must not be {@literal null} or empty.
 		 * @return {@code this} {@link QueryOptionsBuilder}
+		 * @since 3.0
+		 * @see com.datastax.oss.driver.api.core.cql.Statement#setExecutionProfileName(String)
 		 */
-		public QueryOptionsBuilder retryPolicy(RetryPolicy retryPolicy) {
+		public QueryOptionsBuilder executionProfile(String profileName) {
+			return executionProfile(ExecutionProfileResolver.from(profileName));
+		}
 
-			Assert.notNull(retryPolicy, "RetryPolicy must not be null");
+		/**
+		 * Sets the {@link ExecutionProfileResolver} to use.
+		 *
+		 * @param executionProfileResolver must not be {@literal null}.
+		 * @return {@code this} {@link QueryOptionsBuilder}
+		 * @see com.datastax.oss.driver.api.core.cql.Statement#setExecutionProfile(DriverExecutionProfile)
+		 */
+		public QueryOptionsBuilder executionProfile(ExecutionProfileResolver executionProfileResolver) {
 
-			this.retryPolicy = retryPolicy;
+			Assert.notNull(executionProfileResolver, "ExecutionProfileResolver must not be null");
+
+			this.executionProfileResolver = executionProfileResolver;
 
 			return this;
 		}
 
 		/**
-		 * Sets the query fetch size for {@link com.datastax.driver.core.ResultSet} chunks.
+		 * Sets the query fetch size for {@link com.datastax.oss.driver.api.core.cql.ResultSet} chunks.
 		 * <p>
 		 * The fetch size controls how much resulting rows will be retrieved simultaneously (the goal being to avoid loading
 		 * too much results in memory for queries yielding large results). Please note that while value as low as 1 can be
@@ -219,14 +376,61 @@ public class QueryOptions {
 		 * @param fetchSize the number of rows to fetch per chunking request. To disable chunking of the result set, use
 		 *          {@code fetchSize == Integer.MAX_VALUE}. Negative values are not allowed.
 		 * @return {@code this} {@link QueryOptionsBuilder}
-		 * @see com.datastax.driver.core.QueryOptions#getFetchSize()
-		 * @see com.datastax.driver.core.Cluster.Builder#withQueryOptions(com.datastax.driver.core.QueryOptions)
+		 * @deprecated since 3.0, use {@link #pageSize(int)}.
 		 */
+		@Deprecated
 		public QueryOptionsBuilder fetchSize(int fetchSize) {
+			return pageSize(fetchSize);
+		}
 
-			Assert.isTrue(fetchSize >= 0, "FetchSize must be greater than equal to zero");
+		/**
+		 * Set query execution idempotency.
+		 *
+		 * @param idempotent {@literal true} to mark the query as idempotent.
+		 * @return {@code this} {@link QueryOptionsBuilder}.
+		 * @since 3.4
+		 */
+		public QueryOptionsBuilder idempotent(boolean idempotent) {
 
-			this.fetchSize = fetchSize;
+			this.idempotent = idempotent;
+
+			return this;
+		}
+
+		/**
+		 * Sets the {@link CqlIdentifier keyspace} to use. If left unconfigured, then the keyspace set on the statement or
+		 * {@link CqlSession} will be used.
+		 *
+		 * @param keyspace the specific keyspace to use to run a statement, must not be {@literal null}.
+		 * @return {@code this} {@link QueryOptionsBuilder}.
+		 * @since 3.1
+		 */
+		public QueryOptionsBuilder keyspace(CqlIdentifier keyspace) {
+
+			Assert.notNull(keyspace, "Keyspace must not be null");
+
+			this.keyspace = keyspace;
+
+			return this;
+		}
+
+		/**
+		 * Sets the query fetch size for {@link com.datastax.oss.driver.api.core.cql.ResultSet} chunks.
+		 * <p>
+		 * The fetch size controls how much resulting rows will be retrieved simultaneously (the goal being to avoid loading
+		 * too many results in memory for queries yielding large results). Please note that while value as low as 1 can be
+		 * used, it is <strong>highly</strong> discouraged to use such a low value in practice as it will yield very poor
+		 * performance.
+		 *
+		 * @param pageSize the number of rows to fetch per chunking request. To disable chunking of the result set, use
+		 *          {@code pageSize == Integer.MAX_VALUE}. Negative values are not allowed.
+		 * @return {@code this} {@link QueryOptionsBuilder}
+		 */
+		public QueryOptionsBuilder pageSize(int pageSize) {
+
+			Assert.isTrue(pageSize >= 0, "Page size must be greater than equal to zero");
+
+			this.pageSize = pageSize;
 
 			return this;
 		}
@@ -237,11 +441,12 @@ public class QueryOptions {
 		 * @param readTimeout the read timeout in milliseconds. Negative values are not allowed. If it is {@code 0}, the
 		 *          read timeout will be disabled for this statement.
 		 * @return {@code this} {@link QueryOptionsBuilder}
-		 * @see SocketOptions#getReadTimeoutMillis()
-		 * @see com.datastax.driver.core.Cluster.Builder#withSocketOptions(SocketOptions)
+		 * @see com.datastax.oss.driver.api.core.cql.SimpleStatement#setTimeout(Duration)
+		 * @deprecated since 3.0, use {@link #timeout(Duration)}
 		 */
+		@Deprecated
 		public QueryOptionsBuilder readTimeout(long readTimeout) {
-			return readTimeout(Duration.ofMillis(readTimeout));
+			return timeout(Duration.ofMillis(readTimeout));
 		}
 
 		/**
@@ -251,9 +456,8 @@ public class QueryOptions {
 		 *          will be disabled for this statement.
 		 * @param timeUnit the {@link TimeUnit} for the supplied timeout; must not be {@literal null}.
 		 * @return {@code this} {@link QueryOptionsBuilder}
-		 * @see SocketOptions#getReadTimeoutMillis()
-		 * @see com.datastax.driver.core.Cluster.Builder#withSocketOptions(SocketOptions)
-		 * @deprecated since 2.0, use {@link #readTimeout(Duration)}.
+		 * @see com.datastax.oss.driver.api.core.cql.SimpleStatement#setTimeout(Duration)
+		 * @deprecated since 2.0, use {@link #timeout(Duration)}.
 		 */
 		@Deprecated
 		public QueryOptionsBuilder readTimeout(long readTimeout, TimeUnit timeUnit) {
@@ -261,7 +465,7 @@ public class QueryOptions {
 			Assert.isTrue(readTimeout >= 0, "ReadTimeout must be greater than equal to zero");
 			Assert.notNull(timeUnit, "TimeUnit must not be null");
 
-			return readTimeout(Duration.ofMillis(timeUnit.toMillis(readTimeout)));
+			return timeout(Duration.ofMillis(timeUnit.toMillis(readTimeout)));
 		}
 
 		/**
@@ -270,16 +474,76 @@ public class QueryOptions {
 		 * @param readTimeout the read timeout. Negative values are not allowed. If it is {@code 0}, the read timeout will
 		 *          be disabled for this statement.
 		 * @return {@code this} {@link QueryOptionsBuilder}
-		 * @see SocketOptions#getReadTimeoutMillis()
-		 * @see com.datastax.driver.core.Cluster.Builder#withSocketOptions(SocketOptions)
+		 * @see com.datastax.oss.driver.api.core.cql.SimpleStatement#setTimeout(Duration)
 		 * @since 2.0
+		 * @deprecated since 3.0, use {@link #timeout(Duration)}
 		 */
+		@Deprecated
 		public QueryOptionsBuilder readTimeout(Duration readTimeout) {
+			return timeout(readTimeout);
+		}
 
-			Assert.isTrue(!readTimeout.isZero() && !readTimeout.isNegative(),
-					"ReadTimeout must be greater than equal to zero");
+		/**
+		 * Set query routing keyspace.
+		 *
+		 * @param routingKeyspace the routing keyspace to use for token-aware routing.
+		 * @return {@code this} {@link QueryOptionsBuilder}.
+		 * @since 3.4
+		 */
+		public QueryOptionsBuilder routingKeyspace(CqlIdentifier routingKeyspace) {
 
-			this.readTimeout = readTimeout;
+			Assert.notNull(routingKeyspace, "Routing keyspace must not be null");
+
+			this.routingKeyspace = routingKeyspace;
+
+			return this;
+		}
+
+		/**
+		 * Set query routing key.
+		 *
+		 * @param routingKey the routing key to use for token-aware routing.
+		 * @return {@code this} {@link QueryOptionsBuilder}
+		 * @since 3.4
+		 */
+		public QueryOptionsBuilder routingKey(ByteBuffer routingKey) {
+
+			Assert.notNull(routingKey, "Routing key must not be null");
+
+			this.routingKey = routingKey;
+
+			return this;
+		}
+
+		/**
+		 * Sets the serial {@link ConsistencyLevel} to use.
+		 *
+		 * @param consistencyLevel must not be {@literal null}.
+		 * @return {@code this} {@link QueryOptionsBuilder}
+		 */
+		public QueryOptionsBuilder serialConsistencyLevel(ConsistencyLevel consistencyLevel) {
+
+			Assert.notNull(consistencyLevel, "Serial ConsistencyLevel must not be null");
+
+			this.serialConsistencyLevel = consistencyLevel;
+
+			return this;
+		}
+
+		/**
+		 * Sets the request timeout. Overrides the default timeout.
+		 *
+		 * @param timeout the read timeout. Negative values are not allowed. If it is {@code 0}, the read timeout will be
+		 *          disabled for this statement.
+		 * @return {@code this} {@link QueryOptionsBuilder}
+		 * @see com.datastax.oss.driver.api.core.cql.SimpleStatement#setTimeout(Duration)
+		 * @since 3.0
+		 */
+		public QueryOptionsBuilder timeout(Duration timeout) {
+
+			Assert.isTrue(!timeout.isNegative(), "ReadTimeout must be greater than equal to zero");
+
+			this.timeout = timeout;
 
 			return this;
 		}
@@ -312,7 +576,9 @@ public class QueryOptions {
 		 * @return a new {@link QueryOptions} with the configured values
 		 */
 		public QueryOptions build() {
-			return new QueryOptions(this.consistencyLevel, this.retryPolicy, this.tracing, this.fetchSize, this.readTimeout);
+			return new QueryOptions(this.consistencyLevel, this.executionProfileResolver, this.idempotent, this.keyspace,
+					this.pageSize, this.routingKeyspace, this.routingKey, this.serialConsistencyLevel, this.timeout,
+					this.tracing);
 		}
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package org.springframework.data.cassandra.core.cql;
 
-import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
@@ -31,8 +30,12 @@ import org.springframework.lang.Nullable;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.StringUtils;
 
-import com.datastax.driver.core.WriteType;
-import com.datastax.driver.core.exceptions.*;
+import com.datastax.oss.driver.api.core.AllNodesFailedException;
+import com.datastax.oss.driver.api.core.DriverException;
+import com.datastax.oss.driver.api.core.DriverTimeoutException;
+import com.datastax.oss.driver.api.core.auth.AuthenticationException;
+import com.datastax.oss.driver.api.core.metadata.Node;
+import com.datastax.oss.driver.api.core.servererrors.*;
 
 /**
  * Simple {@link PersistenceExceptionTranslator} for Cassandra.
@@ -45,6 +48,7 @@ import com.datastax.driver.core.exceptions.*;
  * @author Alex Shvid
  * @author Matthew T. Adams
  * @author Mark Paluch
+ * @author Mikhail Polivakha
  */
 @SuppressWarnings("unchecked")
 public class CassandraExceptionTranslator implements CqlExceptionTranslator {
@@ -56,9 +60,6 @@ public class CassandraExceptionTranslator implements CqlExceptionTranslator {
 	private static final Set<String> RESOURCE_FAILURE_TYPES = new HashSet<>(
 			Arrays.asList("ReadFailureException", "WriteFailureException", "FunctionExecutionException"));
 
-	/* (non-Javadoc)
-	 * @see org.springframework.dao.support.PersistenceExceptionTranslator#translateExceptionIfPossible(java.lang.RuntimeException)
-	 */
 	@Override
 	@Nullable
 	public DataAccessException translateExceptionIfPossible(RuntimeException exception) {
@@ -67,18 +68,11 @@ public class CassandraExceptionTranslator implements CqlExceptionTranslator {
 			return (DataAccessException) exception;
 		}
 
-		if (!(exception instanceof DriverException)) {
-			return null;
-		}
-
-		return translate(null, null, (DriverException) exception);
+		return translate(null, null, exception);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.cql.CQLExceptionTranslator#translate(java.lang.String, java.lang.String, com.datastax.driver.core.exceptions.DriverException)
-	 */
 	@Override
-	public DataAccessException translate(@Nullable String task, @Nullable String cql, DriverException exception) {
+	public DataAccessException translate(@Nullable String task, @Nullable String cql, RuntimeException exception) {
 
 		String message = buildMessage(task, cql, exception);
 
@@ -86,20 +80,16 @@ public class CassandraExceptionTranslator implements CqlExceptionTranslator {
 		// superclass would match before the subclass!
 
 		if (exception instanceof AuthenticationException) {
-			return new CassandraAuthenticationException(((AuthenticationException) exception).getHost(), message, exception);
+			return new CassandraAuthenticationException(((AuthenticationException) exception).getEndPoint(), message,
+					exception);
 		}
 
-		if (exception instanceof DriverInternalError) {
-			return new CassandraInternalException(message, exception);
-		}
-
-		if (exception instanceof InvalidTypeException) {
-			return new CassandraTypeMismatchException(message, exception);
+		if (exception instanceof DriverTimeoutException driverTimeoutException) {
+			return new CassandraDriverTimeoutException(driverTimeoutException.getMessage(), driverTimeoutException);
 		}
 
 		if (exception instanceof ReadTimeoutException) {
-			return new CassandraReadTimeoutException(((ReadTimeoutException) exception).wasDataRetrieved(), message,
-					exception);
+			return new CassandraReadTimeoutException(((ReadTimeoutException) exception).wasDataPresent(), message, exception);
 		}
 
 		if (exception instanceof WriteTimeoutException) {
@@ -115,20 +105,16 @@ public class CassandraExceptionTranslator implements CqlExceptionTranslator {
 		if (exception instanceof UnavailableException) {
 
 			UnavailableException ux = (UnavailableException) exception;
-			return new CassandraInsufficientReplicasAvailableException(ux.getRequiredReplicas(), ux.getAliveReplicas(),
-					message, exception);
+			return new CassandraInsufficientReplicasAvailableException(ux.getRequired(), ux.getAlive(), message, exception);
 		}
 
 		if (exception instanceof OverloadedException || exception instanceof BootstrappingException) {
 			return new TransientDataAccessResourceException(message, exception);
 		}
-
 		if (exception instanceof AlreadyExistsException) {
 
 			AlreadyExistsException aex = (AlreadyExistsException) exception;
-
-			return aex.wasTableCreation() ? new CassandraTableExistsException(aex.getTable(), message, exception)
-					: new CassandraKeyspaceExistsException(aex.getKeyspace(), message, exception);
+			return new CassandraSchemaElementExistsException(aex.getMessage(), aex);
 		}
 
 		if (exception instanceof InvalidConfigurationInQueryException) {
@@ -147,12 +133,8 @@ public class CassandraExceptionTranslator implements CqlExceptionTranslator {
 			return new CassandraUnauthorizedException(message, exception);
 		}
 
-		if (exception instanceof TraceRetrievalException) {
-			return new CassandraTraceRetrievalException(message, exception);
-		}
-
-		if (exception instanceof NoHostAvailableException) {
-			return new CassandraConnectionFailureException(((NoHostAvailableException) exception).getErrors(), message,
+		if (exception instanceof AllNodesFailedException) {
+			return new CassandraConnectionFailureException(((AllNodesFailedException) exception).getErrors(), message,
 					exception);
 		}
 
@@ -160,11 +142,11 @@ public class CassandraExceptionTranslator implements CqlExceptionTranslator {
 
 		if (CONNECTION_FAILURE_TYPES.contains(exceptionType)) {
 
-			Map<InetSocketAddress, Throwable> errorMap = Collections.emptyMap();
+			Map<Node, Throwable> errorMap = Collections.emptyMap();
 
 			if (exception instanceof CoordinatorException) {
 				CoordinatorException cx = (CoordinatorException) exception;
-				errorMap = Collections.singletonMap(cx.getAddress(), exception);
+				errorMap = Collections.singletonMap(cx.getCoordinator(), exception);
 			}
 
 			return new CassandraConnectionFailureException(errorMap, message, exception);
@@ -174,8 +156,12 @@ public class CassandraExceptionTranslator implements CqlExceptionTranslator {
 			return new DataAccessResourceFailureException(message, exception);
 		}
 
-		// unknown or unhandled exception
-		return new CassandraUncategorizedException(message, exception);
+		if (exception instanceof DriverException
+				|| (exception.getClass().getName().startsWith("com.datastax.oss.driver"))) {
+			// unknown or unhandled exception
+			return new CassandraUncategorizedException(message, exception);
+		}
+		return null;
 	}
 
 	/**
@@ -189,7 +175,7 @@ public class CassandraExceptionTranslator implements CqlExceptionTranslator {
 	 * @param ex the offending {@code DriverException}
 	 * @return the message {@code String} to use
 	 */
-	protected String buildMessage(@Nullable String task, @Nullable String cql, DriverException ex) {
+	protected String buildMessage(@Nullable String task, @Nullable String cql, RuntimeException ex) {
 
 		if (StringUtils.hasText(task) || StringUtils.hasText(cql)) {
 			return task + "; CQL [" + cql + "]; " + ex.getMessage();

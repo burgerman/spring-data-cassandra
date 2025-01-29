@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,9 @@ package org.springframework.data.cassandra.core.cql;
 
 import org.springframework.lang.Nullable;
 
-import com.datastax.driver.core.BoundStatement;
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.exceptions.DriverException;
+import com.datastax.oss.driver.api.core.DriverException;
+import com.datastax.oss.driver.api.core.cql.BoundStatement;
+import com.datastax.oss.driver.api.core.cql.PreparedStatement;
 
 /**
  * Simple adapter for {@link PreparedStatementBinder} that applies a given array of arguments.
@@ -34,15 +34,12 @@ public class ArgumentPreparedStatementBinder implements PreparedStatementBinder 
 	/**
 	 * Create a new {@link ArgumentPreparedStatementBinder} for the given arguments.
 	 *
-	 * @param args the arguments to set. May be empty or {@link null} if no arguments are provided.
+	 * @param args the arguments to set. May be empty or {@code null} if no arguments are provided.
 	 */
 	public ArgumentPreparedStatementBinder(@Nullable Object... args) {
 		this.args = args;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.PreparedStatementBinder#bindValues(com.datastax.driver.core.PreparedStatement)
-	 */
 	@Override
 	public BoundStatement bindValues(PreparedStatement ps) throws DriverException {
 		return args != null ? ps.bind(args) : ps.bind();

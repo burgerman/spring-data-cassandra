@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,19 +23,19 @@ import static org.springframework.data.cassandra.core.query.Criteria.*;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
-
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.data.cassandra.CassandraConnectionFailureException;
 import org.springframework.data.cassandra.core.mapping.event.BeforeConvertCallback;
 import org.springframework.data.cassandra.core.mapping.event.BeforeSaveCallback;
@@ -45,43 +45,51 @@ import org.springframework.data.cassandra.core.query.Update;
 import org.springframework.data.cassandra.domain.User;
 import org.springframework.data.cassandra.domain.VersionedUser;
 import org.springframework.data.mapping.callback.EntityCallbacks;
-import org.springframework.util.concurrent.ListenableFuture;
 
-import com.datastax.driver.core.ColumnDefinitions;
-import com.datastax.driver.core.DataType;
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.ResultSetFuture;
-import com.datastax.driver.core.Row;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.Statement;
-import com.datastax.driver.core.exceptions.NoHostAvailableException;
-import com.google.common.util.concurrent.AbstractFuture;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.NoNodeAvailableException;
+import com.datastax.oss.driver.api.core.context.DriverContext;
+import com.datastax.oss.driver.api.core.cql.AsyncResultSet;
+import com.datastax.oss.driver.api.core.cql.ColumnDefinition;
+import com.datastax.oss.driver.api.core.cql.ColumnDefinitions;
+import com.datastax.oss.driver.api.core.cql.Row;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
+import com.datastax.oss.driver.api.core.cql.Statement;
+import com.datastax.oss.driver.api.core.type.DataTypes;
+import com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry;
+import com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry;
 
 /**
  * Unit tests for {@link AsyncCassandraTemplate}.
  *
  * @author Mark Paluch
  */
-@RunWith(MockitoJUnitRunner.class)
-public class AsyncCassandraTemplateUnitTests {
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+class AsyncCassandraTemplateUnitTests {
 
-	@Mock Session session;
-	@Mock ResultSet resultSet;
+	@Mock CqlSession session;
+	CodecRegistry codecRegistry = new DefaultCodecRegistry("foo");
+	@Mock DriverContext driverContext;
+	@Mock AsyncResultSet resultSet;
 	@Mock Row row;
+	@Mock ColumnDefinition columnDefinition;
 	@Mock ColumnDefinitions columnDefinitions;
 
-	@Captor ArgumentCaptor<Statement> statementCaptor;
+	@Captor ArgumentCaptor<SimpleStatement> statementCaptor;
 
-	AsyncCassandraTemplate template;
+	private AsyncCassandraTemplate template;
 
-	Object beforeSave;
+	private Object beforeSave;
 
-	Object beforeConvert;
+	private Object beforeConvert;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
-		template = new AsyncCassandraTemplate(session);
+		when(driverContext.getCodecRegistry()).thenReturn(codecRegistry);
+		when(session.getContext()).thenReturn(driverContext);
 
 		when(session.executeAsync(any(Statement.class))).thenReturn(new TestResultSetFuture(resultSet));
 		when(row.getColumnDefinitions()).thenReturn(columnDefinitions);
@@ -102,41 +110,52 @@ public class AsyncCassandraTemplateUnitTests {
 			return entity;
 		});
 
+		template = new AsyncCassandraTemplate(session);
+		template.setUsePreparedStatements(false);
 		template.setEntityCallbacks(callbacks);
 	}
 
+	@Test // gh-1133
+	void shouldConfigureConverterFromSession() {
+		assertThat(template.getConverter().getCodecRegistry()).isEqualTo(session.getContext().getCodecRegistry());
+		assertThat(template.getConverter()).extracting("userTypeResolver").isNotNull();
+	}
+
 	@Test // DATACASS-292
-	public void selectUsingCqlShouldReturnMappedResults() {
+	void selectUsingCqlShouldReturnMappedResults() {
 
-		when(resultSet.iterator()).thenReturn(Collections.singleton(row).iterator());
-		when(columnDefinitions.contains(anyString())).thenReturn(true);
-		when(columnDefinitions.getType(anyInt())).thenReturn(DataType.ascii());
+		when(resultSet.currentPage()).thenReturn(Collections.singleton(row));
+		when(columnDefinitions.contains(any(CqlIdentifier.class))).thenReturn(true);
 
-		when(columnDefinitions.getIndexOf("id")).thenReturn(0);
-		when(columnDefinitions.getIndexOf("firstname")).thenReturn(1);
-		when(columnDefinitions.getIndexOf("lastname")).thenReturn(2);
+		when(columnDefinitions.get(anyInt())).thenReturn(columnDefinition);
+		when(columnDefinitions.firstIndexOf("id")).thenReturn(0);
+		when(columnDefinitions.firstIndexOf("firstname")).thenReturn(1);
+		when(columnDefinitions.firstIndexOf("lastname")).thenReturn(2);
+
+		when(columnDefinition.getType()).thenReturn(DataTypes.TEXT);
 
 		when(row.getObject(0)).thenReturn("myid");
 		when(row.getObject(1)).thenReturn("Walter");
 		when(row.getObject(2)).thenReturn("White");
 
-		ListenableFuture<List<User>> list = template.select("SELECT * FROM users", User.class);
+		CompletableFuture<List<User>> list = template.select("SELECT * FROM users", User.class);
 
 		assertThat(getUninterruptibly(list)).hasSize(1).contains(new User("myid", "Walter", "White"));
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString()).isEqualTo("SELECT * FROM users");
+		assertThat(render(statementCaptor.getValue())).isEqualTo("SELECT * FROM users");
 	}
 
 	@Test // DATACASS-292
-	public void selectUsingCqlShouldInvokeCallbackWithMappedResults() {
+	void selectUsingCqlShouldInvokeCallbackWithMappedResults() {
 
-		when(resultSet.spliterator()).thenReturn(Collections.singletonList(row).spliterator());
-		when(columnDefinitions.contains(anyString())).thenReturn(true);
-		when(columnDefinitions.getType(anyInt())).thenReturn(DataType.ascii());
+		when(resultSet.currentPage()).thenReturn(Collections.singletonList(row));
+		when(columnDefinitions.contains(any(CqlIdentifier.class))).thenReturn(true);
+		when(columnDefinitions.get(anyInt())).thenReturn(columnDefinition);
+		when(columnDefinitions.firstIndexOf("id")).thenReturn(0);
+		when(columnDefinitions.firstIndexOf("firstname")).thenReturn(1);
+		when(columnDefinitions.firstIndexOf("lastname")).thenReturn(2);
 
-		when(columnDefinitions.getIndexOf("id")).thenReturn(0);
-		when(columnDefinitions.getIndexOf("firstname")).thenReturn(1);
-		when(columnDefinitions.getIndexOf("lastname")).thenReturn(2);
+		when(columnDefinition.getType()).thenReturn(DataTypes.TEXT);
 
 		when(row.getObject(0)).thenReturn("myid");
 		when(row.getObject(1)).thenReturn("Walter");
@@ -144,20 +163,20 @@ public class AsyncCassandraTemplateUnitTests {
 
 		List<User> list = new ArrayList<>();
 
-		ListenableFuture<Void> result = template.select("SELECT * FROM users", list::add, User.class);
+		CompletableFuture<Void> result = template.select("SELECT * FROM users", list::add, User.class);
 
 		assertThat(getUninterruptibly(result)).isNull();
 		assertThat(list).hasSize(1).contains(new User("myid", "Walter", "White"));
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString()).isEqualTo("SELECT * FROM users");
+		assertThat(render(statementCaptor.getValue())).isEqualTo("SELECT * FROM users");
 	}
 
 	@Test // DATACASS-292
-	public void selectShouldTranslateException() throws Exception {
+	void selectShouldTranslateException() throws Exception {
 
-		when(resultSet.iterator()).thenThrow(new NoHostAvailableException(Collections.emptyMap()));
+		when(resultSet.currentPage()).thenThrow(new NoNodeAvailableException());
 
-		ListenableFuture<List<User>> list = template.select("SELECT * FROM users", User.class);
+		CompletableFuture<List<User>> list = template.select("SELECT * FROM users", User.class);
 
 		try {
 			list.get();
@@ -165,160 +184,192 @@ public class AsyncCassandraTemplateUnitTests {
 			fail("Missing CassandraConnectionFailureException");
 		} catch (ExecutionException e) {
 			assertThat(e).hasCauseInstanceOf(CassandraConnectionFailureException.class)
-					.hasRootCauseInstanceOf(NoHostAvailableException.class);
+					.hasRootCauseInstanceOf(NoNodeAvailableException.class);
 		}
 	}
 
 	@Test // DATACASS-292
-	public void selectOneShouldReturnMappedResults() {
+	void selectOneShouldReturnMappedResults() {
 
-		when(resultSet.iterator()).thenReturn(Collections.singleton(row).iterator());
-		when(columnDefinitions.contains(anyString())).thenReturn(true);
-		when(columnDefinitions.getType(anyInt())).thenReturn(DataType.ascii());
+		when(resultSet.currentPage()).thenReturn(Collections.singleton(row));
+		when(columnDefinitions.contains(any(CqlIdentifier.class))).thenReturn(true);
 
-		when(columnDefinitions.getIndexOf("id")).thenReturn(0);
-		when(columnDefinitions.getIndexOf("firstname")).thenReturn(1);
-		when(columnDefinitions.getIndexOf("lastname")).thenReturn(2);
+		when(columnDefinitions.get(anyInt())).thenReturn(columnDefinition);
+		when(columnDefinitions.firstIndexOf("id")).thenReturn(0);
+		when(columnDefinitions.firstIndexOf("firstname")).thenReturn(1);
+		when(columnDefinitions.firstIndexOf("lastname")).thenReturn(2);
 
-		when(row.getObject(0)).thenReturn("myid");
-		when(row.getObject(1)).thenReturn("Walter");
-		when(row.getObject(2)).thenReturn("White");
-
-		ListenableFuture<User> future = template.selectOne("SELECT * FROM users WHERE id='myid';", User.class);
-
-		assertThat(getUninterruptibly(future)).isEqualTo(new User("myid", "Walter", "White"));
-		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString()).isEqualTo("SELECT * FROM users WHERE id='myid';");
-	}
-
-	@Test // DATACASS-292
-	public void selectOneByIdShouldReturnMappedResults() {
-
-		when(resultSet.iterator()).thenReturn(Collections.singleton(row).iterator());
-		when(columnDefinitions.contains(anyString())).thenReturn(true);
-		when(columnDefinitions.getType(anyInt())).thenReturn(DataType.ascii());
-
-		when(columnDefinitions.getIndexOf("id")).thenReturn(0);
-		when(columnDefinitions.getIndexOf("firstname")).thenReturn(1);
-		when(columnDefinitions.getIndexOf("lastname")).thenReturn(2);
+		when(columnDefinition.getType()).thenReturn(DataTypes.TEXT);
 
 		when(row.getObject(0)).thenReturn("myid");
 		when(row.getObject(1)).thenReturn("Walter");
 		when(row.getObject(2)).thenReturn("White");
 
-		ListenableFuture<User> future = template.selectOneById("myid", User.class);
+		CompletableFuture<User> future = template.selectOne("SELECT * FROM users WHERE id='myid'", User.class);
 
 		assertThat(getUninterruptibly(future)).isEqualTo(new User("myid", "Walter", "White"));
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString()).isEqualTo("SELECT * FROM users WHERE id='myid';");
+		assertThat(render(statementCaptor.getValue())).isEqualTo("SELECT * FROM users WHERE id='myid'");
 	}
 
 	@Test // DATACASS-292
-	public void existsShouldReturnExistingElement() {
+	void selectOneByIdShouldReturnMappedResults() {
 
-		when(resultSet.iterator()).thenReturn(Collections.singleton(row).iterator());
+		when(resultSet.currentPage()).thenReturn(Collections.singleton(row));
+		when(columnDefinitions.contains(any(CqlIdentifier.class))).thenReturn(true);
+		when(columnDefinitions.get(anyInt())).thenReturn(columnDefinition);
+		when(columnDefinitions.firstIndexOf("id")).thenReturn(0);
+		when(columnDefinitions.firstIndexOf("firstname")).thenReturn(1);
+		when(columnDefinitions.firstIndexOf("lastname")).thenReturn(2);
 
-		ListenableFuture<Boolean> future = template.exists("myid", User.class);
+		when(columnDefinition.getType()).thenReturn(DataTypes.ASCII);
+
+		when(row.getObject(0)).thenReturn("myid");
+		when(row.getObject(1)).thenReturn("Walter");
+		when(row.getObject(2)).thenReturn("White");
+
+		CompletableFuture<User> future = template.selectOneById("myid", User.class);
+
+		assertThat(getUninterruptibly(future)).isEqualTo(new User("myid", "Walter", "White"));
+		verify(session).executeAsync(statementCaptor.capture());
+		assertThat(render(statementCaptor.getValue())).isEqualTo("SELECT * FROM users WHERE id='myid' LIMIT 1");
+	}
+
+	@Test // DATACASS-696
+	void selectOneShouldNull() {
+
+		when(resultSet.currentPage()).thenReturn(Collections.singleton(row));
+
+		CompletableFuture<String> future = template.selectOne("SELECT id FROM users WHERE id='myid'", String.class);
+
+		assertThat(getUninterruptibly(future)).isNull();
+	}
+
+	@Test // DATACASS-292
+	void existsShouldReturnExistingElement() {
+
+		when(resultSet.one()).thenReturn(row);
+
+		CompletableFuture<Boolean> future = template.exists("myid", User.class);
 
 		assertThat(getUninterruptibly(future)).isTrue();
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString()).isEqualTo("SELECT * FROM users WHERE id='myid';");
+		assertThat(render(statementCaptor.getValue())).isEqualTo("SELECT * FROM users WHERE id='myid' LIMIT 1");
 	}
 
 	@Test // DATACASS-292
-	public void existsShouldReturnNonExistingElement() {
+	void existsShouldReturnNonExistingElement() {
 
-		when(resultSet.iterator()).thenReturn(Collections.emptyIterator());
-
-		ListenableFuture<Boolean> future = template.exists("myid", User.class);
+		CompletableFuture<Boolean> future = template.exists("myid", User.class);
 
 		assertThat(getUninterruptibly(future)).isFalse();
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString()).isEqualTo("SELECT * FROM users WHERE id='myid';");
+		assertThat(render(statementCaptor.getValue())).isEqualTo("SELECT * FROM users WHERE id='myid' LIMIT 1");
 	}
 
 	@Test // DATACASS-512
-	public void existsByQueryShouldReturnExistingElement() {
+	void existsByQueryShouldReturnExistingElement() {
 
-		when(resultSet.iterator()).thenReturn(Collections.singleton(row).iterator());
+		when(resultSet.one()).thenReturn(row);
 
-		ListenableFuture<Boolean> future = template.exists(Query.empty(), User.class);
+		CompletableFuture<Boolean> future = template.exists(Query.empty(), User.class);
 
 		assertThat(getUninterruptibly(future)).isTrue();
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString()).isEqualTo("SELECT * FROM users LIMIT 1;");
+		assertThat(render(statementCaptor.getValue())).isEqualTo("SELECT * FROM users LIMIT 1");
 	}
 
 	@Test // DATACASS-292
-	public void countShouldExecuteCountQueryElement() {
+	void countShouldExecuteCountQueryElement() {
 
-		when(resultSet.iterator()).thenReturn(Collections.singleton(row).iterator());
+		when(resultSet.currentPage()).thenReturn(Collections.singleton(row));
 		when(row.getLong(0)).thenReturn(42L);
 		when(columnDefinitions.size()).thenReturn(1);
 
-		ListenableFuture<Long> future = template.count(User.class);
+		CompletableFuture<Long> future = template.count(User.class);
 
 		assertThat(getUninterruptibly(future)).isEqualTo(42L);
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString()).isEqualTo("SELECT count(*) FROM users;");
+		assertThat(render(statementCaptor.getValue())).isEqualTo("SELECT count(1) FROM users");
 	}
 
 	@Test // DATACASS-292
-	public void countByQueryShouldExecuteCountQueryElement() {
+	void countByQueryShouldExecuteCountQueryElement() {
 
-		when(resultSet.iterator()).thenReturn(Collections.singleton(row).iterator());
+		when(resultSet.currentPage()).thenReturn(Collections.singleton(row));
 		when(row.getLong(0)).thenReturn(42L);
 		when(columnDefinitions.size()).thenReturn(1);
 
-		ListenableFuture<Long> future = template.count(Query.empty(), User.class);
+		CompletableFuture<Long> future = template.count(Query.empty(), User.class);
 
 		assertThat(getUninterruptibly(future)).isEqualTo(42L);
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString()).isEqualTo("SELECT COUNT(1) FROM users;");
+		assertThat(render(statementCaptor.getValue())).isEqualTo("SELECT count(1) FROM users");
 	}
 
 	@Test // DATACASS-292, DATACASS-618
-	public void insertShouldInsertEntity() {
+	void insertShouldInsertEntity() {
 
 		when(resultSet.wasApplied()).thenReturn(true);
 
 		User user = new User("heisenberg", "Walter", "White");
 
-		ListenableFuture<User> future = template.insert(user);
+		CompletableFuture<User> future = template.insert(user);
 
 		assertThat(getUninterruptibly(future)).isEqualTo(user);
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString())
-				.isEqualTo("INSERT INTO users (firstname,id,lastname) VALUES ('Walter','heisenberg','White');");
+		assertThat(render(statementCaptor.getValue()))
+				.isEqualTo("INSERT INTO users (id,firstname,lastname) VALUES ('heisenberg','Walter','White')");
 		assertThat(beforeConvert).isSameAs(user);
 		assertThat(beforeSave).isSameAs(user);
 	}
 
-	@Test // DATACASS-618
-	public void insertShouldInsertVersionedEntity() {
+	@Test
+		// GH-1295
+	void insertShouldConsiderEntityAfterCallback() {
+
+		when(resultSet.wasApplied()).thenReturn(true);
+
+		User user = new User("heisenberg", "Walter", "White");
+
+		EntityCallbacks callbacks = EntityCallbacks.create();
+		callbacks.addEntityCallback((BeforeConvertCallback<Object>) (entity, tableName) -> new User("ww", "Walter", "White"));
+		template.setEntityCallbacks(callbacks);
+
+		CompletableFuture<User> future = template.insert(user);
+
+		assertThat(getUninterruptibly(future)).isNotSameAs(user);
+		verify(session).executeAsync(statementCaptor.capture());
+		assertThat(render(statementCaptor.getValue()))
+				.isEqualTo("INSERT INTO users (id,firstname,lastname) VALUES ('ww','Walter','White')");
+	}
+
+	@Test
+		// DATACASS-618
+	void insertShouldInsertVersionedEntity() {
 
 		when(resultSet.wasApplied()).thenReturn(true);
 
 		VersionedUser user = new VersionedUser("heisenberg", "Walter", "White");
 
-		ListenableFuture<VersionedUser> future = template.insert(user);
+		CompletableFuture<VersionedUser> future = template.insert(user);
 
 		assertThat(getUninterruptibly(future)).isEqualTo(user);
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString()).isEqualTo(
-				"INSERT INTO vusers (firstname,id,lastname,version) VALUES ('Walter','heisenberg','White',0) IF NOT EXISTS;");
+		assertThat(render(statementCaptor.getValue())).isEqualTo(
+				"INSERT INTO vusers (id,version,firstname,lastname) VALUES ('heisenberg',0,'Walter','White') IF NOT EXISTS");
 		assertThat(beforeConvert).isSameAs(user);
 		assertThat(beforeSave).isSameAs(user);
 	}
 
 	@Test // DATACASS-292
-	public void insertShouldTranslateException() throws Exception {
+	void insertShouldTranslateException() throws Exception {
 
 		reset(session);
 		when(session.executeAsync(any(Statement.class)))
-				.thenReturn(TestResultSetFuture.failed(new NoHostAvailableException(Collections.emptyMap())));
+				.thenReturn(TestResultSetFuture.failed(new NoNodeAvailableException()));
 
-		ListenableFuture<User> future = template.insert(new User("heisenberg", "Walter", "White"));
+		CompletableFuture<User> future = template.insert(new User("heisenberg", "Walter", "White"));
 
 		try {
 			future.get();
@@ -326,47 +377,48 @@ public class AsyncCassandraTemplateUnitTests {
 			fail("Missing CassandraConnectionFailureException");
 		} catch (ExecutionException e) {
 			assertThat(e).hasCauseInstanceOf(CassandraConnectionFailureException.class)
-					.hasRootCauseInstanceOf(NoHostAvailableException.class);
+					.hasRootCauseInstanceOf(NoNodeAvailableException.class);
 		}
 	}
 
 	@Test // DATACASS-292, DATACASS-618
-	public void updateShouldUpdateEntity() {
+	void updateShouldUpdateEntity() {
 
 		when(resultSet.wasApplied()).thenReturn(true);
 
 		User user = new User("heisenberg", "Walter", "White");
 
-		ListenableFuture<User> future = template.update(user);
+		CompletableFuture<User> future = template.update(user);
 
 		assertThat(getUninterruptibly(future)).isEqualTo(user);
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString())
-				.isEqualTo("UPDATE users SET firstname='Walter',lastname='White' WHERE id='heisenberg';");
+		assertThat(render(statementCaptor.getValue()))
+				.isEqualTo("UPDATE users SET firstname='Walter', lastname='White' WHERE id='heisenberg'");
 		assertThat(beforeConvert).isSameAs(user);
 		assertThat(beforeSave).isSameAs(user);
 	}
 
 	@Test // DATACASS-618
-	public void updateShouldUpdateVersionedEntity() {
+	void updateShouldUpdateVersionedEntity() {
 
 		when(resultSet.wasApplied()).thenReturn(true);
 
 		VersionedUser user = new VersionedUser("heisenberg", "Walter", "White");
 		user.setVersion(0L);
 
-		ListenableFuture<VersionedUser> future = template.update(user);
+		CompletableFuture<VersionedUser> future = template.update(user);
 
 		assertThat(getUninterruptibly(future)).isEqualTo(user);
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString()).isEqualTo(
-				"UPDATE vusers SET firstname='Walter',lastname='White',version=1 WHERE id='heisenberg' IF version=0;");
+		SimpleStatement value = statementCaptor.getValue();
+		assertThat(render(value)).isEqualTo(
+				"UPDATE vusers SET version=1, firstname='Walter', lastname='White' WHERE id='heisenberg' IF version=0");
 		assertThat(beforeConvert).isSameAs(user);
 		assertThat(beforeSave).isSameAs(user);
 	}
 
 	@Test // DATACASS-575
-	public void updateShouldUpdateEntityWithOptions() {
+	void updateShouldUpdateEntityWithOptions() {
 
 		UpdateOptions updateOptions = UpdateOptions.builder().withIfExists().build();
 		User user = new User("heisenberg", "Walter", "White");
@@ -374,12 +426,12 @@ public class AsyncCassandraTemplateUnitTests {
 		template.update(user, updateOptions);
 
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString())
-				.isEqualTo("UPDATE users SET firstname='Walter',lastname='White' WHERE id='heisenberg' IF EXISTS;");
+		assertThat(render(statementCaptor.getValue()))
+				.isEqualTo("UPDATE users SET firstname='Walter', lastname='White' WHERE id='heisenberg' IF EXISTS");
 	}
 
 	@Test // DATACASS-575
-	public void updateShouldUpdateEntityWithLwt() {
+	void updateShouldUpdateEntityWithLwt() {
 
 		UpdateOptions options = UpdateOptions.builder().ifCondition(where("firstname").is("Walter")).build();
 		User user = new User("heisenberg", "Walter", "White");
@@ -387,12 +439,12 @@ public class AsyncCassandraTemplateUnitTests {
 		template.update(user, options);
 
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString())
-				.isEqualTo("UPDATE users SET firstname='Walter',lastname='White' WHERE id='heisenberg' IF firstname='Walter';");
+		assertThat(render(statementCaptor.getValue()))
+				.isEqualTo("UPDATE users SET firstname='Walter', lastname='White' WHERE id='heisenberg' IF firstname='Walter'");
 	}
 
 	@Test // DATACASS-575
-	public void updateShouldApplyUpdateQuery() {
+	void updateShouldApplyUpdateQuery() {
 
 		Query query = Query.query(where("id").is("heisenberg"));
 		Update update = Update.update("firstname", "Walter");
@@ -400,12 +452,12 @@ public class AsyncCassandraTemplateUnitTests {
 		template.update(query, update, User.class);
 
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString())
-				.isEqualTo("UPDATE users SET firstname='Walter' WHERE id='heisenberg';");
+		assertThat(render(statementCaptor.getValue()))
+				.isEqualTo("UPDATE users SET firstname='Walter' WHERE id='heisenberg'");
 	}
 
 	@Test // DATACASS-575
-	public void updateShouldApplyUpdateQueryWitLwt() {
+	void updateShouldApplyUpdateQueryWitLwt() {
 
 		Filter ifCondition = Filter.from(where("firstname").is("Walter"), where("lastname").is("White"));
 
@@ -417,18 +469,18 @@ public class AsyncCassandraTemplateUnitTests {
 		template.update(query, update, User.class);
 
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString()).isEqualTo(
-				"UPDATE users SET firstname='Walter' WHERE id='heisenberg' IF firstname='Walter' AND lastname='White';");
+		assertThat(render(statementCaptor.getValue())).isEqualTo(
+				"UPDATE users SET firstname='Walter' WHERE id='heisenberg' IF firstname='Walter' AND lastname='White'");
 	}
 
 	@Test // DATACASS-292
-	public void updateShouldTranslateException() throws Exception {
+	void updateShouldTranslateException() throws Exception {
 
 		reset(session);
 		when(session.executeAsync(any(Statement.class)))
-				.thenReturn(TestResultSetFuture.failed(new NoHostAvailableException(Collections.emptyMap())));
+				.thenReturn(TestResultSetFuture.failed(new NoNodeAvailableException()));
 
-		ListenableFuture<User> future = template.update(new User("heisenberg", "Walter", "White"));
+		CompletableFuture<User> future = template.update(new User("heisenberg", "Walter", "White"));
 
 		try {
 			future.get();
@@ -436,40 +488,40 @@ public class AsyncCassandraTemplateUnitTests {
 			fail("Missing CassandraConnectionFailureException");
 		} catch (ExecutionException e) {
 			assertThat(e).hasCauseInstanceOf(CassandraConnectionFailureException.class)
-					.hasRootCauseInstanceOf(NoHostAvailableException.class);
+					.hasRootCauseInstanceOf(NoNodeAvailableException.class);
 		}
 	}
 
 	@Test // DATACASS-292
-	public void deleteByIdShouldRemoveEntity() {
+	void deleteByIdShouldRemoveEntity() {
 
 		when(resultSet.wasApplied()).thenReturn(true);
 
 		User user = new User("heisenberg", "Walter", "White");
 
-		ListenableFuture<Boolean> future = template.deleteById(user.getId(), User.class);
+		CompletableFuture<Boolean> future = template.deleteById(user.getId(), User.class);
 
 		assertThat(getUninterruptibly(future)).isTrue();
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString()).isEqualTo("DELETE FROM users WHERE id='heisenberg';");
+		assertThat(render(statementCaptor.getValue())).isEqualTo("DELETE FROM users WHERE id='heisenberg'");
 	}
 
 	@Test // DATACASS-292
-	public void deleteShouldRemoveEntity() {
+	void deleteShouldRemoveEntity() {
 
 		when(resultSet.wasApplied()).thenReturn(true);
 
 		User user = new User("heisenberg", "Walter", "White");
 
-		ListenableFuture<User> future = template.delete(user);
+		CompletableFuture<User> future = template.delete(user);
 
 		assertThat(getUninterruptibly(future)).isEqualTo(user);
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString()).isEqualTo("DELETE FROM users WHERE id='heisenberg';");
+		assertThat(render(statementCaptor.getValue())).isEqualTo("DELETE FROM users WHERE id='heisenberg'");
 	}
 
 	@Test // DATACASS-575
-	public void deleteShouldRemoveEntityWithLwt() {
+	void deleteShouldRemoveEntityWithLwt() {
 
 		User user = new User("heisenberg", "Walter", "White");
 		DeleteOptions options = DeleteOptions.builder().ifCondition(where("firstname").is("Walter")).build();
@@ -477,12 +529,12 @@ public class AsyncCassandraTemplateUnitTests {
 		template.delete(user, options);
 
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString())
-				.isEqualTo("DELETE FROM users WHERE id='heisenberg' IF firstname='Walter';");
+		assertThat(render(statementCaptor.getValue()))
+				.isEqualTo("DELETE FROM users WHERE id='heisenberg' IF firstname='Walter'");
 	}
 
 	@Test // DATACASS-575
-	public void deleteShouldRemoveByQueryWithLwt() {
+	void deleteShouldRemoveByQueryWithLwt() {
 
 		DeleteOptions options = DeleteOptions.builder().ifCondition(where("firstname").is("Walter")).build();
 		Query query = Query.query(where("id").is("heisenberg")).queryOptions(options);
@@ -490,18 +542,18 @@ public class AsyncCassandraTemplateUnitTests {
 		template.delete(query, User.class);
 
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString())
-				.isEqualTo("DELETE FROM users WHERE id='heisenberg' IF firstname='Walter';");
+		assertThat(render(statementCaptor.getValue()))
+				.isEqualTo("DELETE FROM users WHERE id='heisenberg' IF firstname='Walter'");
 	}
 
 	@Test // DATACASS-292
-	public void deleteShouldTranslateException() throws Exception {
+	void deleteShouldTranslateException() throws Exception {
 
 		reset(session);
 		when(session.executeAsync(any(Statement.class)))
-				.thenReturn(TestResultSetFuture.failed(new NoHostAvailableException(Collections.emptyMap())));
+				.thenReturn(TestResultSetFuture.failed(new NoNodeAvailableException()));
 
-		ListenableFuture<User> future = template.delete(new User("heisenberg", "Walter", "White"));
+		CompletableFuture<User> future = template.delete(new User("heisenberg", "Walter", "White"));
 
 		try {
 			future.get();
@@ -509,17 +561,32 @@ public class AsyncCassandraTemplateUnitTests {
 			fail("Missing CassandraConnectionFailureException");
 		} catch (ExecutionException e) {
 			assertThat(e).hasCauseInstanceOf(CassandraConnectionFailureException.class)
-					.hasRootCauseInstanceOf(NoHostAvailableException.class);
+					.hasRootCauseInstanceOf(NoNodeAvailableException.class);
 		}
 	}
 
 	@Test // DATACASS-292
-	public void truncateShouldRemoveEntities() {
+	void truncateShouldRemoveEntities() {
 
 		template.truncate(User.class);
 
 		verify(session).executeAsync(statementCaptor.capture());
-		assertThat(statementCaptor.getValue().toString()).isEqualTo("TRUNCATE users;");
+		assertThat(render(statementCaptor.getValue())).isEqualTo("TRUNCATE users");
+	}
+
+	private static String render(SimpleStatement statement) {
+
+		String query = statement.getQuery();
+		List<Object> positionalValues = statement.getPositionalValues();
+		for (Object positionalValue : positionalValues) {
+
+			query = query.replaceFirst("\\?",
+					positionalValue != null
+							? CodecRegistry.DEFAULT.codecFor((Class) positionalValue.getClass()).format(positionalValue)
+							: "NULL");
+		}
+
+		return query;
 	}
 
 	private static <T> T getUninterruptibly(Future<T> future) {
@@ -531,32 +598,12 @@ public class AsyncCassandraTemplateUnitTests {
 		}
 	}
 
-	private static class TestResultSetFuture extends AbstractFuture<ResultSet> implements ResultSetFuture {
+	private static class TestResultSetFuture extends CompletableFuture<AsyncResultSet> {
 
-		public TestResultSetFuture() {}
+		private TestResultSetFuture() {}
 
-		public TestResultSetFuture(ResultSet resultSet) {
-			set(resultSet);
-		}
-
-		@Override
-		public boolean set(ResultSet value) {
-			return super.set(value);
-		}
-
-		@Override
-		public ResultSet getUninterruptibly() {
-			return null;
-		}
-
-		@Override
-		public ResultSet getUninterruptibly(long l, TimeUnit timeUnit) throws TimeoutException {
-			return null;
-		}
-
-		@Override
-		protected boolean setException(Throwable throwable) {
-			return super.setException(throwable);
+		private TestResultSetFuture(AsyncResultSet resultSet) {
+			complete(resultSet);
 		}
 
 		/**
@@ -565,10 +612,10 @@ public class AsyncCassandraTemplateUnitTests {
 		 * @param throwable must not be {@literal null}.
 		 * @return the completed/failed {@link TestResultSetFuture}.
 		 */
-		public static TestResultSetFuture failed(Throwable throwable) {
+		private static TestResultSetFuture failed(Throwable throwable) {
 
 			TestResultSetFuture future = new TestResultSetFuture();
-			future.setException(throwable);
+			future.completeExceptionally(throwable);
 			return future;
 		}
 	}

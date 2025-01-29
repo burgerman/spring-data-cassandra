@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,11 @@ package org.springframework.data.cassandra.repository.query;
 
 import org.springframework.data.cassandra.core.cql.QueryOptions;
 import org.springframework.data.cassandra.core.mapping.CassandraType;
+import org.springframework.data.cassandra.core.query.CassandraScrollPosition;
 import org.springframework.data.repository.query.ParameterAccessor;
 import org.springframework.lang.Nullable;
 
-import com.datastax.driver.core.DataType;
+import com.datastax.oss.driver.api.core.type.DataType;
 
 /**
  * Cassandra-specific {@link ParameterAccessor} exposing a Cassandra {@link DataType types} that are supported by the
@@ -70,6 +71,9 @@ public interface CassandraParameterAccessor extends ParameterAccessor {
 	 * @since 1.5
 	 */
 	Object[] getValues();
+
+	@Override
+	CassandraScrollPosition getScrollPosition();
 
 	/**
 	 * Returns the {@link QueryOptions} associated with the associated Repository query method.

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,14 @@
  */
 package org.springframework.data.cassandra;
 
-import java.net.InetSocketAddress;
+import java.io.Serial;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
 import org.springframework.dao.DataAccessResourceFailureException;
+
+import com.datastax.oss.driver.api.core.metadata.Node;
 
 /**
  * Spring data access exception for Cassandra when no host is available.
@@ -29,16 +31,23 @@ import org.springframework.dao.DataAccessResourceFailureException;
  */
 public class CassandraConnectionFailureException extends DataAccessResourceFailureException {
 
-	private static final long serialVersionUID = 6299912054261646552L;
+	@Serial private static final long serialVersionUID = 6299912054261646552L;
 
-	private final Map<InetSocketAddress, Throwable> messagesByHost = new HashMap<>();
+	private final Map<Node, Throwable> messagesByHost;
 
-	public CassandraConnectionFailureException(Map<InetSocketAddress, Throwable> map, String msg, Throwable cause) {
+	/**
+	 * Constructor for {@link CassandraConnectionFailureException}.
+	 *
+	 * @param map the detail failures for each node.
+	 * @param msg the detail message.
+	 * @param cause the root cause from the underlying data access API.
+	 */
+	public CassandraConnectionFailureException(Map<Node, Throwable> map, String msg, Throwable cause) {
 		super(msg, cause);
-		this.messagesByHost.putAll(map);
+		this.messagesByHost = new HashMap<>(map);
 	}
 
-	public Map<InetSocketAddress, Throwable> getMessagesByHost() {
+	public Map<Node, Throwable> getMessagesByHost() {
 		return Collections.unmodifiableMap(messagesByHost);
 	}
 }

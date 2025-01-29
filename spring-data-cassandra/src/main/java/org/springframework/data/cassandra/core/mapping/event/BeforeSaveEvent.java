@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,16 @@
  */
 package org.springframework.data.cassandra.core.mapping.event;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import java.io.Serial;
 
-import com.datastax.driver.core.Statement;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.cql.Statement;
 
 /**
- * {@link CassandraMappingEvent} triggered before save of an object.
+ * {@link CassandraMappingEvent Mapping event} triggered before inserting or updating a row in the database. Before save
+ * is invoked after {@link BeforeConvertCallback converting the entity} into a {@link Statement}. This is useful to let
+ * the mapping layer derive values into the statement while the save callback can either update the domain object
+ * without reflecting the changes in the statement. Another use is to inspect the {@link Statement}.
  *
  * @author Lukasz Antoniak
  * @author Mark Paluch
@@ -28,7 +32,7 @@ import com.datastax.driver.core.Statement;
  */
 public class BeforeSaveEvent<E> extends AbstractStatementAwareMappingEvent<E> {
 
-	private static final long serialVersionUID = 1L;
+	@Serial private static final long serialVersionUID = 1L;
 
 	/**
 	 * Create a new {@link BeforeSaveEvent}.
@@ -37,7 +41,7 @@ public class BeforeSaveEvent<E> extends AbstractStatementAwareMappingEvent<E> {
 	 * @param table must not be {@literal null}.
 	 * @param statement must not be {@literal null}.
 	 */
-	public BeforeSaveEvent(E source, CqlIdentifier table, Statement statement) {
+	public BeforeSaveEvent(E source, CqlIdentifier table, Statement<?> statement) {
 		super(source, statement, table);
 	}
 }

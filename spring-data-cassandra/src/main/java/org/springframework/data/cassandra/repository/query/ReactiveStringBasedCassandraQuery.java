@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,25 @@
  */
 package org.springframework.data.cassandra.repository.query;
 
+import reactor.core.publisher.Mono;
+
+import org.springframework.core.env.StandardEnvironment;
 import org.springframework.data.cassandra.core.ReactiveCassandraOperations;
 import org.springframework.data.cassandra.repository.Query;
+import org.springframework.data.expression.ReactiveValueEvaluationContextProvider;
+import org.springframework.data.expression.ValueEvaluationContextProvider;
+import org.springframework.data.expression.ValueExpressionParser;
+import org.springframework.data.mapping.model.ValueExpressionEvaluator;
 import org.springframework.data.repository.query.QueryMethodEvaluationContextProvider;
+import org.springframework.data.repository.query.QueryMethodValueEvaluationContextAccessor;
+import org.springframework.data.repository.query.ReactiveQueryMethodEvaluationContextProvider;
+import org.springframework.data.repository.query.ValueExpressionDelegate;
+import org.springframework.data.spel.ExpressionDependencies;
+import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.SimpleStatement;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
 
 /**
  * String-based {@link AbstractReactiveCassandraQuery} implementation.
@@ -31,19 +43,24 @@ import com.datastax.driver.core.SimpleStatement;
  * index-based and expression parameters that are resolved during query execution.
  *
  * @author Mark Paluch
+ * @author Marcin Grzejszczak
  * @see org.springframework.data.cassandra.repository.Query
  * @see org.springframework.data.cassandra.repository.query.AbstractReactiveCassandraQuery
  * @since 2.0
  */
 public class ReactiveStringBasedCassandraQuery extends AbstractReactiveCassandraQuery {
 
-	private static final String COUNT_AND_EXISTS = "Manually defined query for %s cannot be a count and exists query at the same time!";
+	private static final String COUNT_AND_EXISTS = "Manually defined query for %s cannot be a count and exists query at the same time";
 
 	private final StringBasedQuery stringBasedQuery;
 
 	private final boolean isCountQuery;
 
 	private final boolean isExistsQuery;
+
+	private final ValueExpressionDelegate delegate;
+
+	private final ReactiveValueEvaluationContextProvider valueEvaluationContextProvider;
 
 	/**
 	 * Create a new {@link ReactiveStringBasedCassandraQuery} for the given {@link CassandraQueryMethod},
@@ -57,10 +74,12 @@ public class ReactiveStringBasedCassandraQuery extends AbstractReactiveCassandra
 	 *          {@link org.springframework.expression.spel.support.StandardEvaluationContext}.
 	 * @see org.springframework.data.cassandra.repository.query.ReactiveCassandraQueryMethod
 	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations
+	 * @deprecated since 4.4, use the constructors accepting {@link ValueExpressionDelegate} instead.
 	 */
+	@Deprecated(since = "4.4")
 	public ReactiveStringBasedCassandraQuery(ReactiveCassandraQueryMethod queryMethod,
-			ReactiveCassandraOperations operations, SpelExpressionParser expressionParser,
-			QueryMethodEvaluationContextProvider evaluationContextProvider) {
+			ReactiveCassandraOperations operations, ExpressionParser expressionParser,
+			ReactiveQueryMethodEvaluationContextProvider evaluationContextProvider) {
 
 		this(queryMethod.getRequiredAnnotatedQuery(), queryMethod, operations, expressionParser, evaluationContextProvider);
 	}
@@ -77,17 +96,59 @@ public class ReactiveStringBasedCassandraQuery extends AbstractReactiveCassandra
 	 *          {@link org.springframework.expression.spel.support.StandardEvaluationContext}.
 	 * @see org.springframework.data.cassandra.repository.query.ReactiveCassandraQueryMethod
 	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations
+	 * @deprecated since 4.4, use the constructors accepting {@link ValueExpressionDelegate} instead.
+	 */
+	@Deprecated(since = "4.4")
+	public ReactiveStringBasedCassandraQuery(String query, ReactiveCassandraQueryMethod method,
+			ReactiveCassandraOperations operations, ExpressionParser expressionParser,
+			ReactiveQueryMethodEvaluationContextProvider evaluationContextProvider) {
+
+		this(query, method, operations, new ValueExpressionDelegate(new QueryMethodValueEvaluationContextAccessor(new StandardEnvironment(), evaluationContextProvider.getEvaluationContextProvider()), ValueExpressionParser.create(() -> expressionParser)));
+	}
+
+	/**
+	 * Create a new {@link ReactiveStringBasedCassandraQuery} for the given {@link CassandraQueryMethod},
+	 * {@link ReactiveCassandraOperations}, {@link ValueExpressionDelegate}
+	 *
+	 * @param queryMethod {@link ReactiveCassandraQueryMethod} on which this query is based.
+	 * @param operations {@link ReactiveCassandraOperations} used to perform data access in Cassandra.
+	 * @param delegate {@link ValueExpressionDelegate} used to parse expressions in the query.
+	 * @see org.springframework.data.cassandra.repository.query.ReactiveCassandraQueryMethod
+	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations
+	 * @since 4.4
+	 */
+	public ReactiveStringBasedCassandraQuery(ReactiveCassandraQueryMethod queryMethod,
+			ReactiveCassandraOperations operations, ValueExpressionDelegate delegate) {
+
+		this(queryMethod.getRequiredAnnotatedQuery(), queryMethod, operations, delegate);
+	}
+
+	/**
+	 * Create a new {@link ReactiveStringBasedCassandraQuery} for the given {@code query}, {@link CassandraQueryMethod},
+	 * {@link ReactiveCassandraOperations}, {@link ValueExpressionDelegate}
+	 *
+	 * @param method {@link ReactiveCassandraQueryMethod} on which this query is based.
+	 * @param operations {@link ReactiveCassandraOperations} used to perform data access in Cassandra.
+	 * @param delegate {@link SpelExpressionParser} used to parse expressions in the query.
+	 * @see org.springframework.data.cassandra.repository.query.ReactiveCassandraQueryMethod
+	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations
+	 * @since 4.4
 	 */
 	public ReactiveStringBasedCassandraQuery(String query, ReactiveCassandraQueryMethod method,
-			ReactiveCassandraOperations operations, SpelExpressionParser expressionParser,
-			QueryMethodEvaluationContextProvider evaluationContextProvider) {
+			ReactiveCassandraOperations operations, ValueExpressionDelegate delegate) {
 
 		super(method, operations);
 
 		Assert.hasText(query, "Query must not be empty");
 
-		this.stringBasedQuery = new StringBasedQuery(query,
-				new ExpressionEvaluatingParameterBinder(expressionParser, evaluationContextProvider));
+		this.delegate = delegate;
+
+		this.stringBasedQuery = new StringBasedQuery(query, method.getParameters(), delegate);
+
+		ValueEvaluationContextProvider valueContextProvider = delegate.createValueContextProvider(
+				method.getParameters());
+		Assert.isInstanceOf(ReactiveValueEvaluationContextProvider.class, valueContextProvider, "ValueEvaluationContextProvider must be reactive");
+		this.valueEvaluationContextProvider = (ReactiveValueEvaluationContextProvider) valueContextProvider;
 
 		if (method.hasAnnotatedQuery()) {
 
@@ -109,43 +170,40 @@ public class ReactiveStringBasedCassandraQuery extends AbstractReactiveCassandra
 		return this.stringBasedQuery;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.AbstractCassandraQuery#createQuery(org.springframework.data.cassandra.repository.query.CassandraParameterAccessor)
-	 */
 	@Override
-	public SimpleStatement createQuery(CassandraParameterAccessor parameterAccessor) {
-		return getQueryStatementCreator().select(getStringBasedQuery(), parameterAccessor);
+	public Mono<SimpleStatement> createQuery(CassandraParameterAccessor parameterAccessor) {
+
+		StringBasedQuery query = getStringBasedQuery();
+		ConvertingParameterAccessor parameterAccessorToUse = new ConvertingParameterAccessor(
+				getReactiveCassandraOperations().getConverter(), parameterAccessor);
+
+		return getValueExpressionEvaluatorLater(query.getExpressionDependencies(), parameterAccessor)
+				.map(it -> getQueryStatementCreator().select(query, parameterAccessorToUse, it));
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.AbstractReactiveCassandraQuery#isCountQuery()
-	 */
 	@Override
 	protected boolean isCountQuery() {
 		return this.isCountQuery;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.AbstractReactiveCassandraQuery#isExistsQuery()
-	 */
 	@Override
 	protected boolean isExistsQuery() {
 		return this.isExistsQuery;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.AbstractReactiveCassandraQuery#isLimiting()
-	 */
 	@Override
 	protected boolean isLimiting() {
 		return false;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.AbstractCassandraQuery#isModifyingQuery()
-	 */
 	@Override
 	protected boolean isModifyingQuery() {
 		return false;
+	}
+
+	private Mono<ValueExpressionEvaluator> getValueExpressionEvaluatorLater(ExpressionDependencies dependencies,
+			CassandraParameterAccessor accessor) {
+		return valueEvaluationContextProvider.getEvaluationContextLater(accessor.getValues(), dependencies)
+				.map(evaluationContext -> new ContextualValueExpressionEvaluator(delegate, evaluationContext));
 	}
 }

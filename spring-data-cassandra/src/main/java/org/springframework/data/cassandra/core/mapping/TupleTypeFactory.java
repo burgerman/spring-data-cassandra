@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,8 @@ import java.util.List;
 
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.DataType;
-import com.datastax.driver.core.TupleType;
+import com.datastax.oss.driver.api.core.type.DataType;
+import com.datastax.oss.driver.api.core.type.TupleType;
 
 /**
  * Factory to create {@link TupleType} given {@link DataType tuple element types}. Primarily internal use.
@@ -30,8 +30,10 @@ import com.datastax.driver.core.TupleType;
  * @since 2.1
  * @see SimpleTupleTypeFactory
  * @see CodecRegistryTupleTypeFactory
+ * @deprecated since 3.0
  */
 @FunctionalInterface
+@Deprecated
 public interface TupleTypeFactory {
 
 	/**

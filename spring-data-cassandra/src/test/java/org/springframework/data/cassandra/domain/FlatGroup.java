@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package org.springframework.data.cassandra.domain;
 
-import lombok.Data;
 
 import org.springframework.data.cassandra.core.cql.PrimaryKeyType;
 import org.springframework.data.cassandra.core.mapping.PrimaryKeyColumn;
@@ -27,7 +26,6 @@ import org.springframework.data.cassandra.core.mapping.Table;
  *      "https://www.datastax.com/dev/blog/basic-rules-of-cassandra-data-modeling">https://www.datastax.com/dev/blog/basic-rules-of-cassandra-data-modeling</a>
  */
 @Table
-@Data
 public class FlatGroup {
 
 	@PrimaryKeyColumn(ordinal = 1, type = PrimaryKeyType.PARTITIONED) private String groupname;
@@ -41,5 +39,45 @@ public class FlatGroup {
 		this.groupname = groupname;
 		this.hashPrefix = hashPrefix;
 		this.username = username;
+	}
+
+	public String getGroupname() {
+		return this.groupname;
+	}
+
+	public String getHashPrefix() {
+		return this.hashPrefix;
+	}
+
+	public String getUsername() {
+		return this.username;
+	}
+
+	public String getEmail() {
+		return this.email;
+	}
+
+	public int getAge() {
+		return this.age;
+	}
+
+	public void setGroupname(String groupname) {
+		this.groupname = groupname;
+	}
+
+	public void setHashPrefix(String hashPrefix) {
+		this.hashPrefix = hashPrefix;
+	}
+
+	public void setUsername(String username) {
+		this.username = username;
+	}
+
+	public void setEmail(String email) {
+		this.email = email;
+	}
+
+	public void setAge(int age) {
+		this.age = age;
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,12 +37,26 @@ import java.lang.annotation.Target;
 public @interface UserDefinedType {
 
 	/**
-	 * The name of the UDT. Must be a valid CQL identifier or quoted identifier.
+	 * The keyspace for the UDT; must be a valid CQL identifier/quoted identifier or empty to use the session-keyspace.
+	 * The value can be either a string or a {@link org.springframework.data.expression.ValueExpression Value Expression}.
+	 *
+	 * @since 4.4
+	 */
+	String keyspace() default "";
+
+	/**
+	 * The name of the UDT. Must be a valid CQL identifier or quoted identifier. The value can be either a string or a
+	 * {@link org.springframework.data.expression.ValueExpression Value Expression}.
 	 */
 	String value() default "";
 
 	/**
 	 * Whether to cause the UDT name to be force-quoted.
+	 *
+	 * @deprecated since 3.0. The type name gets converted into {@link com.datastax.oss.driver.api.core.CqlIdentifier}
+	 *             hence it no longer requires an indication whether the name should be quoted.
+	 * @see com.datastax.oss.driver.api.core.CqlIdentifier#fromInternal(String)
 	 */
+	@Deprecated
 	boolean forceQuote() default false;
 }

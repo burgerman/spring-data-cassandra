@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,17 +34,11 @@ class DefaultFilter implements Filter {
 		this.criteriaDefinitions = (Iterable) criteriaDefinitions;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.query.Filter#getCriteriaDefinitions()
-	 */
 	@Override
 	public Iterable<CriteriaDefinition> getCriteriaDefinitions() {
 		return criteriaDefinitions;
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#toString()
-	 */
 	@Override
 	public String toString() {
 		return StreamSupport.stream(this.spliterator(), false) //

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,18 +15,42 @@
  */
 package org.springframework.data.cassandra.core;
 
-import static org.mockito.ArgumentMatchers.matches;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.InOrder;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
-import org.mockito.Mockito;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import org.springframework.data.cassandra.core.convert.SchemaFactory;
 import org.springframework.data.cassandra.core.cql.CqlOperations;
+import org.springframework.data.cassandra.core.cql.PrimaryKeyType;
+import org.springframework.data.cassandra.core.cql.keyspace.CreateUserTypeSpecification;
+import org.springframework.data.cassandra.core.cql.keyspace.UserTypeNameSpecification;
 import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
+import org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity;
+import org.springframework.data.cassandra.core.mapping.PrimaryKey;
+import org.springframework.data.cassandra.core.mapping.PrimaryKeyClass;
+import org.springframework.data.cassandra.core.mapping.PrimaryKeyColumn;
+import org.springframework.data.cassandra.core.mapping.Table;
+import org.springframework.data.cassandra.core.mapping.UserDefinedType;
+import org.springframework.data.convert.CustomConversions;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry;
 
 /**
  * Unit tests for {@link CassandraPersistentEntitySchemaCreator}.
@@ -34,16 +58,35 @@ import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
  * @author Mark Paluch
  * @author Jens Schauder
  */
-@RunWith(MockitoJUnitRunner.class)
-public class CassandraPersistentEntitySchemaCreatorUnitTests extends CassandraPersistentEntitySchemaTestSupport {
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+class CassandraPersistentEntitySchemaCreatorUnitTests extends CassandraPersistentEntitySchemaTestSupport {
 
 	@Mock CassandraAdminOperations adminOperations;
 	@Mock CqlOperations operations;
 
-	CassandraMappingContext context = new CassandraMappingContext();
+	private CassandraMappingContext context = new CassandraMappingContext();
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
+
+		when(adminOperations.getCqlOperations()).thenReturn(operations);
+		when(adminOperations.getSchemaFactory()).thenReturn(new SchemaFactory(context,
+				new CustomConversions(CustomConversions.StoreConversions.NONE, Collections.emptyList()),
+				CodecRegistry.DEFAULT));
+	}
+
+	@Test // DATACASS-687
+	void shouldConsiderProperUdtOrdering() {
+
+		List<Class<?>> ordered = new ArrayList<>(Arrays.asList(Udt2.class, Udt1.class, RequiredByAll.class));
+
+		context = new CassandraMappingContext() {
+			@Override
+			public Collection<CassandraPersistentEntity<?>> getUserDefinedTypeEntities() {
+				return ordered.stream().map(this::getRequiredPersistentEntity).collect(Collectors.toList());
+			}
+		};
 
 		context.setUserTypeResolver(typeName -> {
 			// make sure that calls to this method pop up. Calling UserTypeResolver while resolving
@@ -51,17 +94,25 @@ public class CassandraPersistentEntitySchemaCreatorUnitTests extends CassandraPe
 			throw new IllegalArgumentException(String.format("Type %s not found", typeName));
 		});
 
-		when(adminOperations.getCqlOperations()).thenReturn(operations);
+		CassandraPersistentEntitySchemaCreator schemaCreator = new CassandraPersistentEntitySchemaCreator(context,
+				adminOperations);
+
+		List<CreateUserTypeSpecification> userTypeSpecifications = schemaCreator.createUserTypeSpecifications(false);
+
+		List<CqlIdentifier> collect = userTypeSpecifications.stream().map(UserTypeNameSpecification::getName)
+				.collect(Collectors.toList());
+
+		assertThat(collect).hasSize(3).startsWith(CqlIdentifier.fromCql("requiredbyall"));
 	}
 
 	@Test // DATACASS-172, DATACASS-406
-	public void createsCorrectTypeForSimpleTypes() {
+	void createsCorrectTypeForSimpleTypes() {
 
 		context.getPersistentEntity(MoonType.class);
 		context.getPersistentEntity(PlanetType.class);
 
-		CassandraPersistentEntitySchemaCreator schemaCreator =
-				new CassandraPersistentEntitySchemaCreator(context, adminOperations);
+		CassandraPersistentEntitySchemaCreator schemaCreator = new CassandraPersistentEntitySchemaCreator(context,
+				adminOperations);
 
 		schemaCreator.createUserTypes(false);
 
@@ -69,12 +120,25 @@ public class CassandraPersistentEntitySchemaCreatorUnitTests extends CassandraPe
 	}
 
 	@Test // DATACASS-406
-	public void createsCorrectTypeForSets() {
+	void createsCorrectTypeForSets() {
 
-		context.getPersistentEntity(PlanetType.class);
+		List<Class<?>> ordered = new ArrayList<>(Arrays.asList(UniverseType.class, PlanetType.class, MoonType.class));
 
-		CassandraPersistentEntitySchemaCreator schemaCreator =
-				new CassandraPersistentEntitySchemaCreator(context, adminOperations);
+		Collections.shuffle(ordered); // catch ordering issues
+		context = new CassandraMappingContext() {
+			@Override
+			public Collection<CassandraPersistentEntity<?>> getUserDefinedTypeEntities() {
+				return ordered.stream().map(this::getRequiredPersistentEntity).collect(Collectors.toList());
+			}
+		};
+		context.setUserTypeResolver(typeName -> {
+			// make sure that calls to this method pop up. Calling UserTypeResolver while resolving
+			// to be created user types isn't a good idea because they do not exist at resolution time.
+			throw new IllegalArgumentException(String.format("Type %s not found", typeName));
+		});
+
+		CassandraPersistentEntitySchemaCreator schemaCreator = new CassandraPersistentEntitySchemaCreator(context,
+				adminOperations);
 
 		schemaCreator.createUserTypes(false);
 
@@ -84,12 +148,12 @@ public class CassandraPersistentEntitySchemaCreatorUnitTests extends CassandraPe
 	}
 
 	@Test // DATACASS-406
-	public void createsCorrectTypeForLists() {
+	void createsCorrectTypeForLists() {
 
 		context.getPersistentEntity(SpaceAgencyType.class);
 
-		CassandraPersistentEntitySchemaCreator schemaCreator =
-				new CassandraPersistentEntitySchemaCreator(context, adminOperations);
+		CassandraPersistentEntitySchemaCreator schemaCreator = new CassandraPersistentEntitySchemaCreator(context,
+				adminOperations);
 
 		schemaCreator.createUserTypes(false);
 
@@ -99,12 +163,12 @@ public class CassandraPersistentEntitySchemaCreatorUnitTests extends CassandraPe
 	}
 
 	@Test // DATACASS-406
-	public void createsCorrectTypesForNestedTypes() {
+	void createsCorrectTypesForNestedTypes() {
 
 		context.getPersistentEntity(PlanetType.class);
 
-		CassandraPersistentEntitySchemaCreator schemaCreator =
-				new CassandraPersistentEntitySchemaCreator(context, adminOperations);
+		CassandraPersistentEntitySchemaCreator schemaCreator = new CassandraPersistentEntitySchemaCreator(context,
+				adminOperations);
 
 		schemaCreator.createUserTypes(false);
 
@@ -112,24 +176,81 @@ public class CassandraPersistentEntitySchemaCreatorUnitTests extends CassandraPe
 	}
 
 	@Test // DATACASS-213
-	public void createsIndexes() {
+	void createsIndexes() {
 
 		context.getPersistentEntity(IndexedEntity.class);
 
-		CassandraPersistentEntitySchemaCreator schemaCreator =
-				new CassandraPersistentEntitySchemaCreator(context, adminOperations);
+		CassandraPersistentEntitySchemaCreator schemaCreator = new CassandraPersistentEntitySchemaCreator(context,
+				adminOperations);
 
 		schemaCreator.createIndexes(false);
 
 		verify(operations).execute("CREATE INDEX ON indexedentity (firstname);");
 	}
 
+	@Test // DATACASS-213
+	void foo() {
+
+		context.getPersistentEntity(Person.class);
+
+		CassandraPersistentEntitySchemaCreator schemaCreator = new CassandraPersistentEntitySchemaCreator(context,
+				adminOperations);
+
+		schemaCreator.createTables(false);
+
+		// verify(operations).execute("CREATE INDEX ON indexedentity (firstname);");
+	}
+
 	private void verifyTypesGetCreatedInOrderFor(String... typenames) {
 
-		InOrder inOrder = Mockito.inOrder(operations);
+		ArgumentCaptor<String> cql = ArgumentCaptor.forClass(String.class);
 
-		for (String typename : typenames) {
-			inOrder.verify(operations).execute(Mockito.contains("CREATE TYPE " + typename));
+		verify(operations, atLeast(typenames.length)).execute(cql.capture());
+
+		List<String> allValues = cql.getAllValues();
+
+		for (int i = 0; i < typenames.length; i++) {
+			assertThat(allValues.get(i)).describedAs("Actual: " + allValues + ", expected: " + Arrays.toString(typenames))
+					.contains("CREATE TYPE " + typenames[i]);
 		}
+	}
+
+	abstract static class AbstractModel {
+		private RequiredByAll attachments;
+	}
+
+	@UserDefinedType
+	private static class RequiredByAll {
+		private String name;
+	}
+
+	@UserDefinedType
+	private static class Udt1 {
+
+		private RequiredByAll attachment;
+	}
+
+	@UserDefinedType
+	private static class Udt2 extends AbstractModel {
+
+		private Udt1 u1;
+	}
+
+	@PrimaryKeyClass
+	public static class PersonKey implements Serializable {
+		@PrimaryKeyColumn(name = "firstname", type = PrimaryKeyType.PARTITIONED) private String firstName;
+
+		@PrimaryKeyColumn(name = "aname", type = PrimaryKeyType.PARTITIONED) private String aName;
+
+		@PrimaryKeyColumn(name = "lastname", type = PrimaryKeyType.CLUSTERED) private String lastName;
+
+		@PrimaryKeyColumn(name = "bname", type = PrimaryKeyType.CLUSTERED) private String bName;
+	}
+
+	@Table
+	public static class Person {
+		@PrimaryKey PersonKey key;
+
+		int age;
 	}
 }

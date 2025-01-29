@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,13 @@
  */
 package org.springframework.data.cassandra.core.query;
 
-import static org.springframework.util.ObjectUtils.*;
-
 import java.util.Arrays;
 import java.util.Collection;
 
 import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
+import org.springframework.util.ObjectUtils;
 
 /**
  * Basic class for creating queries. It follows a fluent API style so that you can easily create a
@@ -276,11 +275,8 @@ public class Criteria implements CriteriaDefinition {
 		return predicate;
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#equals(java.lang.Object)
-	 */
 	@Override
-	public boolean equals(Object obj) {
+	public boolean equals(@Nullable Object obj) {
 
 		if (this == obj) {
 			return true;
@@ -303,23 +299,14 @@ public class Criteria implements CriteriaDefinition {
 		return keyEqual && criteriaEqual;
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#hashCode()
-	 */
 	@Override
 	public int hashCode() {
-
 		int result = 17;
-
-		result += nullSafeHashCode(columnName);
-		result += nullSafeHashCode(predicate);
-
+		result += ObjectUtils.nullSafeHashCode(columnName);
+		result += ObjectUtils.nullSafeHashCode(predicate);
 		return result;
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#toString()
-	 */
 	@Override
 	public String toString() {
 		return SerializationUtils.serializeToCqlSafely(this);

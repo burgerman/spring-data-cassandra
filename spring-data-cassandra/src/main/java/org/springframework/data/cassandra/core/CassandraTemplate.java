@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,14 @@
  */
 package org.springframework.data.cassandra.core;
 
-import lombok.Value;
-
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
@@ -30,23 +31,16 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.ApplicationEventPublisherAware;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.dao.support.DataAccessUtils;
 import org.springframework.data.cassandra.SessionFactory;
 import org.springframework.data.cassandra.core.EntityOperations.AdaptibleEntity;
 import org.springframework.data.cassandra.core.convert.CassandraConverter;
 import org.springframework.data.cassandra.core.convert.MappingCassandraConverter;
-import org.springframework.data.cassandra.core.convert.QueryMapper;
-import org.springframework.data.cassandra.core.convert.UpdateMapper;
-import org.springframework.data.cassandra.core.cql.CassandraAccessor;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
-import org.springframework.data.cassandra.core.cql.CqlOperations;
-import org.springframework.data.cassandra.core.cql.CqlProvider;
-import org.springframework.data.cassandra.core.cql.CqlTemplate;
-import org.springframework.data.cassandra.core.cql.QueryOptions;
-import org.springframework.data.cassandra.core.cql.SessionCallback;
-import org.springframework.data.cassandra.core.cql.WriteOptions;
+import org.springframework.data.cassandra.core.cql.*;
 import org.springframework.data.cassandra.core.cql.session.DefaultSessionFactory;
+import org.springframework.data.cassandra.core.cql.util.StatementBuilder;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity;
-import org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty;
+import org.springframework.data.cassandra.core.mapping.SimpleUserTypeResolver;
 import org.springframework.data.cassandra.core.mapping.event.AfterConvertEvent;
 import org.springframework.data.cassandra.core.mapping.event.AfterDeleteEvent;
 import org.springframework.data.cassandra.core.mapping.event.AfterLoadEvent;
@@ -60,25 +54,30 @@ import org.springframework.data.cassandra.core.query.Columns;
 import org.springframework.data.cassandra.core.query.Query;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.mapping.callback.EntityCallbacks;
-import org.springframework.data.mapping.context.MappingContext;
+import org.springframework.data.projection.EntityProjection;
 import org.springframework.data.projection.ProjectionFactory;
 import org.springframework.data.projection.SpelAwareProxyProjectionFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.RegularStatement;
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.SimpleStatement;
-import com.datastax.driver.core.Statement;
-import com.datastax.driver.core.exceptions.DriverException;
-import com.datastax.driver.core.querybuilder.Delete;
-import com.datastax.driver.core.querybuilder.Insert;
-import com.datastax.driver.core.querybuilder.QueryBuilder;
-import com.datastax.driver.core.querybuilder.Select;
-import com.datastax.driver.core.querybuilder.Truncate;
-import com.datastax.driver.core.querybuilder.Update;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.DriverException;
+import com.datastax.oss.driver.api.core.config.DefaultDriverOption;
+import com.datastax.oss.driver.api.core.cql.BatchType;
+import com.datastax.oss.driver.api.core.cql.BoundStatement;
+import com.datastax.oss.driver.api.core.cql.PreparedStatement;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
+import com.datastax.oss.driver.api.core.cql.Row;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
+import com.datastax.oss.driver.api.core.cql.Statement;
+import com.datastax.oss.driver.api.querybuilder.QueryBuilder;
+import com.datastax.oss.driver.api.querybuilder.delete.Delete;
+import com.datastax.oss.driver.api.querybuilder.insert.Insert;
+import com.datastax.oss.driver.api.querybuilder.insert.RegularInsert;
+import com.datastax.oss.driver.api.querybuilder.select.Select;
+import com.datastax.oss.driver.api.querybuilder.truncate.Truncate;
+import com.datastax.oss.driver.api.querybuilder.update.Update;
 
 /**
  * Primary implementation of {@link CassandraOperations}. It simplifies the use of Cassandra usage and helps to avoid
@@ -86,59 +85,67 @@ import com.datastax.driver.core.querybuilder.Update;
  * over {@link ResultSet} and catching Cassandra exceptions and translating them to the generic, more informative
  * exception hierarchy defined in the {@code org.springframework.dao} package.
  * <p>
- * Can be used within a service implementation via direct instantiation with a {@link Session} reference, or get
+ * Can be used within a service implementation via direct instantiation with a {@link CqlSession} reference, or get
  * prepared in an application context and given to services as bean reference.
  * <p>
- * Note: The {@link Session} should always be configured as a bean in the application context, in the first case given
- * to the service directly, in the second case to the prepared template.
+ * This class supports the use of prepared statements when enabling {@link #setUsePreparedStatements(boolean)}. All
+ * statements created by methods of this class (such as {@link #select(Query, Class)} or
+ * {@link #update(Query, org.springframework.data.cassandra.core.query.Update, Class)} will be executed as prepared
+ * statements. Also, statements accepted by methods (such as {@link #select(String, Class)} or
+ * {@link #select(Statement, Class) and others}) will be prepared prior to execution. Note that {@link Statement}
+ * objects passed to methods must be {@link SimpleStatement} so that these can be prepared.
+ * <p>
+ * Note: The {@link CqlSession} should always be configured as a bean in the application context, in the first case
+ * given to the service directly, in the second case to the prepared template.
  *
  * @author Mark Paluch
  * @author John Blum
  * @author Lukasz Antoniak
+ * @author Sam Lightfoot
  * @see org.springframework.data.cassandra.core.CassandraOperations
  * @since 2.0
  */
 public class CassandraTemplate implements CassandraOperations, ApplicationEventPublisherAware, ApplicationContextAware {
 
-	private @Nullable ApplicationEventPublisher eventPublisher;
-
-	private @Nullable EntityCallbacks entityCallbacks;
-
-	private final CassandraConverter converter;
+	private final Log log = LogFactory.getLog(getClass());
 
 	private final CqlOperations cqlOperations;
 
+	private final CassandraConverter converter;
+
 	private final EntityOperations entityOperations;
-
-	private final MappingContext<? extends CassandraPersistentEntity<?>, CassandraPersistentProperty> mappingContext;
-
-	private final SpelAwareProxyProjectionFactory projectionFactory;
 
 	private final StatementFactory statementFactory;
 
+	private final EntityLifecycleEventDelegate eventDelegate;
+
+	private @Nullable EntityCallbacks entityCallbacks;
+
+	private boolean usePreparedStatements = true;
+
 	/**
-	 * Creates an instance of {@link CassandraTemplate} initialized with the given {@link Session} and a default
+	 * Creates an instance of {@link CassandraTemplate} initialized with the given {@link CqlSession} and a default
 	 * {@link MappingCassandraConverter}.
 	 *
-	 * @param session {@link Session} used to interact with Cassandra; must not be {@literal null}.
+	 * @param session {@link CqlSession} used to interact with Cassandra; must not be {@literal null}.
 	 * @see CassandraConverter
-	 * @see Session
+	 * @see CqlSession
 	 */
-	public CassandraTemplate(Session session) {
-		this(session, newConverter());
+	public CassandraTemplate(CqlSession session) {
+		this(session, newConverter(session));
 	}
 
 	/**
-	 * Creates an instance of {@link CassandraTemplate} initialized with the given {@link Session} and
+	 * Creates an instance of {@link CassandraTemplate} initialized with the given {@link CqlSession} and
 	 * {@link CassandraConverter}.
 	 *
-	 * @param session {@link Session} used to interact with Cassandra; must not be {@literal null}.
+	 * @param session {@link CqlSession} used to interact with Cassandra; must not be {@literal null}.
 	 * @param converter {@link CassandraConverter} used to convert between Java and Cassandra types; must not be
 	 *          {@literal null}.
 	 * @see CassandraConverter
-	 * @see Session
+	 * @see CqlSession
 	 */
-	public CassandraTemplate(Session session, CassandraConverter converter) {
+	public CassandraTemplate(CqlSession session, CassandraConverter converter) {
 		this(new DefaultSessionFactory(session), converter);
 	}
 
@@ -164,7 +171,7 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 	 * @param converter {@link CassandraConverter} used to convert between Java and Cassandra types; must not be
 	 *          {@literal null}.
 	 * @see CassandraConverter
-	 * @see Session
+	 * @see CqlSession
 	 */
 	public CassandraTemplate(CqlOperations cqlOperations, CassandraConverter converter) {
 
@@ -173,40 +180,27 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 
 		this.converter = converter;
 		this.cqlOperations = cqlOperations;
-		this.entityOperations = new EntityOperations(converter.getMappingContext());
-		this.mappingContext = converter.getMappingContext();
-		this.projectionFactory = new SpelAwareProxyProjectionFactory();
-		this.statementFactory = new StatementFactory(new QueryMapper(converter), new UpdateMapper(converter));
+		this.entityOperations = new EntityOperations(converter);
+		this.statementFactory = new StatementFactory(converter);
+		this.eventDelegate = new EntityLifecycleEventDelegate();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#batchOps()
-	 */
 	@Override
-	public CassandraBatchOperations batchOps() {
-		return new CassandraBatchTemplate(this);
+	public CassandraBatchOperations batchOps(BatchType batchType) {
+		return new CassandraBatchTemplate(this, batchType);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.context.ApplicationEventPublisherAware#setApplicationEventPublisher(org.springframework.context.ApplicationEventPublisher)
-	 */
 	@Override
 	public void setApplicationEventPublisher(ApplicationEventPublisher applicationEventPublisher) {
-		this.eventPublisher = applicationEventPublisher;
+		this.eventDelegate.setPublisher(applicationEventPublisher);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.context.ApplicationContextAware(org.springframework.context.ApplicationContext)
-	 */
 	@Override
 	public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
 
 		if (entityCallbacks == null) {
 			setEntityCallbacks(EntityCallbacks.create(applicationContext));
 		}
-
-		projectionFactory.setBeanFactory(applicationContext);
-		projectionFactory.setBeanClassLoader(applicationContext.getClassLoader());
 	}
 
 	/**
@@ -218,20 +212,63 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 		this.entityCallbacks = entityCallbacks;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#getConverter()
+	/**
+	 * Configure whether lifecycle events such as {@link AfterLoadEvent}, {@link BeforeSaveEvent}, etc. should be
+	 * published or whether emission should be suppressed. Enabled by default.
+	 *
+	 * @param enabled {@code true} to enable entity lifecycle events; {@code false} to disable entity lifecycle events.
+	 * @since 4.0
+	 * @see CassandraMappingEvent
 	 */
+	public void setEntityLifecycleEventsEnabled(boolean enabled) {
+		this.eventDelegate.setEventsEnabled(enabled);
+	}
+
+	@Override
+	public CqlOperations getCqlOperations() {
+		return this.cqlOperations;
+	}
+
 	@Override
 	public CassandraConverter getConverter() {
 		return this.converter;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#CqlOperations()
+	/**
+	 * Returns the {@link StatementFactory} used by this template to construct and run Cassandra CQL statements.
+	 *
+	 * @return the {@link StatementFactory} used by this template to construct and run Cassandra CQL statements.
+	 * @see org.springframework.data.cassandra.core.StatementFactory
+	 * @since 2.1
 	 */
-	@Override
-	public CqlOperations getCqlOperations() {
-		return this.cqlOperations;
+	public StatementFactory getStatementFactory() {
+		return this.statementFactory;
+	}
+
+	/**
+	 * Returns whether this instance is configured to use {@link PreparedStatement prepared statements}. If enabled
+	 * (default), then all persistence methods (such as {@link #select}, {@link #update}, and others) will make use of
+	 * prepared statements. Note that methods accepting a {@link Statement} must be called with {@link SimpleStatement}
+	 * instances to participate in statement preparation.
+	 *
+	 * @return {@literal true} if prepared statements usage is enabled; {@literal false} otherwise.
+	 * @since 3.2
+	 */
+	public boolean isUsePreparedStatements() {
+		return usePreparedStatements;
+	}
+
+	/**
+	 * Enable/disable {@link PreparedStatement prepared statements} usage. If enabled (default), then all persistence
+	 * methods (such as {@link #select}, {@link #update}, and others) will make use of prepared statements. Note that
+	 * methods accepting a {@link Statement} must be called with {@link SimpleStatement} instances to participate in
+	 * statement preparation.
+	 *
+	 * @param usePreparedStatements whether to use prepared statements.
+	 * @since 3.2
+	 */
+	public void setUsePreparedStatements(boolean usePreparedStatements) {
+		this.usePreparedStatements = usePreparedStatements;
 	}
 
 	/**
@@ -253,29 +290,16 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 	 *         projections.
 	 * @see org.springframework.data.projection.SpelAwareProxyProjectionFactory
 	 * @since 2.1
+	 * @deprecated since 3.4, use {@link CassandraConverter#getProjectionFactory()} instead.
 	 */
 	protected SpelAwareProxyProjectionFactory getProjectionFactory() {
-		return this.projectionFactory;
+		return (SpelAwareProxyProjectionFactory) getConverter().getProjectionFactory();
 	}
 
 	private CassandraPersistentEntity<?> getRequiredPersistentEntity(Class<?> entityType) {
 		return getEntityOperations().getRequiredPersistentEntity(entityType);
 	}
 
-	/**
-	 * Returns the {@link StatementFactory} used by this template to construct and run Cassandra CQL statements.
-	 *
-	 * @return the {@link StatementFactory} used by this template to construct and run Cassandra CQL statements.
-	 * @see org.springframework.data.cassandra.core.StatementFactory
-	 * @since 2.1
-	 */
-	protected StatementFactory getStatementFactory() {
-		return this.statementFactory;
-	}
-
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#getTableName(java.lang.Class)
-	 */
 	@Override
 	public CqlIdentifier getTableName(Class<?> entityClass) {
 		return getEntityOperations().getTableName(entityClass);
@@ -285,106 +309,93 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 	// Methods dealing with static CQL
 	// -------------------------------------------------------------------------
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#select(java.lang.String, java.lang.Class)
-	 */
 	@Override
 	public <T> List<T> select(String cql, Class<T> entityClass) {
 
 		Assert.hasText(cql, "CQL must not be empty");
 
-		return select(new SimpleStatement(cql), entityClass);
+		return select(SimpleStatement.newInstance(cql), entityClass);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#selectOne(java.lang.String, java.lang.Class)
-	 */
 	@Override
 	public <T> T selectOne(String cql, Class<T> entityClass) {
 
 		Assert.hasText(cql, "CQL must not be empty");
 		Assert.notNull(entityClass, "Entity type must not be null");
 
-		return selectOne(new SimpleStatement(cql), entityClass);
+		return selectOne(SimpleStatement.newInstance(cql), entityClass);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#stream(java.lang.String, java.lang.Class)
-	 */
 	@Override
 	public <T> Stream<T> stream(String cql, Class<T> entityClass) throws DataAccessException {
 
 		Assert.hasText(cql, "CQL must not be empty");
 		Assert.notNull(entityClass, "Entity type must not be null");
 
-		return stream(new SimpleStatement(cql), entityClass);
+		return stream(SimpleStatement.newInstance(cql), entityClass);
 	}
 
 	// -------------------------------------------------------------------------
-	// Methods dealing with com.datastax.driver.core.Statement
+	// Methods dealing with com.datastax.oss.driver.api.core.cql.Statement
 	// -------------------------------------------------------------------------
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#select(com.datastax.driver.core.Statement, java.lang.Class)
-	 */
 	@Override
-	public <T> List<T> select(Statement statement, Class<T> entityClass) {
+	public ResultSet execute(Statement<?> statement) {
+
+		Assert.notNull(statement, "Statement must not be null");
+
+		return doQueryForResultSet(statement);
+	}
+
+	@Override
+	public <T> List<T> select(Statement<?> statement, Class<T> entityClass) {
 
 		Assert.notNull(statement, "Statement must not be null");
 		Assert.notNull(entityClass, "Entity type must not be null");
 
-		Function<Row, T> mapper = getMapper(entityClass, entityClass, EntityQueryUtils.getTableName(statement));
+		Function<Row, T> mapper = getMapper(EntityProjection.nonProjecting(entityClass),
+				EntityQueryUtils.getTableName(statement));
 
-		return getCqlOperations().query(statement, (row, rowNum) -> mapper.apply(row));
+		return doQuery(statement, (row, rowNum) -> mapper.apply(row));
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#selectOne(com.datastax.driver.core.Statement, java.lang.Class)
-	 */
 	@Override
-	public <T> T selectOne(Statement statement, Class<T> entityClass) {
-		return select(statement, entityClass).stream().findFirst().orElse(null);
+	public <T> T selectOne(Statement<?> statement, Class<T> entityClass) {
+
+		List<T> result = select(statement, entityClass);
+		return result.isEmpty() ? null : result.get(0);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#slice(com.datastax.driver.core.Statement, java.lang.Class)
-	 */
 	@Override
-	public <T> Slice<T> slice(Statement statement, Class<T> entityClass) {
+	public <T> Slice<T> slice(Statement<?> statement, Class<T> entityClass) {
 
 		Assert.notNull(statement, "Statement must not be null");
 		Assert.notNull(entityClass, "Entity type must not be null");
 
-		ResultSet resultSet = getCqlOperations().queryForResultSet(statement);
+		ResultSet resultSet = doQueryForResultSet(statement);
 
-		Function<Row, T> mapper = getMapper(entityClass, entityClass, EntityQueryUtils.getTableName(statement));
+		Function<Row, T> mapper = getMapper(EntityProjection.nonProjecting(entityClass),
+				EntityQueryUtils.getTableName(statement));
 
 		return EntityQueryUtils.readSlice(resultSet, (row, rowNum) -> mapper.apply(row), 0,
-				getEffectiveFetchSize(statement));
+				getEffectivePageSize(statement));
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#stream(com.datastax.driver.core.Statement, java.lang.Class)
-	 */
 	@Override
-	public <T> Stream<T> stream(Statement statement, Class<T> entityClass) throws DataAccessException {
+	public <T> Stream<T> stream(Statement<?> statement, Class<T> entityClass) throws DataAccessException {
 
 		Assert.notNull(statement, "Statement must not be null");
 		Assert.notNull(entityClass, "Entity type must not be null");
 
-		ResultSet resultSet = getCqlOperations().queryForResultSet(statement);
-
-		return StreamSupport.stream(resultSet.spliterator(), false)
-				.map(getMapper(entityClass, entityClass, EntityQueryUtils.getTableName(statement)));
+		Function<Row, T> mapper = getMapper(EntityProjection.nonProjecting(entityClass),
+				EntityQueryUtils.getTableName(statement));
+		return doQueryForStream(statement, (row, rowNum) -> mapper.apply(row));
 	}
 
 	// -------------------------------------------------------------------------
 	// Methods dealing with org.springframework.data.cassandra.core.query.Query
 	// -------------------------------------------------------------------------
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#select(org.springframework.data.cassandra.core.query.Query, java.lang.Class)
-	 */
 	@Override
 	public <T> List<T> select(Query query, Class<T> entityClass) throws DataAccessException {
 
@@ -396,23 +407,19 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 
 	<T> List<T> doSelect(Query query, Class<?> entityClass, CqlIdentifier tableName, Class<T> returnType) {
 
-		CassandraPersistentEntity<?> persistentEntity = getRequiredPersistentEntity(entityClass);
-
-		Columns columns = getStatementFactory().computeColumnsForProjection(query.getColumns(), persistentEntity,
+		CassandraPersistentEntity<?> entity = getRequiredPersistentEntity(entityClass);
+		EntityProjection<T, ?> projection = entityOperations.introspectProjection(returnType, entityClass);
+		Columns columns = getStatementFactory().computeColumnsForProjection(projection, query.getColumns(), entity,
 				returnType);
 
 		Query queryToUse = query.columns(columns);
 
-		RegularStatement select = getStatementFactory().select(queryToUse, persistentEntity, tableName);
+		StatementBuilder<Select> select = getStatementFactory().select(queryToUse, entity, tableName);
+		Function<Row, T> mapper = getMapper(projection, tableName);
 
-		Function<Row, T> mapper = getMapper(entityClass, returnType, tableName);
-
-		return getCqlOperations().query(select, (row, rowNum) -> mapper.apply(row));
+		return doQuery(select.build(), (row, rowNum) -> mapper.apply(row));
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#selectOne(org.springframework.data.cassandra.core.query.Query, java.lang.Class)
-	 */
 	@Override
 	public <T> T selectOne(Query query, Class<T> entityClass) throws DataAccessException {
 
@@ -421,23 +428,17 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 		return result.isEmpty() ? null : result.get(0);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#slice(org.springframework.data.cassandra.core.query.Query, java.lang.Class)
-	 */
 	@Override
 	public <T> Slice<T> slice(Query query, Class<T> entityClass) throws DataAccessException {
 
 		Assert.notNull(query, "Query must not be null");
 		Assert.notNull(entityClass, "Entity type must not be null");
 
-		RegularStatement select = getStatementFactory().select(query, getRequiredPersistentEntity(entityClass));
+		StatementBuilder<Select> select = getStatementFactory().select(query, getRequiredPersistentEntity(entityClass));
 
-		return slice(select, entityClass);
+		return slice(select.build(), entityClass);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#stream(org.springframework.data.cassandra.core.query.Query, java.lang.Class)
-	 */
 	@Override
 	public <T> Stream<T> stream(Query query, Class<T> entityClass) throws DataAccessException {
 
@@ -449,17 +450,14 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 
 	<T> Stream<T> doStream(Query query, Class<?> entityClass, CqlIdentifier tableName, Class<T> returnType) {
 
-		RegularStatement statement = getStatementFactory().select(query, getRequiredPersistentEntity(entityClass),
+		StatementBuilder<Select> select = getStatementFactory().select(query, getRequiredPersistentEntity(entityClass),
 				tableName);
+		EntityProjection<T, ?> projection = entityOperations.introspectProjection(returnType, entityClass);
 
-		ResultSet resultSet = getCqlOperations().queryForResultSet(statement);
-
-		return StreamSupport.stream(resultSet.spliterator(), false).map(getMapper(entityClass, returnType, tableName));
+		Function<Row, T> mapper = getMapper(projection, tableName);
+		return doQueryForStream(select.build(), (row, rowNum) -> mapper.apply(row));
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#update(org.springframework.data.cassandra.core.query.Query, org.springframework.data.cassandra.core.query.Update, java.lang.Class)
-	 */
 	@Override
 	public boolean update(Query query, org.springframework.data.cassandra.core.query.Update update, Class<?> entityClass)
 			throws DataAccessException {
@@ -468,24 +466,22 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 		Assert.notNull(update, "Update must not be null");
 		Assert.notNull(entityClass, "Entity type must not be null");
 
-		Statement updateStatement = getStatementFactory().update(query, update, getRequiredPersistentEntity(entityClass));
+		StatementBuilder<Update> updateStatement = getStatementFactory().update(query, update,
+				getRequiredPersistentEntity(entityClass));
 
-		return getCqlOperations().execute(updateStatement);
+		return doExecute(updateStatement.build()).wasApplied();
 	}
 
 	@Nullable
 	WriteResult doUpdate(Query query, org.springframework.data.cassandra.core.query.Update update, Class<?> entityClass,
 			CqlIdentifier tableName) {
 
-		RegularStatement updateStatement = getStatementFactory().update(query, update,
+		StatementBuilder<Update> updateStatement = getStatementFactory().update(query, update,
 				getRequiredPersistentEntity(entityClass), tableName);
 
-		return getCqlOperations().execute(new StatementCallback(updateStatement));
+		return doExecute(updateStatement.build());
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#delete(org.springframework.data.cassandra.core.query.Query, java.lang.Class)
-	 */
 	@Override
 	public boolean delete(Query query, Class<?> entityClass) throws DataAccessException {
 
@@ -500,13 +496,15 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 	@Nullable
 	WriteResult doDelete(Query query, Class<?> entityClass, CqlIdentifier tableName) {
 
-		RegularStatement delete = getStatementFactory().delete(query, getRequiredPersistentEntity(entityClass), tableName);
+		StatementBuilder<Delete> delete = getStatementFactory().delete(query, getRequiredPersistentEntity(entityClass),
+				tableName);
+		SimpleStatement statement = delete.build();
 
-		maybeEmitEvent(new BeforeDeleteEvent<>(delete, entityClass, tableName));
+		maybeEmitEvent(() -> new BeforeDeleteEvent<>(statement, entityClass, tableName));
 
-		WriteResult writeResult = getCqlOperations().execute(new StatementCallback(delete));
+		WriteResult writeResult = doExecute(statement);
 
-		maybeEmitEvent(new AfterDeleteEvent<>(delete, entityClass, tableName));
+		maybeEmitEvent(() -> new AfterDeleteEvent<>(statement, entityClass, tableName));
 
 		return writeResult;
 	}
@@ -515,24 +513,14 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 	// Methods dealing with entities
 	// -------------------------------------------------------------------------
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#count(java.lang.Class)
-	 */
 	@Override
 	public long count(Class<?> entityClass) {
 
 		Assert.notNull(entityClass, "Entity type must not be null");
 
-		Select select = QueryBuilder.select().countAll().from(getTableName(entityClass).toCql());
-
-		Long count = getCqlOperations().queryForObject(select, Long.class);
-
-		return count != null ? count : 0L;
+		return count(Query.empty(), entityClass);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#count(org.springframework.data.cassandra.core.query.Query, java.lang.Class)
-	 */
 	@Override
 	public long count(Query query, Class<?> entityClass) throws DataAccessException {
 
@@ -544,17 +532,12 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 
 	long doCount(Query query, Class<?> entityClass, CqlIdentifier tableName) {
 
-		RegularStatement countStatement = getStatementFactory().count(query, getRequiredPersistentEntity(entityClass),
-				tableName);
+		StatementBuilder<Select> countStatement = getStatementFactory().count(query,
+				getRequiredPersistentEntity(entityClass), tableName);
 
-		Long count = getCqlOperations().queryForObject(countStatement, Long.class);
-
-		return count != null ? count : 0L;
+		return doQueryForObject(countStatement.build(), Long.class);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#exists(java.lang.Object, java.lang.Class)
-	 */
 	@Override
 	public boolean exists(Object id, Class<?> entityClass) {
 
@@ -562,17 +545,11 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 		Assert.notNull(entityClass, "Entity type must not be null");
 
 		CassandraPersistentEntity<?> entity = getRequiredPersistentEntity(entityClass);
+		StatementBuilder<Select> select = getStatementFactory().selectOneById(id, entity, entity.getTableName());
 
-		Select select = QueryBuilder.select().from(getTableName(entityClass).toCql());
-
-		getConverter().write(id, select.where(), entity);
-
-		return getCqlOperations().queryForResultSet(select).iterator().hasNext();
+		return doQueryForResultSet(select.build()).one() != null;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#exists(org.springframework.data.cassandra.core.query.Query, java.lang.Class)
-	 */
 	@Override
 	public boolean exists(Query query, Class<?> entityClass) throws DataAccessException {
 
@@ -584,45 +561,32 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 
 	boolean doExists(Query query, Class<?> entityClass, CqlIdentifier tableName) {
 
-		RegularStatement select = getStatementFactory().select(query.limit(1), getRequiredPersistentEntity(entityClass),
-				tableName);
+		StatementBuilder<Select> select = getStatementFactory().select(query.limit(1),
+				getRequiredPersistentEntity(entityClass), tableName);
 
-		return getCqlOperations().queryForResultSet(select).iterator().hasNext();
+		return doQueryForResultSet(select.build()).one() != null;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#selectOneById(java.lang.Object, java.lang.Class)
-	 */
 	@Override
 	public <T> T selectOneById(Object id, Class<T> entityClass) {
 
 		Assert.notNull(id, "Id must not be null");
 		Assert.notNull(entityClass, "Entity type must not be null");
 
-		CqlIdentifier tableName = getTableName(entityClass);
-
-		Select select = QueryBuilder.select().all().from(tableName.toCql());
-
-		getConverter().write(id, select.where(), getRequiredPersistentEntity(entityClass));
-
-		Function<Row, T> mapper = getMapper(entityClass, entityClass, tableName);
-
-		List<T> result = getCqlOperations().query(select, (row, rowNum) -> mapper.apply(row));
+		CassandraPersistentEntity<?> entity = getRequiredPersistentEntity(entityClass);
+		CqlIdentifier tableName = entity.getTableName();
+		StatementBuilder<Select> select = getStatementFactory().selectOneById(id, entity, tableName);
+		Function<Row, T> mapper = getMapper(EntityProjection.nonProjecting(entityClass), tableName);
+		List<T> result = doQuery(select.build(), (row, rowNum) -> mapper.apply(row));
 
 		return result.isEmpty() ? null : result.get(0);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#insert(java.lang.Object)
-	 */
 	@Override
 	public <T> T insert(T entity) {
 		return insert(entity, InsertOptions.empty()).getEntity();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#insert(java.lang.Object, org.springframework.data.cassandra.core.InsertOptions)
-	 */
 	@Override
 	public <T> EntityWriteResult<T> insert(T entity, InsertOptions options) {
 
@@ -636,18 +600,22 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 
 		AdaptibleEntity<T> source = getEntityOperations().forEntity(maybeCallBeforeConvert(entity, tableName),
 				getConverter().getConversionService());
-		CassandraPersistentEntity<?> persistentEntity = getRequiredPersistentEntity(entity.getClass());
 
-		T entityToUse = source.isVersionedEntity() ? source.initializeVersionProperty() : entity;
+		T entityToUse = source.isVersionedEntity() ? source.initializeVersionProperty() : source.getBean();
 
-		Insert insert = EntityQueryUtils.createInsertQuery(tableName.toCql(), entityToUse, options, getConverter(),
-				persistentEntity);
+		StatementBuilder<RegularInsert> builder = getStatementFactory().insert(entityToUse, options,
+				source.getPersistentEntity(), tableName);
 
-		return source.isVersionedEntity() ? doInsertVersioned(insert.ifNotExists(), entityToUse, source, tableName)
-				: doInsert(insert, entityToUse, tableName);
+		if (source.isVersionedEntity()) {
+
+			builder.apply(Insert::ifNotExists);
+			return doInsertVersioned(builder.build(), entityToUse, source, tableName);
+		}
+
+		return doInsert(builder.build(), entityToUse, tableName);
 	}
 
-	private <T> EntityWriteResult<T> doInsertVersioned(Insert insert, T entity, AdaptibleEntity<T> source,
+	private <T> EntityWriteResult<T> doInsertVersioned(SimpleStatement insert, T entity, AdaptibleEntity<T> source,
 			CqlIdentifier tableName) {
 
 		return executeSave(entity, tableName, insert, result -> {
@@ -660,21 +628,15 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 		});
 	}
 
-	private <T> EntityWriteResult<T> doInsert(Insert insert, T entity, CqlIdentifier tableName) {
+	private <T> EntityWriteResult<T> doInsert(SimpleStatement insert, T entity, CqlIdentifier tableName) {
 		return executeSave(entity, tableName, insert);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#update(java.lang.Object)
-	 */
 	@Override
 	public <T> T update(T entity) {
 		return update(entity, UpdateOptions.empty()).getEntity();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#update(java.lang.Object, org.springframework.data.cassandra.core.UpdateOptions)
-	 */
 	@Override
 	public <T> EntityWriteResult<T> update(T entity, UpdateOptions options) {
 
@@ -699,13 +661,14 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 		Number previousVersion = source.getVersion();
 		T toSave = source.incrementVersion();
 
-		Update update = getStatementFactory().update(toSave, options, getConverter(), persistentEntity, tableName);
+		StatementBuilder<Update> builder = getStatementFactory().update(toSave, options, persistentEntity, tableName);
+		SimpleStatement update = source.appendVersionCondition(builder, previousVersion).build();
 
-		return executeSave(toSave, tableName, source.appendVersionCondition(update, previousVersion), result -> {
+		return executeSave(toSave, tableName, update, result -> {
 
 			if (!result.wasApplied()) {
 				throw new OptimisticLockingFailureException(
-						String.format("Cannot save entity %s with version %s to table %s. Has it been modified meanwhile?", toSave,
+						String.format("Cannot save entity %s with version %s to table %s; Has it been modified meanwhile", toSave,
 								source.getVersion(), tableName));
 			}
 		});
@@ -714,22 +677,16 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 	private <T> EntityWriteResult<T> doUpdate(T entity, UpdateOptions options, CqlIdentifier tableName,
 			CassandraPersistentEntity<?> persistentEntity) {
 
-		Update update = getStatementFactory().update(entity, options, getConverter(), persistentEntity, tableName);
+		StatementBuilder<Update> builder = getStatementFactory().update(entity, options, persistentEntity, tableName);
 
-		return executeSave(entity, tableName, update);
+		return executeSave(entity, tableName, builder.build());
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#delete(java.lang.Object)
-	 */
 	@Override
 	public void delete(Object entity) {
 		delete(entity, QueryOptions.empty());
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#delete(java.lang.Object, org.springframework.data.cassandra.core.cql.QueryOptions)
-	 */
 	@Override
 	public WriteResult delete(Object entity, QueryOptions options) {
 
@@ -740,32 +697,31 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 		CassandraPersistentEntity<?> persistentEntity = getRequiredPersistentEntity(entity.getClass());
 		CqlIdentifier tableName = persistentEntity.getTableName();
 
-		Delete delete = getStatementFactory().delete(entity, options, getConverter(), persistentEntity, tableName);
+		StatementBuilder<Delete> builder = getStatementFactory().delete(entity, options, getConverter(), tableName);
 
-		return source.isVersionedEntity() ? doDeleteVersioned(delete, entity, source, tableName)
-				: doDelete(delete, entity, tableName);
+		return source.isVersionedEntity()
+				? doDeleteVersioned(source.appendVersionCondition(builder).build(), entity, source, tableName)
+				: doDelete(builder.build(), entity, tableName);
+
 	}
 
-	private WriteResult doDeleteVersioned(Delete delete, Object entity, AdaptibleEntity<Object> source,
+	private WriteResult doDeleteVersioned(SimpleStatement statement, Object entity, AdaptibleEntity<Object> source,
 			CqlIdentifier tableName) {
 
-		return executeDelete(entity, tableName, source.appendVersionCondition(delete), result -> {
+		return executeDelete(entity, tableName, statement, result -> {
 
 			if (!result.wasApplied()) {
 				throw new OptimisticLockingFailureException(
-						String.format("Cannot delete entity %s with version %s in table %s. Has it been modified meanwhile?",
-								entity, source.getVersion(), tableName));
+						String.format("Cannot delete entity %s with version %s in table %s; Has it been modified meanwhile", entity,
+								source.getVersion(), tableName));
 			}
 		});
 	}
 
-	private WriteResult doDelete(Delete delete, Object entity, CqlIdentifier tableName) {
+	private WriteResult doDelete(SimpleStatement delete, Object entity, CqlIdentifier tableName) {
 		return executeDelete(entity, tableName, delete, result -> {});
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#deleteById(java.lang.Object, java.lang.Class)
-	 */
 	@Override
 	public boolean deleteById(Object id, Class<?> entityClass) {
 
@@ -774,68 +730,56 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 
 		CassandraPersistentEntity<?> entity = getRequiredPersistentEntity(entityClass);
 		CqlIdentifier tableName = entity.getTableName();
-		Delete delete = QueryBuilder.delete().from(tableName.toCql());
 
-		getConverter().write(id, delete.where(), entity);
+		StatementBuilder<Delete> delete = getStatementFactory().deleteById(id, entity, tableName);
+		SimpleStatement statement = delete.build();
 
-		maybeEmitEvent(new BeforeDeleteEvent<>(delete, entityClass, tableName));
+		maybeEmitEvent(() -> new BeforeDeleteEvent<>(statement, entityClass, tableName));
 
-		boolean result = getCqlOperations().execute(delete);
+		boolean result = doExecute(statement).wasApplied();
 
-		maybeEmitEvent(new AfterDeleteEvent<>(delete, entityClass, tableName));
+		maybeEmitEvent(() -> new AfterDeleteEvent<>(statement, entityClass, tableName));
 
 		return result;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#truncate(java.lang.Class)
-	 */
 	@Override
 	public void truncate(Class<?> entityClass) {
 
 		Assert.notNull(entityClass, "Entity type must not be null");
 
-		CqlIdentifier tableName = getTableName(entityClass);
-		Truncate truncate = QueryBuilder.truncate(tableName.toCql());
+		CassandraPersistentEntity<?> entity = getRequiredPersistentEntity(entityClass);
+		CqlIdentifier tableName = entity.getTableName();
 
-		maybeEmitEvent(new BeforeDeleteEvent<>(truncate, entityClass, tableName));
+		Truncate truncate = QueryBuilder.truncate(entity.getKeyspace(), tableName);
+		SimpleStatement statement = truncate.build();
 
-		getCqlOperations().execute(truncate);
+		maybeEmitEvent(() -> new BeforeDeleteEvent<>(statement, entityClass, tableName));
 
-		maybeEmitEvent(new AfterDeleteEvent<>(truncate, entityClass, tableName));
+		doExecute(statement);
+
+		maybeEmitEvent(() -> new AfterDeleteEvent<>(statement, entityClass, tableName));
 	}
 
 	// -------------------------------------------------------------------------
 	// Fluent API entry points
 	// -------------------------------------------------------------------------
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ExecutableSelectOperation#query(java.lang.Class)
-	 */
 	@Override
 	public <T> ExecutableSelect<T> query(Class<T> domainType) {
 		return new ExecutableSelectOperationSupport(this).query(domainType);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ExecutableInsertOperation#insert(java.lang.Class)
-	 */
 	@Override
 	public <T> ExecutableInsert<T> insert(Class<T> domainType) {
 		return new ExecutableInsertOperationSupport(this).insert(domainType);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ExecutableUpdateOperation#update(java.lang.Class)
-	 */
 	@Override
 	public ExecutableUpdate update(Class<?> domainType) {
 		return new ExecutableUpdateOperationSupport(this).update(domainType);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ExecutableDeleteOperation#remove(java.lang.Class)
-	 */
 	@Override
 	public ExecutableDelete delete(Class<?> domainType) {
 		return new ExecutableDeleteOperationSupport(this).delete(domainType);
@@ -845,47 +789,105 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 	// Implementation hooks and utility methods
 	// -------------------------------------------------------------------------
 
-	private <T> EntityWriteResult<T> executeSave(T entity, CqlIdentifier tableName, Statement statement) {
+	/**
+	 * Create a new statement-based {@link PreparedStatementHandler} using the statement passed in.
+	 * <p>
+	 * This method allows for the creation to be overridden by subclasses.
+	 *
+	 * @param statement the statement to be prepared.
+	 * @return the new {@link PreparedStatementHandler} to use.
+	 * @since 3.3.3
+	 */
+	protected PreparedStatementHandler createPreparedStatementHandler(Statement<?> statement) {
+		return new PreparedStatementHandler(statement);
+	}
+
+	private <T> EntityWriteResult<T> executeSave(T entity, CqlIdentifier tableName, SimpleStatement statement) {
 		return executeSave(entity, tableName, statement, ignore -> {});
 	}
 
-	private <T> EntityWriteResult<T> executeSave(T entity, CqlIdentifier tableName, Statement statement,
+	private <T> EntityWriteResult<T> executeSave(T entity, CqlIdentifier tableName, SimpleStatement statement,
 			Consumer<WriteResult> resultConsumer) {
 
-		maybeEmitEvent(new BeforeSaveEvent<>(entity, tableName, statement));
+		maybeEmitEvent(() -> new BeforeSaveEvent<>(entity, tableName, statement));
 		T entityToSave = maybeCallBeforeSave(entity, tableName, statement);
 
-		WriteResult result = getCqlOperations().execute(new StatementCallback(statement));
+		WriteResult result = doExecute(statement);
 		resultConsumer.accept(result);
 
-		maybeEmitEvent(new AfterSaveEvent<>(entityToSave, tableName));
+		maybeEmitEvent(() -> new AfterSaveEvent<>(entityToSave, tableName));
 
 		return EntityWriteResult.of(result, entityToSave);
 	}
 
-	private WriteResult executeDelete(Object entity, CqlIdentifier tableName, Statement statement,
+	private WriteResult executeDelete(Object entity, CqlIdentifier tableName, SimpleStatement statement,
 			Consumer<WriteResult> resultConsumer) {
 
-		maybeEmitEvent(new BeforeDeleteEvent<>(statement, entity.getClass(), tableName));
+		maybeEmitEvent(() -> new BeforeDeleteEvent<>(statement, entity.getClass(), tableName));
 
-		WriteResult result = getCqlOperations().execute(new StatementCallback(statement));
+		WriteResult result = doExecute(statement);
 
 		resultConsumer.accept(result);
 
-		maybeEmitEvent(new AfterDeleteEvent<>(statement, entity.getClass(), tableName));
+		maybeEmitEvent(() -> new AfterDeleteEvent<>(statement, entity.getClass(), tableName));
 
 		return result;
 	}
 
-	private int getConfiguredFetchSize(Session session) {
-		return session.getCluster().getConfiguration().getQueryOptions().getFetchSize();
+	private <T> List<T> doQuery(Statement<?> statement, RowMapper<T> rowMapper) {
+
+		if (PreparedStatementDelegate.canPrepare(isUsePreparedStatements(), statement, log)) {
+
+			PreparedStatementHandler statementHandler = createPreparedStatementHandler(statement);
+			return getCqlOperations().query(statementHandler, statementHandler, rowMapper);
+		}
+
+		return getCqlOperations().query(statement, rowMapper);
+	}
+
+	private <T> T doQueryForObject(Statement<?> statement, Class<T> resultType) {
+		return DataAccessUtils.nullableSingleResult(doQuery(statement, SingleColumnRowMapper.newInstance(resultType)));
+	}
+
+	private <T> Stream<T> doQueryForStream(Statement<?> statement, RowMapper<T> rowMapper) {
+
+		if (PreparedStatementDelegate.canPrepare(isUsePreparedStatements(), statement, log)) {
+
+			PreparedStatementHandler statementHandler = createPreparedStatementHandler(statement);
+			return getCqlOperations().queryForStream(statementHandler, statementHandler, rowMapper);
+		}
+
+		return getCqlOperations().queryForStream(statement, rowMapper);
+	}
+
+	private WriteResult doExecute(SimpleStatement statement) {
+		return doExecute(statement, WriteResult::of);
+	}
+
+	private ResultSet doQueryForResultSet(Statement<?> statement) {
+		return doExecute(statement, Function.identity());
+	}
+
+	private <T> T doExecute(Statement<?> statement, Function<ResultSet, T> mappingFunction) {
+
+		if (PreparedStatementDelegate.canPrepare(isUsePreparedStatements(), statement, log)) {
+
+			PreparedStatementHandler statementHandler = createPreparedStatementHandler(statement);
+			return getCqlOperations().query(statementHandler, statementHandler, mappingFunction::apply);
+		}
+
+		return mappingFunction.apply(getCqlOperations().queryForResultSet(statement));
+	}
+
+	private int getConfiguredPageSize(CqlSession session) {
+		return session.getContext().getConfig().getDefaultProfile().getInt(DefaultDriverOption.REQUEST_PAGE_SIZE, 5000);
 	}
 
 	@SuppressWarnings("ConstantConditions")
-	private int getEffectiveFetchSize(Statement statement) {
+	private int getEffectivePageSize(Statement<?> statement) {
 
-		if (statement.getFetchSize() > 0) {
-			return statement.getFetchSize();
+		if (statement.getPageSize() > 0) {
+			return statement.getPageSize();
 		}
 
 		if (getCqlOperations() instanceof CassandraAccessor) {
@@ -897,85 +899,104 @@ public class CassandraTemplate implements CassandraOperations, ApplicationEventP
 			}
 		}
 
-		return getCqlOperations().execute(this::getConfiguredFetchSize);
+		class GetConfiguredPageSize implements SessionCallback<Integer>, CqlProvider {
+			@Override
+			public Integer doInSession(CqlSession session) {
+				return getConfiguredPageSize(session);
+			}
+
+			@Override
+			public String getCql() {
+				return QueryExtractorDelegate.getCql(statement);
+			}
+		}
+
+		return getCqlOperations().execute(new GetConfiguredPageSize());
 	}
 
 	@SuppressWarnings("unchecked")
-	private <T> Function<Row, T> getMapper(Class<?> entityType, Class<T> targetType, CqlIdentifier tableName) {
+	private <T> Function<Row, T> getMapper(EntityProjection<T, ?> projection, CqlIdentifier tableName) {
 
-		Class<?> typeToRead = resolveTypeToRead(entityType, targetType);
+		Class<T> targetType = projection.getMappedType().getType();
 
 		return row -> {
 
-			maybeEmitEvent(new AfterLoadEvent<>(row, targetType, tableName));
+			maybeEmitEvent(() -> new AfterLoadEvent<>(row, targetType, tableName));
 
-			Object source = getConverter().read(typeToRead, row);
+			T result = getConverter().project(projection, row);
 
-			T result = (T) (targetType.isInterface() ? getProjectionFactory().createProjection(targetType, source) : source);
-
-			maybeEmitEvent(new AfterConvertEvent<>(row, result, tableName));
+			if (result != null) {
+				maybeEmitEvent(() -> new AfterConvertEvent<>(row, result, tableName));
+			}
 
 			return result;
 		};
 	}
 
-	private Class<?> resolveTypeToRead(Class<?> entityType, Class<?> targetType) {
-		return targetType.isInterface() || targetType.isAssignableFrom(entityType) ? entityType : targetType;
-	}
-
-	private static MappingCassandraConverter newConverter() {
+	private static MappingCassandraConverter newConverter(CqlSession session) {
 
 		MappingCassandraConverter converter = new MappingCassandraConverter();
+		converter.setUserTypeResolver(new SimpleUserTypeResolver(session));
+		converter.setCodecRegistry(session.getContext().getCodecRegistry());
 
 		converter.afterPropertiesSet();
 
 		return converter;
 	}
 
-	protected <E extends CassandraMappingEvent<T>, T> void maybeEmitEvent(E event) {
-
-		if (this.eventPublisher != null) {
-			this.eventPublisher.publishEvent(event);
-		}
+	protected <E extends CassandraMappingEvent<T>, T> void maybeEmitEvent(Supplier<E> event) {
+		this.eventDelegate.publishEvent(event);
 	}
 
 	protected <T> T maybeCallBeforeConvert(T object, CqlIdentifier tableName) {
 
 		if (null != entityCallbacks) {
-			return (T) entityCallbacks.callback(BeforeConvertCallback.class, object, tableName);
+			return entityCallbacks.callback(BeforeConvertCallback.class, object, tableName);
 		}
 
 		return object;
 	}
 
-	protected <T> T maybeCallBeforeSave(T object, CqlIdentifier tableName, Statement statement) {
+	protected <T> T maybeCallBeforeSave(T object, CqlIdentifier tableName, Statement<?> statement) {
 
 		if (null != entityCallbacks) {
-			return (T) entityCallbacks.callback(BeforeSaveCallback.class, object, tableName, statement);
+			return entityCallbacks.callback(BeforeSaveCallback.class, object, tableName, statement);
 		}
 
 		return object;
 	}
 
-	@Value
-	static class StatementCallback implements SessionCallback<WriteResult>, CqlProvider {
+	/**
+	 * Utility class to prepare a {@link SimpleStatement} and bind values associated with the statement to a
+	 * {@link BoundStatement}.
+	 *
+	 * @since 3.2
+	 */
+	public static class PreparedStatementHandler
+			implements PreparedStatementCreator, PreparedStatementBinder, CqlProvider {
 
-		@lombok.NonNull Statement statement;
+		private final SimpleStatement statement;
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.cql.SessionCallback#doInSession(org.springframework.data.cassandra.Session)
-		 */
-		@Override
-		public WriteResult doInSession(Session session) throws DriverException, DataAccessException {
-			return WriteResult.of(session.execute(this.statement));
+		public PreparedStatementHandler(Statement<?> statement) {
+			this.statement = PreparedStatementDelegate.getStatementForPrepare(statement);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.cql.CqlProvider#getCql()
-		 */
+		@Override
+		public PreparedStatement createPreparedStatement(CqlSession session) throws DriverException {
+
+			// Note that prepared statement settings like the keyspace are gone because using the prepare method with a
+			// statement object causes cache pollution
+			return session.prepare(statement.getQuery());
+		}
+
+		@Override
+		public BoundStatement bindValues(PreparedStatement ps) throws DriverException {
+			return PreparedStatementDelegate.bind(statement, ps);
+		}
+
 		@Override
 		public String getCql() {
-			return this.statement.toString();
+			return statement.getQuery();
 		}
 	}
 }

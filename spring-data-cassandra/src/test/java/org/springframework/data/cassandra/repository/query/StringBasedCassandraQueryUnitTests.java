@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,17 +25,18 @@ import java.nio.ByteBuffer;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.Set;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.springframework.data.cassandra.core.CassandraOperations;
 import org.springframework.data.cassandra.core.convert.MappingCassandraConverter;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.cql.QueryOptions;
 import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
 import org.springframework.data.cassandra.core.mapping.UserTypeResolver;
@@ -43,24 +44,27 @@ import org.springframework.data.cassandra.domain.AddressType;
 import org.springframework.data.cassandra.domain.Person;
 import org.springframework.data.cassandra.repository.Consistency;
 import org.springframework.data.cassandra.repository.Query;
-import org.springframework.data.cassandra.support.UserTypeBuilder;
+import org.springframework.data.cassandra.support.UserDefinedTypeBuilder;
+import org.springframework.data.expression.ValueExpressionParser;
 import org.springframework.data.projection.ProjectionFactory;
 import org.springframework.data.projection.SpelAwareProxyProjectionFactory;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.core.RepositoryMetadata;
 import org.springframework.data.repository.core.support.AbstractRepositoryMetadata;
-import org.springframework.data.repository.query.ExtensionAwareQueryMethodEvaluationContextProvider;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.repository.query.QueryCreationException;
+import org.springframework.data.repository.query.QueryMethodValueEvaluationContextAccessor;
+import org.springframework.data.repository.query.ValueExpressionDelegate;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.util.ReflectionUtils;
 
-import com.datastax.driver.core.CodecRegistry;
-import com.datastax.driver.core.ConsistencyLevel;
-import com.datastax.driver.core.DataType;
-import com.datastax.driver.core.SimpleStatement;
-import com.datastax.driver.core.UDTValue;
-import com.datastax.driver.core.UserType;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.DefaultConsistencyLevel;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
+import com.datastax.oss.driver.api.core.data.UdtValue;
+import com.datastax.oss.driver.api.core.type.DataTypes;
+import com.datastax.oss.driver.api.core.type.UserDefinedType;
 
 /**
  * Unit tests for {@link StringBasedCassandraQuery}.
@@ -68,22 +72,24 @@ import com.datastax.driver.core.UserType;
  * @author Matthew T. Adams
  * @author Oliver Gierke
  * @author Mark Paluch
+ * @author Marcin Grzejszczak
  */
-@RunWith(MockitoJUnitRunner.class)
-public class StringBasedCassandraQueryUnitTests {
+@ExtendWith(MockitoExtension.class)
+class StringBasedCassandraQueryUnitTests {
 
-	private static final SpelExpressionParser PARSER = new SpelExpressionParser();
+	private static final ValueExpressionParser PARSER = ValueExpressionParser.create(SpelExpressionParser::new);
 
 	@Mock private CassandraOperations operations;
-	@Mock private UDTValue udtValue;
+	@Mock private UdtValue udtValue;
 	@Mock private UserTypeResolver userTypeResolver;
 
 	private RepositoryMetadata metadata;
 	private MappingCassandraConverter converter;
 	private ProjectionFactory factory;
+	private MockEnvironment environment = new MockEnvironment();
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		CassandraMappingContext mappingContext = new CassandraMappingContext();
 
@@ -99,7 +105,7 @@ public class StringBasedCassandraQueryUnitTests {
 	}
 
 	@Test // DATACASS-117
-	public void bindsIndexParameterCorrectly() {
+	void bindsIndexParameterCorrectly() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByLastname", String.class);
 		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
@@ -107,12 +113,12 @@ public class StringBasedCassandraQueryUnitTests {
 
 		SimpleStatement actual = cassandraQuery.createQuery(accessor);
 
-		assertThat(actual.toString()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
-		assertThat(actual.getObject(0)).isEqualTo("Matthews");
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
+		assertThat(actual.getPositionalValues().get(0)).isEqualTo("Matthews");
 	}
 
 	@Test // DATACASS-259
-	public void bindsIndexParameterForComposedQueryAnnotationCorrectly() {
+	void bindsIndexParameterForComposedQueryAnnotationCorrectly() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByComposedQueryAnnotation", String.class);
 		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
@@ -120,12 +126,12 @@ public class StringBasedCassandraQueryUnitTests {
 
 		SimpleStatement actual = cassandraQuery.createQuery(accessor);
 
-		assertThat(actual.toString()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
-		assertThat(actual.getObject(0)).isEqualTo("Matthews");
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
+		assertThat(actual.getPositionalValues().get(0)).isEqualTo("Matthews");
 	}
 
 	@Test // DATACASS-117
-	public void bindsAndEscapesIndexParameterCorrectly() {
+	void bindsAndEscapesIndexParameterCorrectly() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByLastname", String.class);
 		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
@@ -133,12 +139,12 @@ public class StringBasedCassandraQueryUnitTests {
 
 		SimpleStatement actual = cassandraQuery.createQuery(accessor);
 
-		assertThat(actual.toString()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
-		assertThat(actual.getObject(0)).isEqualTo("Mat\th'ew\"s");
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
+		assertThat(actual.getPositionalValues().get(0)).isEqualTo("Mat\th'ew\"s");
 	}
 
 	@Test // DATACASS-117, DATACASS-454
-	public void bindsAndEscapesBytesIndexParameterCorrectly() {
+	void bindsAndEscapesBytesIndexParameterCorrectly() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByLastname", String.class);
 		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
@@ -147,12 +153,12 @@ public class StringBasedCassandraQueryUnitTests {
 		SimpleStatement actual = cassandraQuery.createQuery(accessor);
 
 		assertThat(actual.isIdempotent()).isTrue();
-		assertThat(actual.toString()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
-		assertThat(actual.getObject(0)).isEqualTo(ByteBuffer.wrap(new byte[] { 1, 2, 3, 4 }));
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
+		assertThat(actual.getPositionalValues().get(0)).isEqualTo(ByteBuffer.wrap(new byte[] { 1, 2, 3, 4 }));
 	}
 
 	@Test // DATACASS-454
-	public void shouldConsiderNonIdempotentOverride() {
+	void shouldConsiderNonIdempotentOverride() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("nonIdempotentSelect", String.class);
 		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
@@ -164,7 +170,7 @@ public class StringBasedCassandraQueryUnitTests {
 	}
 
 	@Test // DATACASS-454
-	public void shouldNotApplyIdempotencyToNonSelectStatement() {
+	void shouldNotApplyIdempotencyToNonSelectStatement() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("nonIdempotentDelete");
 		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
@@ -176,7 +182,7 @@ public class StringBasedCassandraQueryUnitTests {
 	}
 
 	@Test // DATACASS-117
-	public void bindsIndexParameterInListCorrectly() {
+	void bindsIndexParameterInListCorrectly() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByLastNameIn", Collection.class);
 		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
@@ -184,12 +190,12 @@ public class StringBasedCassandraQueryUnitTests {
 
 		SimpleStatement actual = cassandraQuery.createQuery(accessor);
 
-		assertThat(actual.toString()).isEqualTo("SELECT * FROM person WHERE lastname IN (?);");
-		assertThat(actual.getObject(0)).isEqualTo(Arrays.asList("White", "Heisenberg"));
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE lastname IN (?);");
+		assertThat(actual.getPositionalValues().get(0)).isEqualTo(Arrays.asList("White", "Heisenberg"));
 	}
 
 	@Test // DATACASS-117
-	public void bindsIndexParameterIsListCorrectly() {
+	void bindsIndexParameterIsListCorrectly() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByLastNamesAndAge", Collection.class, int.class);
 		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
@@ -197,33 +203,33 @@ public class StringBasedCassandraQueryUnitTests {
 
 		SimpleStatement actual = cassandraQuery.createQuery(accessor);
 
-		assertThat(actual.toString()).isEqualTo("SELECT * FROM person WHERE lastnames = [?] AND age = ?;");
-		assertThat(actual.getObject(0)).isEqualTo(Arrays.asList("White", "Heisenberg"));
-		assertThat(actual.getObject(1)).isEqualTo(42);
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE lastnames = [?] AND age = ?;");
+		assertThat(actual.getPositionalValues().get(0)).isEqualTo(Arrays.asList("White", "Heisenberg"));
+		assertThat(actual.getPositionalValues().get(1)).isEqualTo(42);
 	}
 
-	@Test(expected = QueryCreationException.class) // DATACASS-117
-	public void referencingUnknownIndexedParameterShouldFail() {
+	@Test // DATACASS-117
+	void referencingUnknownIndexedParameterShouldFail() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByOutOfBoundsLastNameShouldFail", String.class);
 		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
 				cassandraQuery.getQueryMethod(), "Hello");
 
-		cassandraQuery.createQuery(accessor);
+		assertThatExceptionOfType(QueryCreationException.class).isThrownBy(() -> cassandraQuery.createQuery(accessor));
 	}
 
-	@Test(expected = QueryCreationException.class) // DATACASS-117
-	public void referencingUnknownNamedParameterShouldFail() {
+	@Test // DATACASS-117
+	void referencingUnknownNamedParameterShouldFail() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByUnknownParameterLastNameShouldFail", String.class);
 		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
 				cassandraQuery.getQueryMethod(), "Hello");
 
-		cassandraQuery.createQuery(accessor);
+		assertThatExceptionOfType(QueryCreationException.class).isThrownBy(() -> cassandraQuery.createQuery(accessor));
 	}
 
 	@Test // DATACASS-117
-	public void bindsIndexParameterInSetCorrectly() {
+	void bindsIndexParameterInSetCorrectly() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByLastNameIn", Collection.class);
 		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
@@ -231,12 +237,12 @@ public class StringBasedCassandraQueryUnitTests {
 
 		SimpleStatement actual = cassandraQuery.createQuery(accessor);
 
-		assertThat(actual.toString()).isEqualTo("SELECT * FROM person WHERE lastname IN (?);");
-		assertThat(actual.getObject(0)).isEqualTo(new HashSet<>(Arrays.asList("White", "Heisenberg")));
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE lastname IN (?);");
+		assertThat(actual.getPositionalValues().get(0)).isEqualTo(new HashSet<>(Arrays.asList("White", "Heisenberg")));
 	}
 
 	@Test // DATACASS-117
-	public void bindsNamedParameterCorrectly() {
+	void bindsNamedParameterCorrectly() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByNamedParameter", String.class, String.class);
 		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
@@ -244,12 +250,12 @@ public class StringBasedCassandraQueryUnitTests {
 
 		SimpleStatement actual = cassandraQuery.createQuery(accessor);
 
-		assertThat(actual.toString()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
-		assertThat(actual.getObject(0)).isEqualTo("Matthews");
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
+		assertThat(actual.getPositionalValues().get(0)).isEqualTo("Matthews");
 	}
 
 	@Test // DATACASS-117
-	public void bindsIndexExpressionParameterCorrectly() {
+	void bindsIndexExpressionParameterCorrectly() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByIndexExpressionParameter", String.class);
 		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
@@ -257,12 +263,12 @@ public class StringBasedCassandraQueryUnitTests {
 
 		SimpleStatement actual = cassandraQuery.createQuery(accessor);
 
-		assertThat(actual.toString()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
-		assertThat(actual.getObject(0)).isEqualTo("Matthews");
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
+		assertThat(actual.getPositionalValues().get(0)).isEqualTo("Matthews");
 	}
 
 	@Test // DATACASS-117
-	public void bindsExpressionParameterCorrectly() {
+	void bindsExpressionParameterCorrectly() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByExpressionParameter", String.class);
 		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
@@ -270,12 +276,12 @@ public class StringBasedCassandraQueryUnitTests {
 
 		SimpleStatement actual = cassandraQuery.createQuery(accessor);
 
-		assertThat(actual.toString()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
-		assertThat(actual.getObject(0)).isEqualTo("Matthews");
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
+		assertThat(actual.getPositionalValues().get(0)).isEqualTo("Matthews");
 	}
 
 	@Test // DATACASS-117
-	public void bindsConditionalExpressionParameterCorrectly() {
+	void bindsConditionalExpressionParameterCorrectly() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByConditionalExpressionParameter", String.class);
 		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
@@ -283,19 +289,34 @@ public class StringBasedCassandraQueryUnitTests {
 
 		SimpleStatement actual = cassandraQuery.createQuery(accessor);
 
-		assertThat(actual.toString()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
-		assertThat(actual.getObject(0)).isEqualTo("Woohoo");
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
+		assertThat(actual.getPositionalValues().get(0)).isEqualTo("Woohoo");
 
 		accessor = new CassandraParametersParameterAccessor(cassandraQuery.getQueryMethod(), "Walter");
 
 		actual = cassandraQuery.createQuery(accessor);
 
-		assertThat(actual.toString()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
-		assertThat(actual.getObject(0)).isEqualTo("Walter");
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
+		assertThat(actual.getPositionalValues().get(0)).isEqualTo("Walter");
+	}
+
+	@Test // GH-1522
+	void bindsPropertyPlaceholderParameterCorrectly() {
+
+		environment.withProperty("someParam", "Walter");
+
+		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByPropertyPlaceholder");
+		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
+				cassandraQuery.getQueryMethod());
+
+		SimpleStatement actual = cassandraQuery.createQuery(accessor);
+
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
+		assertThat(actual.getPositionalValues().get(0)).isEqualTo("Walter");
 	}
 
 	@Test // DATACASS-117
-	public void bindsReusedParametersCorrectly() {
+	void bindsReusedParametersCorrectly() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByLastnameUsedTwice", String.class);
 		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
@@ -303,13 +324,13 @@ public class StringBasedCassandraQueryUnitTests {
 
 		SimpleStatement actual = cassandraQuery.createQuery(accessor);
 
-		assertThat(actual.toString()).isEqualTo("SELECT * FROM person WHERE lastname = ? or firstname = ?;");
-		assertThat(actual.getObject(0)).isEqualTo("Matthews");
-		assertThat(actual.getObject(1)).isEqualTo("Matthews");
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE lastname = ? or firstname = ?;");
+		assertThat(actual.getPositionalValues().get(0)).isEqualTo("Matthews");
+		assertThat(actual.getPositionalValues().get(1)).isEqualTo("Matthews");
 	}
 
 	@Test // DATACASS-117
-	public void bindsMultipleParametersCorrectly() {
+	void bindsMultipleParametersCorrectly() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByLastnameAndFirstname", String.class, String.class);
 		CassandraParametersParameterAccessor accessor = new CassandraParametersParameterAccessor(
@@ -317,63 +338,86 @@ public class StringBasedCassandraQueryUnitTests {
 
 		SimpleStatement actual = cassandraQuery.createQuery(accessor);
 
-		assertThat(actual.toString()).isEqualTo("SELECT * FROM person WHERE lastname=? AND firstname=?;");
-		assertThat(actual.getObject(0)).isEqualTo("Matthews");
-		assertThat(actual.getObject(1)).isEqualTo("John");
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE lastname=? AND firstname=?;");
+		assertThat(actual.getPositionalValues().get(0)).isEqualTo("Matthews");
+		assertThat(actual.getPositionalValues().get(1)).isEqualTo("John");
 	}
 
 	@Test // DATACASS-296
-	public void bindsConvertedParameterCorrectly() {
+	void bindsConvertedParameterCorrectly() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByCreatedDate", LocalDate.class);
 		CassandraParameterAccessor accessor = new ConvertingParameterAccessor(converter,
-				new CassandraParametersParameterAccessor(cassandraQuery.getQueryMethod(), LocalDate.of(2010, 7, 4)),
-				CodecRegistry.DEFAULT_INSTANCE);
+				new CassandraParametersParameterAccessor(cassandraQuery.getQueryMethod(), LocalDate.of(2010, 7, 4)));
 
 		SimpleStatement actual = cassandraQuery.createQuery(accessor);
 
-		assertThat(actual.toString()).isEqualTo("SELECT * FROM person WHERE createdDate=?;");
-		assertThat(actual.getObject(0)).isInstanceOf(com.datastax.driver.core.LocalDate.class);
-		assertThat(actual.getObject(0).toString()).isEqualTo("2010-07-04");
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE createdDate=?;");
+		assertThat(actual.getPositionalValues().get(0)).isInstanceOf(LocalDate.class);
+		assertThat(actual.getPositionalValues().get(0).toString()).isEqualTo("2010-07-04");
 	}
 
 	@Test // DATACASS-172
-	public void bindsMappedUdtPropertyCorrectly() throws Exception {
+	void bindsMappedUdtPropertyCorrectly() {
 
-		UserType addressType = UserTypeBuilder.forName("address").withField("city", DataType.varchar())
-				.withField("country", DataType.varchar()).build();
+		UserDefinedType addressType = UserDefinedTypeBuilder.forName("address").withField("city", DataTypes.TEXT)
+				.withField("country", DataTypes.TEXT).build();
 
-		when(userTypeResolver.resolveType(CqlIdentifier.of("address"))).thenReturn(addressType);
+		when(userTypeResolver.resolveType(CqlIdentifier.fromCql("address"))).thenReturn(addressType);
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByMainAddress", AddressType.class);
 		CassandraParameterAccessor accessor = new ConvertingParameterAccessor(converter,
-				new CassandraParametersParameterAccessor(cassandraQuery.getQueryMethod(), new AddressType()),
-				CodecRegistry.DEFAULT_INSTANCE);
+				new CassandraParametersParameterAccessor(cassandraQuery.getQueryMethod(), new AddressType()));
 
-		SimpleStatement stringQuery = cassandraQuery.createQuery(accessor);
+		SimpleStatement actual = cassandraQuery.createQuery(accessor);
 
-		assertThat(stringQuery.toString()).isEqualTo("SELECT * FROM person WHERE address=?;");
-		assertThat(stringQuery.getObject(0).toString()).isEqualTo("{city:NULL,country:NULL}");
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE address=?;");
+		assertThat(actual.getPositionalValues().get(0)).isInstanceOf(UdtValue.class);
+	}
+
+	@Test // GH-1473
+	void bindsCollectionOfMappedUdtPropertyCorrectly() {
+
+		UserDefinedType addressType = UserDefinedTypeBuilder.forName("address").withField("city", DataTypes.TEXT)
+				.withField("country", DataTypes.TEXT).build();
+
+		when(userTypeResolver.resolveType(CqlIdentifier.fromCql("address"))).thenReturn(addressType);
+
+		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByMainAddress", Set.class);
+		CassandraParameterAccessor accessor = new ConvertingParameterAccessor(converter,
+				new CassandraParametersParameterAccessor(cassandraQuery.getQueryMethod(), Set.of(new AddressType())));
+
+		SimpleStatement actual = cassandraQuery.createQuery(accessor);
+
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE address=?;");
+		assertThat(actual.getPositionalValues().get(0)).isInstanceOf(Set.class);
+
+		Set<?> set = (Set<?>) actual.getPositionalValues().get(0);
+		assertThat(set.iterator().next()).isInstanceOf(UdtValue.class);
 	}
 
 	@Test // DATACASS-172
-	public void bindsUdtValuePropertyCorrectly() throws Exception {
+	void bindsUdtValuePropertyCorrectly() {
 
-		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByMainAddress", UDTValue.class);
+		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByMainAddress", UdtValue.class);
+
+		UserDefinedType addressType = UserDefinedTypeBuilder.forName("address").withField("city", DataTypes.TEXT)
+				.withField("country", DataTypes.TEXT).build();
+		when(udtValue.getType()).thenReturn(addressType);
+
 		CassandraParameterAccessor accessor = new ConvertingParameterAccessor(converter,
-				new CassandraParametersParameterAccessor(cassandraQuery.getQueryMethod(), udtValue),
-				CodecRegistry.DEFAULT_INSTANCE);
+				new CassandraParametersParameterAccessor(cassandraQuery.getQueryMethod(), udtValue));
 
-		SimpleStatement stringQuery = cassandraQuery.createQuery(accessor);
+		SimpleStatement actual = cassandraQuery.createQuery(accessor);
 
-		assertThat(stringQuery.toString()).isEqualTo("SELECT * FROM person WHERE address=?;");
-		assertThat(stringQuery.getObject(0).toString()).isEqualTo("udtValue");
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE address=?;");
+		assertThat(actual.getPositionalValues().get(0).toString()).isEqualTo("udtValue");
 	}
 
 	@Test // DATACASS-146
-	public void shouldApplyQueryOptions() {
+	void shouldApplyQueryOptions() {
 
-		QueryOptions queryOptions = QueryOptions.builder().fetchSize(777).build();
+		QueryOptions queryOptions = QueryOptions.builder().pageSize(777).build();
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByLastname", QueryOptions.class, String.class);
 
@@ -382,13 +426,13 @@ public class StringBasedCassandraQueryUnitTests {
 
 		SimpleStatement actual = cassandraQuery.createQuery(parameterAccessor);
 
-		assertThat(actual.toString()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
-		assertThat(actual.getObject(0)).isEqualTo("Matthews");
-		assertThat(actual.getFetchSize()).isEqualTo(777);
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
+		assertThat(actual.getPositionalValues().get(0)).isEqualTo("Matthews");
+		assertThat(actual.getPageSize()).isEqualTo(777);
 	}
 
 	@Test // DATACASS-146
-	public void shouldApplyConsistencyLevel() {
+	void shouldApplyConsistencyLevel() {
 
 		StringBasedCassandraQuery cassandraQuery = getQueryMethod("findByLastname", String.class);
 
@@ -397,9 +441,9 @@ public class StringBasedCassandraQueryUnitTests {
 
 		SimpleStatement actual = cassandraQuery.createQuery(parameterAccessor);
 
-		assertThat(actual.toString()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
-		assertThat(actual.getObject(0)).isEqualTo("Matthews");
-		assertThat(actual.getConsistencyLevel()).isEqualTo(ConsistencyLevel.LOCAL_ONE);
+		assertThat(actual.getQuery()).isEqualTo("SELECT * FROM person WHERE lastname = ?;");
+		assertThat(actual.getPositionalValues().get(0)).isEqualTo("Matthews");
+		assertThat(actual.getConsistencyLevel()).isEqualTo(DefaultConsistencyLevel.LOCAL_ONE);
 	}
 
 	private StringBasedCassandraQuery getQueryMethod(String name, Class<?>... args) {
@@ -409,23 +453,25 @@ public class StringBasedCassandraQueryUnitTests {
 		CassandraQueryMethod queryMethod = new CassandraQueryMethod(method, metadata, factory,
 				converter.getMappingContext());
 
-		return new StringBasedCassandraQuery(queryMethod, operations, PARSER,
-				ExtensionAwareQueryMethodEvaluationContextProvider.DEFAULT);
+		QueryMethodValueEvaluationContextAccessor accessor = new QueryMethodValueEvaluationContextAccessor(
+				environment, Collections.emptySet());
+
+		return new StringBasedCassandraQuery(queryMethod, operations, new ValueExpressionDelegate(accessor, PARSER));
 	}
 
 	@SuppressWarnings("unused")
 	private interface SampleRepository extends Repository<Person, String> {
 
 		@Query(value = "SELECT * FROM person WHERE lastname = ?0;")
-		@Consistency(ConsistencyLevel.LOCAL_ONE)
+		@Consistency(DefaultConsistencyLevel.LOCAL_ONE)
 		Person findByLastname(String lastname);
 
 		@Query(value = "SELECT * FROM person WHERE lastname = ?0;", idempotent = Query.Idempotency.NON_IDEMPOTENT)
-		@Consistency(ConsistencyLevel.LOCAL_ONE)
+		@Consistency(DefaultConsistencyLevel.LOCAL_ONE)
 		Person nonIdempotentSelect(String lastname);
 
 		@Query(value = "DELETE FROM person")
-		@Consistency(ConsistencyLevel.LOCAL_ONE)
+		@Consistency(DefaultConsistencyLevel.LOCAL_ONE)
 		Person nonIdempotentDelete();
 
 		@Query("SELECT * FROM person WHERE lastname = ?0;")
@@ -458,6 +504,9 @@ public class StringBasedCassandraQueryUnitTests {
 		@Query("SELECT * FROM person WHERE lastname = :#{#lastname == 'Matthews' ? 'Woohoo' : #lastname};")
 		Person findByConditionalExpressionParameter(@Param("lastname") String lastname);
 
+		@Query("SELECT * FROM person WHERE lastname = :${someParam};")
+		Person findByPropertyPlaceholder();
+
 		@Query("SELECT * FROM person WHERE lastname=?0 AND firstname=?1;")
 		Person findByLastnameAndFirstname(String lastname, String firstname);
 
@@ -468,7 +517,10 @@ public class StringBasedCassandraQueryUnitTests {
 		Person findByMainAddress(AddressType address);
 
 		@Query("SELECT * FROM person WHERE address=?0;")
-		Person findByMainAddress(UDTValue udtValue);
+		Person findByMainAddress(Set<AddressType> address);
+
+		@Query("SELECT * FROM person WHERE address=?0;")
+		Person findByMainAddress(UdtValue UdtValue);
 
 		@ComposedQueryAnnotation
 		Person findByComposedQueryAnnotation(String lastname);
@@ -477,7 +529,7 @@ public class StringBasedCassandraQueryUnitTests {
 
 	@Retention(RetentionPolicy.RUNTIME)
 	@Query("SELECT * FROM person WHERE lastname = ?0;")
-	@interface ComposedQueryAnnotation {
+	private @interface ComposedQueryAnnotation {
 	}
 
 }

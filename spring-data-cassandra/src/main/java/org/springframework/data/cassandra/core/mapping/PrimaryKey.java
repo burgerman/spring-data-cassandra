@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,16 +21,17 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
+import org.springframework.core.annotation.AliasFor;
 import org.springframework.data.annotation.Id;
 
 /**
  * Identifies the primary key field of the entity, which may be of a basic type or of a type that represents a composite
  * primary key class. This field corresponds to the {@code PRIMARY KEY} of the corresponding Cassandra table. Only one
  * field in a given type hierarchy may be annotated with this annotation.
- * <p/>
+ * <p>
  * Remember, if the Cassandra table has multiple primary key columns, then you must define a class annotated with
  * {@link PrimaryKeyClass} to represent the primary key!
- * <p/>
+ * <p>
  * Use {@link PrimaryKeyColumn} in conjunction with {@link Id} to specify extended primary key column properties.
  *
  * @author Alex Shvid
@@ -43,15 +44,23 @@ import org.springframework.data.annotation.Id;
 @Retention(value = RetentionPolicy.RUNTIME)
 @Target(value = { ElementType.ANNOTATION_TYPE, ElementType.FIELD, ElementType.METHOD })
 @Id
+@Column
 public @interface PrimaryKey {
 
 	/**
 	 * The column name for the primary key if it is of a simple type, else ignored.
 	 */
+	@AliasFor(annotation = Column.class, attribute = "value")
 	String value() default "";
 
 	/**
 	 * Whether to cause the column name to be force-quoted if the primary key is of a simple type, else ignored.
+	 *
+	 * @deprecated since 3.0. The column name gets converted into {@link com.datastax.oss.driver.api.core.CqlIdentifier}
+	 *             hence it no longer requires an indication whether the name should be quoted.
+	 * @see com.datastax.oss.driver.api.core.CqlIdentifier#fromInternal(String)
 	 */
+	@Deprecated
+	@AliasFor(annotation = Column.class, attribute = "forceQuote")
 	boolean forceQuote() default false;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,6 @@ package org.springframework.data.cassandra.core.convert;
 
 import static org.assertj.core.api.Assertions.*;
 
-import lombok.Data;
-
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Currency;
@@ -26,17 +24,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
 import org.springframework.data.cassandra.config.SchemaAction;
-import org.springframework.data.cassandra.core.cql.generator.CreateUserTypeCqlGenerator;
+import org.springframework.data.cassandra.core.StatementFactory;
+import org.springframework.data.cassandra.core.cql.WriteOptions;
+import org.springframework.data.cassandra.core.cql.generator.CqlGenerator;
 import org.springframework.data.cassandra.core.cql.keyspace.CreateUserTypeSpecification;
+import org.springframework.data.cassandra.core.cql.util.StatementBuilder;
 import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
 import org.springframework.data.cassandra.core.mapping.Element;
 import org.springframework.data.cassandra.core.mapping.Table;
@@ -45,26 +47,22 @@ import org.springframework.data.cassandra.core.mapping.UserDefinedType;
 import org.springframework.data.cassandra.domain.AllPossibleTypes;
 import org.springframework.data.cassandra.repository.support.AbstractSpringDataEmbeddedCassandraIntegrationTest;
 import org.springframework.data.cassandra.repository.support.IntegrationTestConfig;
-import org.springframework.data.convert.CustomConversions;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
-import com.datastax.driver.core.DataType;
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.TupleType;
-import com.datastax.driver.core.TupleValue;
-import com.datastax.driver.core.querybuilder.Insert;
-import com.datastax.driver.core.querybuilder.QueryBuilder;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
+import com.datastax.oss.driver.api.core.cql.Row;
+import com.datastax.oss.driver.api.core.data.TupleValue;
+import com.datastax.oss.driver.api.core.type.DataTypes;
+import com.datastax.oss.driver.api.core.type.TupleType;
+import com.datastax.oss.driver.api.querybuilder.insert.RegularInsert;
 
 /**
  * Integration tests for mapped tuple values through {@link MappingCassandraConverter}.
  *
  * @author Mark Paluch
  */
-@RunWith(SpringJUnit4ClassRunner.class)
-@ContextConfiguration
+@SpringJUnitConfig
 public class MappingCassandraConverterTupleIntegrationTests extends AbstractSpringDataEmbeddedCassandraIntegrationTest {
 
 	private static AtomicBoolean initialized = new AtomicBoolean();
@@ -83,17 +81,17 @@ public class MappingCassandraConverterTupleIntegrationTests extends AbstractSpri
 		}
 
 		@Override
-		public CustomConversions customConversions() {
+		public CassandraCustomConversions customConversions() {
 			return new CassandraCustomConversions(
 					Arrays.asList(new StringToCurrencyConverter(), new CurrencyToStringConverter()));
 		}
 	}
 
 	@Autowired MappingCassandraConverter converter;
-	@Autowired Session session;
+	@Autowired CqlSession session;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		if (initialized.compareAndSet(false, true)) {
 
@@ -101,16 +99,18 @@ public class MappingCassandraConverterTupleIntegrationTests extends AbstractSpri
 			this.session.execute("DROP TABLE IF EXISTS person;");
 
 			CassandraMappingContext mappingContext = converter.getMappingContext();
+			SchemaFactory schemaFactory = new SchemaFactory(converter);
 
-			CreateUserTypeSpecification createAddress = mappingContext
+			CreateUserTypeSpecification createAddress = schemaFactory
 					.getCreateUserTypeSpecificationFor(mappingContext.getRequiredPersistentEntity(AddressUserType.class));
 
-			this.session.execute(CreateUserTypeCqlGenerator.toCql(createAddress));
+			this.session.execute(CqlGenerator.toCql(createAddress));
 
 			String ddl = "CREATE TABLE person (id text, " + "tuplevalue tuple<text,int>," //
 					+ "mapoftuples map<text, frozen<tuple<address, list<text>, text>>>, " //
 					+ "mapoftuplevalues map<text, frozen<tuple<text, int>>>, " //
 					+ "mappedtuple frozen<tuple<address, list<text>, text>>, " //
+					+ "mappedtuplewithvalue frozen<tuple<address, list<text>, text>>, " //
 					+ "mappedtuples list<frozen<tuple<address, list<text>, text>>>, " //
 					+ "PRIMARY KEY (id));";
 			this.session.execute(ddl);
@@ -120,19 +120,20 @@ public class MappingCassandraConverterTupleIntegrationTests extends AbstractSpri
 	}
 
 	@Test // DATACASS-651
-	public void shouldInsertRowWithTuple() {
+	void shouldInsertRowWithTuple() {
 
-		TupleType tupleType = this.session.getCluster().getMetadata().newTupleType(DataType.varchar(), DataType.cint());
+		TupleType tupleType = DataTypes.tupleOf(DataTypes.TEXT, DataTypes.INT);
 
 		Person person = new Person();
 
 		person.setId("foo");
 		person.setTupleValue(tupleType.newValue("hello", 42));
 
-		Insert insert = QueryBuilder.insertInto("person");
+		StatementFactory statementFactory = new StatementFactory(new UpdateMapper(converter));
 
-		this.converter.write(person, insert);
-		this.session.execute(insert);
+		StatementBuilder<RegularInsert> insert = statementFactory.insert(person, WriteOptions.empty());
+
+		this.session.execute(insert.build());
 
 		ResultSet rows = this.session.execute("SELECT * FROM person");
 		Row row = rows.one();
@@ -141,15 +142,13 @@ public class MappingCassandraConverterTupleIntegrationTests extends AbstractSpri
 	}
 
 	@Test // DATACASS-523
-	public void shouldInsertRowWithComplexTuple() {
+	void shouldInsertRowWithComplexTuple() {
 
 		Person person = new Person();
 
 		person.setId("foo");
 
-		AddressUserType userType = new AddressUserType();
-
-		userType.setZip("myzip");
+		AddressUserType userType = new AddressUserType("myzip");
 
 		MappedTuple tuple = new MappedTuple();
 
@@ -160,14 +159,15 @@ public class MappingCassandraConverterTupleIntegrationTests extends AbstractSpri
 		person.setMappedTuple(tuple);
 		person.setMappedTuples(Collections.singletonList(tuple));
 
-		Insert insert = QueryBuilder.insertInto("person");
+		StatementFactory statementFactory = new StatementFactory(new UpdateMapper(converter));
 
-		this.converter.write(person, insert);
-		this.session.execute(insert);
+		StatementBuilder<RegularInsert> insert = statementFactory.insert(person, WriteOptions.empty());
+
+		this.session.execute(insert.build());
 	}
 
 	@Test // DATACASS-523
-	public void shouldReadRowWithComplexTuple() {
+	void shouldReadRowWithComplexTuple() {
 
 		this.session.execute("INSERT INTO person (id,mappedtuple,mappedtuples) VALUES (" + "'foo'," //
 				+ "({zip:'myzip'},['EUR','USD'],'bar')," //
@@ -189,7 +189,7 @@ public class MappingCassandraConverterTupleIntegrationTests extends AbstractSpri
 	}
 
 	@Test // DATACASS-651
-	public void shouldInsertRowWithTupleMap() {
+	void shouldInsertRowWithTupleMap() {
 
 		Person person = new Person();
 		person.setId("foo");
@@ -200,13 +200,14 @@ public class MappingCassandraConverterTupleIntegrationTests extends AbstractSpri
 
 		person.setMapOfTuples(Collections.singletonMap("foo", tuple));
 
-		TupleType tupleType = this.session.getCluster().getMetadata().newTupleType(DataType.varchar(), DataType.cint());
+		TupleType tupleType = DataTypes.tupleOf(DataTypes.TEXT, DataTypes.INT);
 		person.setMapOfTupleValues(Collections.singletonMap("mykey", tupleType.newValue("hello", 42)));
 
-		Insert insert = QueryBuilder.insertInto("person");
+		StatementFactory statementFactory = new StatementFactory(new UpdateMapper(converter));
 
-		this.converter.write(person, insert);
-		this.session.execute(insert);
+		StatementBuilder<RegularInsert> insert = statementFactory.insert(person, WriteOptions.empty());
+
+		this.session.execute(insert.build());
 
 		ResultSet rows = this.session.execute("SELECT * FROM person");
 		Row row = rows.one();
@@ -216,7 +217,7 @@ public class MappingCassandraConverterTupleIntegrationTests extends AbstractSpri
 	}
 
 	@Test // DATACASS-651
-	public void shouldReadRowWithMapOfTuples() {
+	void shouldReadRowWithMapOfTuples() {
 
 		this.session.execute("INSERT INTO person (id,mapoftuples,mapoftuplevalues) VALUES "
 				+ "('foo',{'foo':(NULL,['EUR','USD'],'bar')},{'mykey':('hello',42)});\n");
@@ -233,7 +234,20 @@ public class MappingCassandraConverterTupleIntegrationTests extends AbstractSpri
 		assertThat(mappedTuple.getCurrency()).containsSequence(Currency.getInstance("EUR"), Currency.getInstance("USD"));
 	}
 
-	@Data
+	@Test // DATACASS-741
+	void shouldReadTupleWithValue() {
+
+		this.session.execute("INSERT INTO person (id,mappedtuplewithvalue) VALUES (" + "'foo'," //
+				+ "({zip:'myzip'},['EUR','USD'],'bar'));\n");
+
+		ResultSet resultSet = this.session.execute("SELECT * FROM person;");
+
+		Person person = this.converter.read(Person.class, resultSet.one());
+
+		MappedTupleWithValue mappedTuple = person.getMappedTupleWithValue();
+		assertThat(mappedTuple.myName).isEqualTo("bar");
+	}
+
 	@Table
 	static class Person {
 
@@ -241,24 +255,130 @@ public class MappingCassandraConverterTupleIntegrationTests extends AbstractSpri
 
 		TupleValue tupleValue;
 		MappedTuple mappedTuple;
+		MappedTupleWithValue mappedTupleWithValue;
 		List<MappedTuple> mappedTuples;
 		Map<String, MappedTuple> mapOfTuples;
 		Map<String, TupleValue> mapOfTupleValues;
+
+		public String getId() {
+			return this.id;
+		}
+
+		public TupleValue getTupleValue() {
+			return this.tupleValue;
+		}
+
+		public MappedTuple getMappedTuple() {
+			return this.mappedTuple;
+		}
+
+		public MappedTupleWithValue getMappedTupleWithValue() {
+			return this.mappedTupleWithValue;
+		}
+
+		public List<MappedTuple> getMappedTuples() {
+			return this.mappedTuples;
+		}
+
+		public Map<String, MappedTuple> getMapOfTuples() {
+			return this.mapOfTuples;
+		}
+
+		public Map<String, TupleValue> getMapOfTupleValues() {
+			return this.mapOfTupleValues;
+		}
+
+		public void setId(String id) {
+			this.id = id;
+		}
+
+		public void setTupleValue(TupleValue tupleValue) {
+			this.tupleValue = tupleValue;
+		}
+
+		public void setMappedTuple(MappedTuple mappedTuple) {
+			this.mappedTuple = mappedTuple;
+		}
+
+		public void setMappedTupleWithValue(MappedTupleWithValue mappedTupleWithValue) {
+			this.mappedTupleWithValue = mappedTupleWithValue;
+		}
+
+		public void setMappedTuples(List<MappedTuple> mappedTuples) {
+			this.mappedTuples = mappedTuples;
+		}
+
+		public void setMapOfTuples(Map<String, MappedTuple> mapOfTuples) {
+			this.mapOfTuples = mapOfTuples;
+		}
+
+		public void setMapOfTupleValues(Map<String, TupleValue> mapOfTupleValues) {
+			this.mapOfTupleValues = mapOfTupleValues;
+		}
 	}
 
-	@Data
 	@Tuple
 	static class MappedTuple {
 
 		@Element(0) AddressUserType addressUserType;
 		@Element(1) List<Currency> currency;
 		@Element(2) String name;
+
+		public AddressUserType getAddressUserType() {
+			return addressUserType;
+		}
+
+		public void setAddressUserType(AddressUserType addressUserType) {
+			this.addressUserType = addressUserType;
+		}
+
+		public List<Currency> getCurrency() {
+			return currency;
+		}
+
+		public void setCurrency(List<Currency> currency) {
+			this.currency = currency;
+		}
+
+		public String getName() {
+			return name;
+		}
+
+		public void setName(String name) {
+			this.name = name;
+		}
+	}
+
+	@Tuple
+	static class MappedTupleWithValue {
+
+		private final @Element(0) AddressUserType addressUserType;
+		private final @Element(1) List<Currency> currency;
+		private final @Transient String myName;
+
+		public MappedTupleWithValue(AddressUserType addressUserType, List<Currency> currency,
+				@Value("#root.getString(2)") String myName) {
+			this.addressUserType = addressUserType;
+			this.currency = currency;
+			this.myName = myName;
+		}
 	}
 
 	@UserDefinedType("address")
-	@Data
 	static class AddressUserType {
 		String zip;
+
+		public AddressUserType(String zip) {
+			this.zip = zip;
+		}
+
+		public String getZip() {
+			return zip;
+		}
+
+		public void setZip(String zip) {
+			this.zip = zip;
+		}
 	}
 
 	private static class StringToCurrencyConverter implements Converter<String, Currency> {

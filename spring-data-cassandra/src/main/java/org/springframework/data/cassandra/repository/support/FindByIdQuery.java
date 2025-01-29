@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 the original author or authors.
+ * Copyright 2019-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,10 @@ import java.util.Iterator;
 import java.util.List;
 
 import org.springframework.dao.InvalidDataAccessApiUsageException;
+import org.springframework.data.cassandra.core.mapping.BasicCassandraPersistentEntity;
+import org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty;
 import org.springframework.data.cassandra.core.mapping.MapId;
+import org.springframework.data.mapping.context.MappingContext;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
@@ -85,9 +88,11 @@ class FindByIdQuery {
 	 * Check if the {@link Iterable} of {@code ID}s contains composite keys.
 	 *
 	 * @param ids
+	 * @param mappingContext
 	 * @return
 	 */
-	static boolean hasCompositeKeys(Iterable<?> ids) {
+	static boolean hasCompositeKeys(Iterable<?> ids,
+			MappingContext<BasicCassandraPersistentEntity<?>, CassandraPersistentProperty> mappingContext) {
 
 		Assert.notNull(ids, "The given Iterable of ids must not be null");
 
@@ -96,9 +101,15 @@ class FindByIdQuery {
 			if (id instanceof MapId) {
 
 				MapId mapId = (MapId) id;
-				Iterator<String> iterator = mapId.keySet().iterator();
 
 				if (mapId.size() > 1) {
+					return true;
+				}
+			} else {
+
+				BasicCassandraPersistentEntity<?> persistentEntity = mappingContext.getPersistentEntity(id.getClass());
+
+				if (persistentEntity != null && persistentEntity.isCompositePrimaryKey()) {
 					return true;
 				}
 			}

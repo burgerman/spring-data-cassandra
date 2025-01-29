@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import org.springframework.lang.Nullable;
 
-import com.datastax.driver.core.DataType;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.type.DataType;
 
 /**
  * Object to configure a {@code ALTER TYPE} specification.
@@ -31,12 +32,12 @@ import com.datastax.driver.core.DataType;
  * @since 1.5
  * @see CqlIdentifier
  */
-public class AlterUserTypeSpecification extends UserTypeNameSpecification {
+public class AlterUserTypeSpecification extends UserTypeNameSpecification implements CqlSpecification {
 
 	private final List<ColumnChangeSpecification> changes = new ArrayList<>();
 
-	private AlterUserTypeSpecification(CqlIdentifier name) {
-		super(name);
+	private AlterUserTypeSpecification(@Nullable CqlIdentifier keyspace, CqlIdentifier name) {
+		super(keyspace, name);
 	}
 
 	/**
@@ -47,18 +48,32 @@ public class AlterUserTypeSpecification extends UserTypeNameSpecification {
 	 * @return a new {@link AlterUserTypeSpecification}.
 	 */
 	public static AlterUserTypeSpecification alterType(String typeName) {
-		return alterType(CqlIdentifier.of(typeName));
+		return alterType(CqlIdentifier.fromCql(typeName));
 	}
 
 	/**
 	 * Entry point into the {@link AlterUserTypeSpecification}'s fluent API given {@code typeName} to alter a type.
 	 * Convenient if imported statically.
 	 *
-	 * @param typeName must not be {@literal null} or empty.
+	 * @param typeName must not be {@literal null}.
 	 * @return a new {@link AlterUserTypeSpecification}.
 	 */
-	private static AlterUserTypeSpecification alterType(CqlIdentifier typeName) {
-		return new AlterUserTypeSpecification(typeName);
+	public static AlterUserTypeSpecification alterType(CqlIdentifier typeName) {
+		return new AlterUserTypeSpecification(null, typeName);
+	}
+
+	/**
+	 * Entry point into the {@link AlterUserTypeSpecification}'s fluent API given {@code typeName} to alter a type.
+	 * Convenient if imported statically. Uses the default keyspace if {@code keyspace} is null; otherwise, of the
+	 * {@code keyspace} is not {@link null}, then the table name is prefixed with {@code keyspace}.
+	 *
+	 * @param keyspace can be {@literal null}.
+	 * @param typeName must not be {@literal null}.
+	 * @return a new {@link AlterUserTypeSpecification}.
+	 * @since 4.4
+	 */
+	public static AlterUserTypeSpecification alterType(@Nullable CqlIdentifier keyspace, CqlIdentifier typeName) {
+		return new AlterUserTypeSpecification(keyspace, typeName);
 	}
 
 	/**
@@ -69,7 +84,7 @@ public class AlterUserTypeSpecification extends UserTypeNameSpecification {
 	 * @return {@code this} {@link AlterUserTypeSpecification}.
 	 */
 	public AlterUserTypeSpecification add(String field, DataType type) {
-		return add(CqlIdentifier.of(field), type);
+		return add(CqlIdentifier.fromCql(field), type);
 	}
 
 	/**
@@ -91,7 +106,7 @@ public class AlterUserTypeSpecification extends UserTypeNameSpecification {
 	 * @return {@code this} {@link AlterUserTypeSpecification}.
 	 */
 	public AlterUserTypeSpecification alter(String field, DataType type) {
-		return alter(CqlIdentifier.of(field), type);
+		return alter(CqlIdentifier.fromCql(field), type);
 	}
 
 	/**
@@ -113,7 +128,7 @@ public class AlterUserTypeSpecification extends UserTypeNameSpecification {
 	 * @return {@code this} {@link AlterUserTypeSpecification}.
 	 */
 	public AlterUserTypeSpecification rename(String from, String to) {
-		return rename(CqlIdentifier.of(from), CqlIdentifier.of(to));
+		return rename(CqlIdentifier.fromCql(from), CqlIdentifier.fromCql(to));
 	}
 
 	/**

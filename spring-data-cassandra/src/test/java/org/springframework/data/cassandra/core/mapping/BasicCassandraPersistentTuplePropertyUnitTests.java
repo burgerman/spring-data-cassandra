@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,18 +15,16 @@
  */
 package org.springframework.data.cassandra.core.mapping;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.*;
 
 import java.lang.reflect.Field;
 import java.util.Date;
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
-
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.mapping.model.Property;
-import org.springframework.data.util.ClassTypeInformation;
+import org.springframework.data.util.TypeInformation;
 import org.springframework.util.ReflectionUtils;
 
 /**
@@ -34,13 +32,11 @@ import org.springframework.util.ReflectionUtils;
  *
  * @author Mark Paluch
  */
-@RunWith(MockitoJUnitRunner.class)
-public class BasicCassandraPersistentTuplePropertyUnitTests {
-
-	@Mock TupleTypeFactory tupleTypeFactory;
+@ExtendWith(MockitoExtension.class)
+class BasicCassandraPersistentTuplePropertyUnitTests {
 
 	@Test // DATACASS-523
-	public void mappedTupleShouldNotReportColumnName() {
+	void mappedTupleShouldNotReportColumnName() {
 
 		CassandraPersistentProperty property = getPropertyFor(MappedTuple.class, "date");
 
@@ -48,7 +44,7 @@ public class BasicCassandraPersistentTuplePropertyUnitTests {
 	}
 
 	@Test // DATACASS-523
-	public void mappedTupleShouldReportOrdinal() {
+	void mappedTupleShouldReportOrdinal() {
 
 		CassandraPersistentProperty property = getPropertyFor(MappedTuple.class, "time");
 
@@ -59,16 +55,16 @@ public class BasicCassandraPersistentTuplePropertyUnitTests {
 
 		Field field = ReflectionUtils.findField(type, fieldName);
 
-		return new BasicCassandraPersistentTupleProperty(Property.of(ClassTypeInformation.from(type), field),
+		return new BasicCassandraPersistentTupleProperty(Property.of(TypeInformation.of(type), field),
 				getEntity(type), CassandraSimpleTypeHolder.HOLDER);
 	}
 
 	private <T> BasicCassandraPersistentEntity<T> getEntity(Class<T> type) {
-		return new BasicCassandraPersistentTupleEntity<>(ClassTypeInformation.from(type), tupleTypeFactory);
+		return new BasicCassandraPersistentTupleEntity<>(TypeInformation.of(type));
 	}
 
 	@Tuple
-	static class MappedTuple {
+	private static class MappedTuple {
 		@Element(0) Date date;
 		@Element(1) Date time;
 	}

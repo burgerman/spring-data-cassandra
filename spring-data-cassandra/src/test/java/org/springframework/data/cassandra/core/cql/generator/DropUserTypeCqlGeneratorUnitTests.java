@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,31 +16,43 @@
 package org.springframework.data.cassandra.core.cql.generator;
 
 import static org.assertj.core.api.Assertions.*;
-import static org.springframework.data.cassandra.core.cql.generator.DropUserTypeCqlGenerator.*;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+
 import org.springframework.data.cassandra.core.cql.keyspace.DropUserTypeSpecification;
+import org.springframework.data.cassandra.core.cql.keyspace.SpecificationBuilder;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Unit tests for {@link DropUserTypeCqlGenerator}.
  *
  * @author Mark Paluch
  */
-public class DropUserTypeCqlGeneratorUnitTests {
+class DropUserTypeCqlGeneratorUnitTests {
 
 	@Test // DATACASS-172
-	public void shouldDropUserType() {
+	void shouldDropUserType() {
 
-		DropUserTypeSpecification spec = DropUserTypeSpecification.dropType("address");
+		DropUserTypeSpecification spec = SpecificationBuilder.dropType("address");
 
-		assertThat(toCql(spec)).isEqualTo("DROP TYPE address;");
+		assertThat(CqlGenerator.toCql(spec)).isEqualTo("DROP TYPE address;");
+	}
+
+	@Test // GH-921
+	void shouldConsiderKeyspace() {
+
+		DropUserTypeSpecification spec = SpecificationBuilder.dropType(CqlIdentifier.fromCql("foo"),
+				CqlIdentifier.fromCql("bar"));
+
+		assertThat(CqlGenerator.toCql(spec)).isEqualTo("DROP TYPE foo.bar;");
 	}
 
 	@Test // DATACASS-172
-	public void shouldDropUserTypeIfExists() {
+	void shouldDropUserTypeIfExists() {
 
-		DropUserTypeSpecification spec = DropUserTypeSpecification.dropType("address").ifExists();
+		DropUserTypeSpecification spec = SpecificationBuilder.dropType("address").ifExists();
 
-		assertThat(toCql(spec)).isEqualTo("DROP TYPE IF EXISTS address;");
+		assertThat(CqlGenerator.toCql(spec)).isEqualTo("DROP TYPE IF EXISTS address;");
 	}
 }

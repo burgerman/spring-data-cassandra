@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,15 +15,14 @@
  */
 package org.springframework.data.cassandra.support;
 
-import lombok.SneakyThrows;
-
+import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.util.List;
 
 import org.springframework.util.Assert;
 
-import com.google.common.io.Resources;
+import com.datastax.oss.driver.shaded.guava.common.io.Resources;
 
 /**
  * An executable CQL data set. The data set can be created from class path resources and execution can be bound to a
@@ -52,9 +51,12 @@ public class CqlDataSet {
 		return getLines();
 	}
 
-	@SneakyThrows
 	private List<String> getLines() {
-		return Resources.readLines(location, Charset.defaultCharset());
+		try {
+			return Resources.readLines(location, Charset.defaultCharset());
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	/**
@@ -75,7 +77,7 @@ public class CqlDataSet {
 	 */
 	public CqlDataSet executeIn(String keyspaceName) {
 
-		Assert.hasText(keyspaceName, "KeyspaceName must not be empty!");
+		Assert.hasText(keyspaceName, "KeyspaceName must not be empty");
 		return new CqlDataSet(location, keyspaceName);
 	}
 

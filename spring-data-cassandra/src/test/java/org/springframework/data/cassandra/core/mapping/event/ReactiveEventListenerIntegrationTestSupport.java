@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,12 @@ import reactor.test.StepVerifier;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import org.junit.Before;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.data.cassandra.core.ReactiveCassandraTemplate;
 import org.springframework.data.cassandra.core.cql.session.DefaultBridgedReactiveSession;
 import org.springframework.data.cassandra.core.query.Query;
 
-import com.datastax.driver.core.Statement;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
 
 /**
  * Integration test for mapping events via {@link ReactiveCassandraTemplate}.
@@ -33,12 +33,12 @@ import com.datastax.driver.core.Statement;
  * @author Lukasz Antoniak
  * @author Mark Paluch
  */
-public class ReactiveEventListenerIntegrationTestSupport extends EventListenerIntegrationTestSupport {
+class ReactiveEventListenerIntegrationTestSupport extends EventListenerIntegrationTestSupport {
 
-	ReactiveCassandraTemplate template;
+	private ReactiveCassandraTemplate template;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		template = new ReactiveCassandraTemplate(new DefaultBridgedReactiveSession(session));
 		template.setApplicationEventPublisher(getApplicationEventPublisher());
@@ -100,7 +100,7 @@ public class ReactiveEventListenerIntegrationTestSupport extends EventListenerIn
 			}
 
 			@Override
-			public <T> List<T> select(Statement statement, Class<T> entityClass) {
+			public <T> List<T> select(SimpleStatement statement, Class<T> entityClass) {
 
 				List<T> result = new CopyOnWriteArrayList<>();
 				template.select(statement, entityClass).as(StepVerifier::create).recordWith(() -> result).expectNextCount(1)

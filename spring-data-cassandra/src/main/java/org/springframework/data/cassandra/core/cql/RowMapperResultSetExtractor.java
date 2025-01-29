@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,9 +21,9 @@ import java.util.List;
 import org.springframework.dao.DataAccessException;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
-import com.datastax.driver.core.exceptions.DriverException;
+import com.datastax.oss.driver.api.core.DriverException;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
+import com.datastax.oss.driver.api.core.cql.Row;
 
 /**
  * Adapter implementation of the {@link ResultSetExtractor} interface that delegates to a {@link RowMapper} which is
@@ -69,9 +69,6 @@ public class RowMapperResultSetExtractor<T> implements ResultSetExtractor<List<T
 		this.rowsExpected = rowsExpected;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.ResultSetExtractor#extractData(com.datastax.driver.core.ResultSet)
-	 */
 	@Override
 	public List<T> extractData(ResultSet resultSet) throws DriverException, DataAccessException {
 

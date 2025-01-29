@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import org.springframework.util.StringUtils;
  * @author Matthew T. Adams
  * @author Alex Shvid
  * @author Mark Paluch
+ * @author Aleksei Zotov
  */
 public class CreateTableCqlGenerator extends TableOptionsCqlGenerator<TableSpecification<CreateTableSpecification>> {
 
@@ -44,9 +45,6 @@ public class CreateTableCqlGenerator extends TableOptionsCqlGenerator<TableSpeci
 		return new CreateTableCqlGenerator(specification).toCql();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.generator.TableOptionsCqlGenerator#spec()
-	 */
 	@Override
 	protected CreateTableSpecification spec() {
 		return (CreateTableSpecification) super.spec();
@@ -64,7 +62,8 @@ public class CreateTableCqlGenerator extends TableOptionsCqlGenerator<TableSpeci
 	}
 
 	private void preambleCql(StringBuilder cql) {
-		cql.append("CREATE TABLE ").append(spec().getIfNotExists() ? "IF NOT EXISTS " : "").append(spec().getName());
+		cql.append("CREATE TABLE ").append(spec().getIfNotExists() ? "IF NOT EXISTS " : "")
+				.append(CqlIdentifierUtil.renderName(spec()));
 	}
 
 	@SuppressWarnings("unchecked")
@@ -76,7 +75,11 @@ public class CreateTableCqlGenerator extends TableOptionsCqlGenerator<TableSpeci
 		List<ColumnSpecification> partitionKeys = new ArrayList<>();
 		List<ColumnSpecification> clusterKeys = new ArrayList<>();
 		for (ColumnSpecification col : spec().getColumns()) {
-			col.toCql(cql).append(", ");
+			if (col.isStatic()) {
+				col.toCql(cql).append(" STATIC, ");
+			} else {
+				col.toCql(cql).append(", ");
+			}
 
 			if (col.getKeyType() == PARTITIONED) {
 				partitionKeys.add(col);
@@ -176,7 +179,7 @@ public class CreateTableCqlGenerator extends TableOptionsCqlGenerator<TableSpeci
 				} else {
 					ordering.append(", ");
 				}
-				ordering.append(col.getName()).append(" ").append(col.getOrdering().cql());
+				ordering.append(col.getName().asCql(true)).append(" ").append(col.getOrdering().cql());
 			}
 		}
 
@@ -196,7 +199,7 @@ public class CreateTableCqlGenerator extends TableOptionsCqlGenerator<TableSpeci
 			} else {
 				str.append(", ");
 			}
-			str.append(col.getName());
+			str.append(col.getName().asCql(true));
 		}
 	}
 }

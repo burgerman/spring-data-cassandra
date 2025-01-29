@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,15 +21,13 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-import com.datastax.driver.core.DataType;
-
 /**
  * Specifies the Cassandra type of the annotated property or parameter when used in query methods.
  *
  * @author Alex Shvid
  * @author Matthew T. Adams
  * @author Mark Paluch
- * @see com.datastax.driver.core.DataType
+ * @see Name
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
@@ -38,33 +36,43 @@ import com.datastax.driver.core.DataType;
 public @interface CassandraType {
 
 	/**
-	 * The {@link DataType.Name} of the property.
+	 * The {@link Name} of the property.
 	 */
-	DataType.Name type();
+	Name type();
 
 	/**
-	 * If the property is {@link java.util.Collection Collection-like}, then this attribute holds a single
-	 * {@link DataType.Name DataType Name} representing the element type of the {@link java.util.Collection}.
-	 * <p/>
-	 * If the property is a {@link java.util.Map}, then this attribute holds exactly two {@link DataType.Name DataType
-	 * Names}; the first is the key type and the second is the value type.
-	 * <p/>
+	 * If the property is {@link java.util.Collection Collection-like}, then this attribute holds a single {@link Name
+	 * DataType Name} representing the element type of the {@link java.util.Collection}.
+	 * <p>
+	 * If the property is a {@link java.util.Map}, then this attribute holds exactly two {@link Name DataType Names}; the
+	 * first is the key type and the second is the value type.
+	 * <p>
 	 * If the property is neither {@link java.util.Collection Collection-like} nor a {@link java.util.Map}, then this
 	 * attribute is ignored.
 	 *
-	 * @return an array of {@link DataType.Name} objects.
-	 * @see com.datastax.driver.core.DataType.Name
+	 * @return an array of {@link Name} objects.
+	 * @see Name
 	 */
-	DataType.Name[] typeArguments() default {};
+	Name[] typeArguments() default {};
 
 	/**
 	 * If the property maps to a User-Defined Type (UDT) then this attribute holds the user type name. For
-	 * {@link java.util.Collection Collection-like} properties the user type name applies to the component type. The user
-	 * type name is only required if the UDT does not map to a class annotated with {@link UserDefinedType}.
+	 * {@link java.util.Collection Collection-like} properties the user type name applies to the component type. For
+	 * {@link java.util.Map} properties, {@link #typeArguments()} configured to {@link Name#UDT} are resolved using the
+	 * user type name. The user type name is only required if the UDT does not map to a class annotated with
+	 * {@link UserDefinedType}.
 	 *
 	 * @return {@link String name} of the user type
 	 * @since 1.5
 	 */
 	String userTypeName() default "";
 
+	/**
+	 * Cassandra Protocol types.
+	 *
+	 * @since 3.0
+	 */
+	enum Name {
+		ASCII, BIGINT, BLOB, BOOLEAN, COUNTER, DECIMAL, DOUBLE, FLOAT, INT, TIMESTAMP, UUID, VARCHAR, TEXT, VARINT, TIMEUUID, INET, DATE, TIME, SMALLINT, TINYINT, DURATION, LIST, MAP, SET, UDT, TUPLE;
+	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,18 +17,18 @@ package org.springframework.data.cassandra.repository.query;
 
 import java.util.Arrays;
 import java.util.Iterator;
-import java.util.Optional;
 
 import org.springframework.data.cassandra.core.convert.CassandraConverter;
 import org.springframework.data.cassandra.core.cql.QueryOptions;
 import org.springframework.data.cassandra.core.mapping.CassandraType;
+import org.springframework.data.cassandra.core.query.CassandraScrollPosition;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.repository.query.ParameterAccessor;
 import org.springframework.lang.Nullable;
 
-import com.datastax.driver.core.CodecRegistry;
-import com.datastax.driver.core.DataType;
+import com.datastax.oss.driver.api.core.type.DataType;
+import com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry;
 
 /**
  * Simple {@link ParameterAccessor} that returns the given parameters unfiltered.
@@ -48,18 +48,16 @@ class StubParameterAccessor implements CassandraParameterAccessor {
 	 * @return
 	 */
 	public static ConvertingParameterAccessor getAccessor(CassandraConverter converter, Object... parameters) {
-		return new ConvertingParameterAccessor(converter, new StubParameterAccessor(parameters),
-				CodecRegistry.DEFAULT_INSTANCE);
+		return new ConvertingParameterAccessor(converter, new StubParameterAccessor(parameters));
 	}
 
-	@SuppressWarnings("unchecked")
-	public StubParameterAccessor(Object... values) {
+	private StubParameterAccessor(Object... values) {
 		this.values = values;
 	}
 
 	@Override
 	public DataType getDataType(int index) {
-		return CodecRegistry.DEFAULT_INSTANCE.codecFor(values[index]).getCqlType();
+		return CodecRegistry.DEFAULT.codecFor(values[index]).getCqlType();
 	}
 
 	@Override
@@ -73,6 +71,12 @@ class StubParameterAccessor implements CassandraParameterAccessor {
 		return null;
 	}
 
+	@Nullable
+	@Override
+	public CassandraScrollPosition getScrollPosition() {
+		return null;
+	}
+
 	@Override
 	public Pageable getPageable() {
 		return null;
@@ -81,11 +85,6 @@ class StubParameterAccessor implements CassandraParameterAccessor {
 	@Override
 	public Sort getSort() {
 		return null;
-	}
-
-	@Override
-	public Optional<Class<?>> getDynamicProjection() {
-		return Optional.empty();
 	}
 
 	@Nullable

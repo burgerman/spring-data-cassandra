@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,9 +21,8 @@ import java.util.Map;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.data.convert.ReadingConverter;
 
-import com.datastax.driver.core.ColumnDefinitions;
-import com.datastax.driver.core.ColumnDefinitions.Definition;
-import com.datastax.driver.core.Row;
+import com.datastax.oss.driver.api.core.cql.ColumnDefinitions;
+import com.datastax.oss.driver.api.core.cql.Row;
 
 /**
  * Converter to convert {@link Row}s to a {@link Map} of {@link String}/{@link Object} representation.
@@ -38,17 +37,17 @@ public enum RowToMapConverter implements Converter<Row, Map<String, Object>> {
 
 	INSTANCE;
 
-	/* (non-Javadoc)
-	 * @see org.springframework.core.convert.converter.Converter#convert(java.lang.Object)
-	 */
 	@Override
 	public Map<String, Object> convert(Row row) {
 
 		ColumnDefinitions cols = row.getColumnDefinitions();
 		Map<String, Object> map = new HashMap<>(cols.size());
 
-		cols.asList().stream().map(Definition::getName)
-				.forEach(name -> map.put(name, row.isNull(name) ? null : row.getObject(name)));
+		cols.forEach(columnDefinition -> {
+			map.put(columnDefinition.getName().toString(),
+					row.isNull(columnDefinition.getName()) ? null : row.getObject(columnDefinition.getName()));
+
+		});
 
 		return map;
 	}

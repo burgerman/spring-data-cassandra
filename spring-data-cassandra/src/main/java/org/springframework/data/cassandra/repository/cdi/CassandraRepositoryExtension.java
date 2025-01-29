@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2019 the original author or authors.
+ * Copyright 2014-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,18 +15,18 @@
  */
 package org.springframework.data.cassandra.repository.cdi;
 
+import jakarta.enterprise.event.Observes;
+import jakarta.enterprise.inject.UnsatisfiedResolutionException;
+import jakarta.enterprise.inject.spi.AfterBeanDiscovery;
+import jakarta.enterprise.inject.spi.Bean;
+import jakarta.enterprise.inject.spi.BeanManager;
+import jakarta.enterprise.inject.spi.ProcessBean;
+
 import java.lang.annotation.Annotation;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-
-import javax.enterprise.event.Observes;
-import javax.enterprise.inject.UnsatisfiedResolutionException;
-import javax.enterprise.inject.spi.AfterBeanDiscovery;
-import javax.enterprise.inject.spi.Bean;
-import javax.enterprise.inject.spi.BeanManager;
-import javax.enterprise.inject.spi.ProcessBean;
 
 import org.springframework.data.cassandra.core.CassandraOperations;
 import org.springframework.data.repository.cdi.CdiRepositoryBean;
@@ -91,7 +91,7 @@ public class CassandraRepositoryExtension extends CdiRepositoryExtensionSupport 
 
 		Bean<CassandraOperations> cassandraOperationsBean = Optional.ofNullable(this.cassandraOperationsMap.get(qualifiers))
 				.orElseThrow(() -> new UnsatisfiedResolutionException(String.format(
-						"Unable to resolve a bean for '%s' with qualifiers %s.", CassandraOperations.class.getName(), qualifiers)));
+						"Unable to resolve a bean for '%s' with qualifiers %s", CassandraOperations.class.getName(), qualifiers)));
 
 		return new CassandraRepositoryBean<>(cassandraOperationsBean, qualifiers, repositoryType, beanManager,
 				getCustomImplementationDetector());

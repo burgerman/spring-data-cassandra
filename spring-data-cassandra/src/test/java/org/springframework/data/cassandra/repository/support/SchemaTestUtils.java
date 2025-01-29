@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,20 +15,28 @@
  */
 package org.springframework.data.cassandra.repository.support;
 
+import java.util.Optional;
+
 import org.springframework.data.cassandra.core.CassandraOperations;
+import org.springframework.data.cassandra.core.convert.SchemaFactory;
 import org.springframework.data.cassandra.core.cql.SessionCallback;
+import org.springframework.data.cassandra.core.cql.generator.CqlGenerator;
 import org.springframework.data.cassandra.core.cql.generator.CreateTableCqlGenerator;
 import org.springframework.data.cassandra.core.cql.keyspace.CreateTableSpecification;
+import org.springframework.data.cassandra.core.cql.keyspace.CreateUserTypeSpecification;
 import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity;
+import org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty;
+import org.springframework.data.cassandra.core.mapping.EmbeddedEntityOperations;
 
-import com.datastax.driver.core.KeyspaceMetadata;
+import com.datastax.oss.driver.api.core.metadata.schema.TableMetadata;
 
 /**
  * {@link SchemaTestUtils} is a collection of reflection-based utility methods for use in unit and integration testing
  * scenarios.
  *
  * @author Mark Paluch
+ * @author Christoph Strobl
  */
 public class SchemaTestUtils {
 
@@ -43,15 +51,68 @@ public class SchemaTestUtils {
 		CassandraMappingContext mappingContext = operations.getConverter().getMappingContext();
 		CassandraPersistentEntity<?> persistentEntity = mappingContext.getRequiredPersistentEntity(entityClass);
 
+		potentiallyCreateTableFor(persistentEntity, operations, new SchemaFactory(operations.getConverter()));
+	}
+
+	/**
+	 * Create a table and UDTs for {@code entityClass} if it not exists.
+	 *
+	 * @param entityClass must not be {@literal null}.
+	 * @param operations must not be {@literal null}.
+	 */
+	public static void createTableAndTypes(Class<?> entityClass, CassandraOperations operations) {
+
+		CassandraMappingContext mappingContext = operations.getConverter().getMappingContext();
+		CassandraPersistentEntity<?> persistentEntity = mappingContext.getRequiredPersistentEntity(entityClass);
+		SchemaFactory schemaFactory = new SchemaFactory(operations.getConverter());
+
+		potentiallyCreateUdtFor(persistentEntity, operations, schemaFactory);
+		potentiallyCreateTableFor(persistentEntity, operations, schemaFactory);
+	}
+
+	private static void potentiallyCreateTableFor(CassandraPersistentEntity<?> persistentEntity,
+			CassandraOperations operations, SchemaFactory schemaFactory) {
+
 		operations.getCqlOperations().execute((SessionCallback<Object>) session -> {
 
-			KeyspaceMetadata keyspace = session.getCluster().getMetadata().getKeyspace(session.getLoggedKeyspace());
-			if (keyspace.getTable(persistentEntity.getTableName().toCql()) == null) {
-				CreateTableSpecification tableSpecification = mappingContext.getCreateTableSpecificationFor(persistentEntity);
+			Optional<TableMetadata> table = session.getKeyspace().flatMap(it -> session.getMetadata().getKeyspace(it))
+					.flatMap(it -> it.getTable(persistentEntity.getTableName()));
+
+			if (!table.isPresent()) {
+				CreateTableSpecification tableSpecification = schemaFactory.getCreateTableSpecificationFor(persistentEntity);
 				operations.getCqlOperations().execute(new CreateTableCqlGenerator(tableSpecification).toCql());
 			}
 			return null;
 		});
+	}
+
+	private static void potentiallyCreateUdtFor(CassandraPersistentEntity<?> persistentEntity,
+			CassandraOperations operations, SchemaFactory schemaFactory) {
+
+		if (persistentEntity.isUserDefinedType()) {
+
+			CreateUserTypeSpecification udtspec = schemaFactory.getCreateUserTypeSpecificationFor(persistentEntity)
+					.ifNotExists();
+			operations.getCqlOperations().execute(CqlGenerator.toCql(udtspec));
+
+		} else {
+
+			for (CassandraPersistentProperty property : persistentEntity) {
+
+				if (!property.isEntity()) {
+					continue;
+				}
+
+				if (property.isEmbedded()) {
+					potentiallyCreateUdtFor(
+							new EmbeddedEntityOperations(operations.getConverter().getMappingContext()).getEntity(property),
+							operations, schemaFactory);
+				} else {
+					potentiallyCreateUdtFor(operations.getConverter().getMappingContext().getRequiredPersistentEntity(property),
+							operations, schemaFactory);
+				}
+			}
+		}
 	}
 
 	/**

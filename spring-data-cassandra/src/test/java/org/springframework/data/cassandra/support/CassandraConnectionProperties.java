@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,16 @@
  */
 package org.springframework.data.cassandra.support;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.lang.ref.WeakReference;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.lang.NonNull;
 import org.springframework.util.Assert;
 
 /**
@@ -26,51 +32,94 @@ import org.springframework.util.Assert;
  * the build and can be override using system properties.
  *
  * @author Mark Paluch
+ * @author John Blum
  */
-@SuppressWarnings("serial")
+@SuppressWarnings("unused")
 public class CassandraConnectionProperties extends Properties {
 
-	protected String resourceName;
+	private final static List<WeakReference<CassandraConnectionProperties>> instances = new ArrayList<>();
+
+	private final String resourceName;
 
 	/**
-	 * Create a new {@link CassandraConnectionProperties} using properties from
-	 * {@code config/cassandra-connection.properties}.
+	 * Construct a new instance of {@link CassandraConnectionProperties} using properties
+	 * from {@code config/cassandra-connection.properties}.
 	 */
 	public CassandraConnectionProperties() {
 		this("/config/cassandra-connection.properties");
 	}
 
-	protected CassandraConnectionProperties(String resourceName) {
+	private CassandraConnectionProperties(@NonNull String resourceName) {
 
 		this.resourceName = resourceName;
+
 		loadProperties();
+
+		instances.add(new WeakReference<>(this));
+	}
+
+	public void update() {
+
+		try {
+			// Caution: Rewriting properties during initialization.
+			File file = new File(getClass().getResource(this.resourceName).toURI());
+
+			try (FileOutputStream out = new FileOutputStream(file)) {
+				store(out, "");
+			}
+
+			reload();
+		}
+		catch (Exception cause) {
+			cause.printStackTrace();
+			throw new IllegalStateException(cause);
+		}
+	}
+
+	private static void reload() {
+
+		for (WeakReference<CassandraConnectionProperties> ref : instances) {
+
+			CassandraConnectionProperties properties = ref.get();
+
+			if (properties != null) {
+				properties.loadProperties();
+			}
+		}
 	}
 
 	private void loadProperties() {
-
 		loadProperties(this.resourceName);
-		putAll(System.getProperties());
 	}
 
 	private void loadProperties(String resourceName) {
 
-		InputStream in = null;
-
-		try {
-			in = getClass().getResourceAsStream(resourceName);
-
+		try (InputStream in = getClass().getResourceAsStream(resourceName)){
 			if (in != null) {
 				load(in);
 			}
-		} catch (Exception cause) {
-			throw new RuntimeException(cause);
-		} finally {
-			if (in != null) {
-				try {
-					in.close();
-				} catch (Exception ignore) { }
-			}
 		}
+		catch (Exception cause) {
+			throw new RuntimeException(cause);
+		}
+	}
+
+	@Override
+	public String getProperty(String key) {
+
+		String value = super.getProperty(key);
+
+		if (value == null) {
+			value = System.getProperty(key);
+		}
+
+		return value;
+	}
+
+	@Override
+	public synchronized Object setProperty(String key, String value) {
+		System.setProperty(key, value);
+		return super.setProperty(key, value);
 	}
 
 	/**
@@ -80,11 +129,19 @@ public class CassandraConnectionProperties extends Properties {
 		return getProperty("build.cassandra.host");
 	}
 
+	public void setCassandraHost(String host) {
+		setProperty("build.cassandra.host", host);
+	}
+
 	/**
 	 * @return the Cassandra port (native).
 	 */
 	public int getCassandraPort() {
 		return getInt("build.cassandra.native_transport_port");
+	}
+
+	public void setCassandraPort(int port) {
+		setProperty("build.cassandra.native_transport_port", "" + port);
 	}
 
 	/**
@@ -95,17 +152,17 @@ public class CassandraConnectionProperties extends Properties {
 	}
 
 	/**
-	 * @return the Cassandra Storage port
-	 */
-	public int getCassandraStoragePort() {
-		return getInt("build.cassandra.storage_port");
-	}
-
-	/**
 	 * @return the Cassandra SSL Storage port
 	 */
 	public int getCassandraSslStoragePort() {
 		return getInt("build.cassandra.ssl_storage_port");
+	}
+
+	/**
+	 * @return the Cassandra Storage port
+	 */
+	public int getCassandraStoragePort() {
+		return getInt("build.cassandra.storage_port");
 	}
 
 	/**
@@ -115,8 +172,8 @@ public class CassandraConnectionProperties extends Properties {
 
 		String cassandraType = getProperty("build.cassandra.mode");
 
-		return CassandraType.EXTERNAL.name().equalsIgnoreCase(cassandraType)
-			? CassandraType.EXTERNAL
+		return CassandraType.TESTCONTAINERS.name().equalsIgnoreCase(cassandraType) ? CassandraType.TESTCONTAINERS
+			: CassandraType.EXTERNAL.name().equalsIgnoreCase(cassandraType) ? CassandraType.EXTERNAL
 			: CassandraType.EMBEDDED;
 	}
 
@@ -126,7 +183,7 @@ public class CassandraConnectionProperties extends Properties {
 	 * @param propertyName name of the property, must not be empty and not {@literal null}.
 	 * @return the property value
 	 */
-	public int getInt(String propertyName) {
+	private int getInt(String propertyName) {
 		return convert(propertyName, Integer.class, Integer::parseInt);
 	}
 
@@ -152,7 +209,7 @@ public class CassandraConnectionProperties extends Properties {
 
 	private <T> T convert(String propertyName, Class<T> type, Converter<String, T> converter) {
 
-		Assert.hasText(propertyName, "PropertyName must not be empty!");
+		Assert.hasText(propertyName, "PropertyName must not be empty");
 
 		String propertyValue = getProperty(propertyName);
 		try {
@@ -161,12 +218,12 @@ public class CassandraConnectionProperties extends Properties {
 
 			String message = "%1$s: cannot parse value [%2$s] of property [%3$s] as a [%4$s]";
 
-			throw new IllegalArgumentException(String.format(message, this.resourceName, propertyValue, propertyName,
-					type.getSimpleName()), cause);
+			throw new IllegalArgumentException(
+					String.format(message, this.resourceName, propertyValue, propertyName, type.getSimpleName()), cause);
 		}
 	}
 
 	public enum CassandraType {
-		EMBEDDED, EXTERNAL
+		EMBEDDED, EXTERNAL, TESTCONTAINERS
 	}
 }

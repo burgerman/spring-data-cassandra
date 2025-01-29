@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,16 @@
 package org.springframework.data.cassandra.core;
 
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
-import org.springframework.data.cassandra.core.cql.generator.CreateIndexCqlGenerator;
-import org.springframework.data.cassandra.core.cql.generator.CreateTableCqlGenerator;
-import org.springframework.data.cassandra.core.cql.generator.CreateUserTypeCqlGenerator;
+import org.jetbrains.annotations.NotNull;
+
+import org.springframework.data.cassandra.core.cql.generator.CqlGenerator;
 import org.springframework.data.cassandra.core.cql.keyspace.CreateIndexSpecification;
 import org.springframework.data.cassandra.core.cql.keyspace.CreateTableSpecification;
 import org.springframework.data.cassandra.core.cql.keyspace.CreateUserTypeSpecification;
@@ -36,7 +33,10 @@ import org.springframework.data.cassandra.core.mapping.BasicCassandraPersistentE
 import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty;
+import org.springframework.data.util.Streamable;
 import org.springframework.util.Assert;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Schema creation support for Cassandra based on {@link CassandraMappingContext} and {@link CassandraPersistentEntity}.
@@ -54,6 +54,21 @@ public class CassandraPersistentEntitySchemaCreator {
 	private final CassandraAdminOperations cassandraAdminOperations;
 
 	private final CassandraMappingContext mappingContext;
+
+	/**
+	 * Create a new {@link CassandraPersistentEntitySchemaCreator} for the given {@link CassandraMappingContext} and
+	 * {@link CassandraAdminOperations}.
+	 *
+	 * @param cassandraAdminOperations must not be {@literal null}.
+	 * @since 3.0
+	 */
+	public CassandraPersistentEntitySchemaCreator(CassandraAdminOperations cassandraAdminOperations) {
+
+		Assert.notNull(cassandraAdminOperations, "CassandraAdminOperations must not be null");
+
+		this.cassandraAdminOperations = cassandraAdminOperations;
+		this.mappingContext = cassandraAdminOperations.getConverter().getMappingContext();
+	}
 
 	/**
 	 * Create a new {@link CassandraPersistentEntitySchemaCreator} for the given {@link CassandraMappingContext} and
@@ -80,7 +95,7 @@ public class CassandraPersistentEntitySchemaCreator {
 	public void createTables(boolean ifNotExists) {
 
 		createTableSpecifications(ifNotExists).stream() //
-				.map(CreateTableCqlGenerator::toCql) //
+				.map(CqlGenerator::toCql) //
 				.forEach(cql -> this.cassandraAdminOperations.getCqlOperations().execute(cql));
 	}
 
@@ -94,7 +109,8 @@ public class CassandraPersistentEntitySchemaCreator {
 
 		return this.mappingContext.getTableEntities() //
 				.stream() //
-				.map(entity -> this.mappingContext.getCreateTableSpecificationFor(entity).ifNotExists(ifNotExists)) //
+				.map(entity -> cassandraAdminOperations.getSchemaFactory().getCreateTableSpecificationFor(entity)
+						.ifNotExists(ifNotExists)) //
 				.collect(Collectors.toList());
 	}
 
@@ -106,7 +122,7 @@ public class CassandraPersistentEntitySchemaCreator {
 	public void createIndexes(boolean ifNotExists) {
 
 		createIndexSpecifications(ifNotExists).stream() //
-				.map(CreateIndexCqlGenerator::toCql) //
+				.map(CqlGenerator::toCql) //
 				.forEach(cql -> this.cassandraAdminOperations.getCqlOperations().execute(cql));
 	}
 
@@ -120,7 +136,7 @@ public class CassandraPersistentEntitySchemaCreator {
 
 		return this.mappingContext.getTableEntities() //
 				.stream() //
-				.flatMap(entity -> this.mappingContext.getCreateIndexSpecificationsFor(entity).stream()) //
+				.flatMap(entity -> cassandraAdminOperations.getSchemaFactory().getCreateIndexSpecificationsFor(entity).stream()) //
 				.peek(it -> it.ifNotExists(ifNotExists)) //
 				.collect(Collectors.toList());
 	}
@@ -133,7 +149,7 @@ public class CassandraPersistentEntitySchemaCreator {
 	public void createUserTypes(boolean ifNotExists) {
 
 		createUserTypeSpecifications(ifNotExists).stream() //
-				.map(CreateUserTypeCqlGenerator::toCql) //
+				.map(CqlGenerator::toCql) //
 				.forEach(cql -> this.cassandraAdminOperations.getCqlOperations().execute(cql));
 	}
 
@@ -145,48 +161,125 @@ public class CassandraPersistentEntitySchemaCreator {
 	 */
 	protected List<CreateUserTypeSpecification> createUserTypeSpecifications(boolean ifNotExists) {
 
-		Collection<? extends CassandraPersistentEntity<?>> entities = new ArrayList<>(
+		List<? extends CassandraPersistentEntity<?>> entities = new ArrayList<>(
 				this.mappingContext.getUserDefinedTypeEntities());
 
 		Map<CqlIdentifier, CassandraPersistentEntity<?>> byTableName = entities.stream()
 				.collect(Collectors.toMap(CassandraPersistentEntity::getTableName, entity -> entity));
 
 		List<CreateUserTypeSpecification> specifications = new ArrayList<>();
-
-		Set<CqlIdentifier> created = new HashSet<>();
+		UserDefinedTypeSet udts = new UserDefinedTypeSet();
 
 		entities.forEach(entity -> {
-
-			Set<CqlIdentifier> seen = new LinkedHashSet<>();
-
-			seen.add(entity.getTableName());
-			visitUserTypes(entity, seen);
-
-			List<CqlIdentifier> ordered = new ArrayList<>(seen);
-
-			Collections.reverse(ordered);
-
-			specifications.addAll(ordered
-					.stream().filter(created::add).map(identifier -> this.mappingContext
-							.getCreateUserTypeSpecificationFor(byTableName.get(identifier)).ifNotExists(ifNotExists))
-					.collect(Collectors.toList()));
+			udts.add(entity.getTableName());
+			visitUserTypes(entity, udts);
 		});
+
+		specifications.addAll(udts.stream()
+				.map(identifier -> cassandraAdminOperations.getSchemaFactory()
+						.getCreateUserTypeSpecificationFor(byTableName.get(identifier)).ifNotExists(ifNotExists))
+				.collect(Collectors.toList()));
 
 		return specifications;
 	}
 
-	private void visitUserTypes(CassandraPersistentEntity<?> entity, final Set<CqlIdentifier> seen) {
+	private void visitUserTypes(CassandraPersistentEntity<?> entity, UserDefinedTypeSet udts) {
 
 		for (CassandraPersistentProperty property : entity) {
 
-			BasicCassandraPersistentEntity<?> persistentEntity = this.mappingContext.getPersistentEntity(property);
+			BasicCassandraPersistentEntity<?> propertyType = this.mappingContext.getPersistentEntity(property);
 
-			if (persistentEntity == null) {
+			if (propertyType == null) {
 				continue;
 			}
 
-			if (persistentEntity.isUserDefinedType() && seen.add(persistentEntity.getTableName())) {
-				visitUserTypes(persistentEntity, seen);
+			if (propertyType.isUserDefinedType()) {
+				if (udts.add(propertyType.getTableName())) {
+					visitUserTypes(propertyType, udts);
+				}
+				udts.addDependency(entity.getTableName(), propertyType.getTableName());
+			}
+		}
+	}
+
+	/**
+	 * Object to record dependencies and report them in the order of creation.
+	 */
+	static class UserDefinedTypeSet implements Streamable<CqlIdentifier> {
+
+		private final Set<CqlIdentifier> seen = new HashSet<>();
+		private final List<DependencyNode> creationOrder = new ArrayList<>();
+
+		public boolean add(CqlIdentifier cqlIdentifier) {
+
+			if (seen.add(cqlIdentifier)) {
+				creationOrder.add(new DependencyNode(cqlIdentifier));
+				return true;
+			}
+
+			return false;
+		}
+
+		@NotNull
+		@Override
+		public Iterator<CqlIdentifier> iterator() {
+
+			// Return items in creation order considering dependencies
+			return creationOrder.stream() //
+					.sorted((left, right) -> {
+
+						if (left.dependsOn(right.getIdentifier())) {
+							return 1;
+						}
+
+						if (right.dependsOn(left.getIdentifier())) {
+							return -1;
+						}
+
+						return 0;
+					}) //
+					.map(DependencyNode::getIdentifier) //
+					.iterator();
+		}
+
+		/**
+		 * Updates the dependency order.
+		 *
+		 * @param typeToCreate the client of {@code dependsOn}.
+		 * @param dependsOn the dependency required by {@code typeToCreate}.
+		 */
+		void addDependency(CqlIdentifier typeToCreate, CqlIdentifier dependsOn) {
+
+			for (DependencyNode toCreate : creationOrder) {
+				if (toCreate.matches(typeToCreate)) {
+					toCreate.addDependency(dependsOn);
+				}
+			}
+		}
+
+		static class DependencyNode {
+
+			private final CqlIdentifier identifier;
+			private final List<CqlIdentifier> dependsOn = new ArrayList<>();
+
+			DependencyNode(CqlIdentifier identifier) {
+				this.identifier = identifier;
+			}
+
+			public CqlIdentifier getIdentifier() {
+				return identifier;
+			}
+
+			boolean matches(CqlIdentifier typeToCreate) {
+				return identifier.equals(typeToCreate);
+			}
+
+			void addDependency(CqlIdentifier dependsOn) {
+				this.dependsOn.add(dependsOn);
+			}
+
+			boolean dependsOn(CqlIdentifier identifier) {
+				return this.dependsOn.contains(identifier);
 			}
 		}
 	}

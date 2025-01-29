@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.springframework.data.cassandra.repository.support;
 import java.lang.reflect.Method;
 import java.util.Optional;
 
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.data.cassandra.core.CassandraOperations;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty;
@@ -32,12 +33,11 @@ import org.springframework.data.repository.core.NamedQueries;
 import org.springframework.data.repository.core.RepositoryInformation;
 import org.springframework.data.repository.core.RepositoryMetadata;
 import org.springframework.data.repository.core.support.RepositoryFactorySupport;
+import org.springframework.data.repository.query.CachingValueExpressionDelegate;
 import org.springframework.data.repository.query.QueryLookupStrategy;
 import org.springframework.data.repository.query.QueryLookupStrategy.Key;
-import org.springframework.data.repository.query.QueryMethodEvaluationContextProvider;
 import org.springframework.data.repository.query.RepositoryQuery;
-import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.lang.Nullable;
+import org.springframework.data.repository.query.ValueExpressionDelegate;
 import org.springframework.util.Assert;
 
 /**
@@ -50,8 +50,6 @@ import org.springframework.util.Assert;
  * @author John Blum
  */
 public class CassandraRepositoryFactory extends RepositoryFactorySupport {
-
-	private static final SpelExpressionParser EXPRESSION_PARSER = new SpelExpressionParser();
 
 	private final MappingContext<? extends CassandraPersistentEntity<?>, CassandraPersistentProperty> mappingContext;
 
@@ -70,17 +68,16 @@ public class CassandraRepositoryFactory extends RepositoryFactorySupport {
 		this.mappingContext = operations.getConverter().getMappingContext();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.core.support.RepositoryFactorySupport#getRepositoryBaseClass(org.springframework.data.repository.core.RepositoryMetadata)
-	 */
+	@Override
+	protected ProjectionFactory getProjectionFactory(ClassLoader classLoader, BeanFactory beanFactory) {
+		return this.operations.getConverter().getProjectionFactory();
+	}
+
 	@Override
 	protected Class<?> getRepositoryBaseClass(RepositoryMetadata metadata) {
 		return SimpleCassandraRepository.class;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.core.support.RepositoryFactorySupport#getTargetRepository(org.springframework.data.repository.core.RepositoryInformation)
-	 */
 	@Override
 	protected Object getTargetRepository(RepositoryInformation information) {
 
@@ -89,9 +86,6 @@ public class CassandraRepositoryFactory extends RepositoryFactorySupport {
 		return getTargetRepositoryViaReflection(information, entityInformation, operations);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.core.support.RepositoryFactorySupport#getEntityInformation(java.lang.Class)
-	 */
 	@Override
 	@SuppressWarnings("unchecked")
 	public <T, ID> CassandraEntityInformation<T, ID> getEntityInformation(Class<T> domainClass) {
@@ -101,37 +95,20 @@ public class CassandraRepositoryFactory extends RepositoryFactorySupport {
 		return new MappingCassandraEntityInformation<>((CassandraPersistentEntity<T>) entity, operations.getConverter());
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.repository.core.support.RepositoryFactorySupport#getQueryLookupStrategy(Key, EvaluationContextProvider)
-	 */
 	@Override
-	protected Optional<QueryLookupStrategy> getQueryLookupStrategy(@Nullable Key key,
-			QueryMethodEvaluationContextProvider evaluationContextProvider) {
-
-		return Optional.of(new CassandraQueryLookupStrategy(operations, evaluationContextProvider, mappingContext));
+	protected Optional<QueryLookupStrategy> getQueryLookupStrategy(Key key,
+			ValueExpressionDelegate valueExpressionDelegate) {
+		return Optional.of(new CassandraQueryLookupStrategy(operations,
+				new CachingValueExpressionDelegate(valueExpressionDelegate), mappingContext));
 	}
 
-	private class CassandraQueryLookupStrategy implements QueryLookupStrategy {
 
-		private final QueryMethodEvaluationContextProvider evaluationContextProvider;
+	private record CassandraQueryLookupStrategy(CassandraOperations operations,
+			ValueExpressionDelegate valueExpressionDelegate,
+			MappingContext<? extends CassandraPersistentEntity<?>, CassandraPersistentProperty> mappingContext)
+			implements
+				QueryLookupStrategy {
 
-		private final MappingContext<? extends CassandraPersistentEntity<?>, CassandraPersistentProperty> mappingContext;
-
-		private final CassandraOperations operations;
-
-		CassandraQueryLookupStrategy(CassandraOperations operations,
-				QueryMethodEvaluationContextProvider evaluationContextProvider,
-				MappingContext<? extends CassandraPersistentEntity<?>, CassandraPersistentProperty> mappingContext) {
-
-			this.operations = operations;
-			this.evaluationContextProvider = evaluationContextProvider;
-			this.mappingContext = mappingContext;
-		}
-
-		/* (non-Javadoc)
-		 * @see org.springframework.data.repository.query.QueryLookupStrategy#resolveQuery(java.lang.reflect.Method, org.springframework.data.repository.core.RepositoryMetadata, org.springframework.data.projection.ProjectionFactory, org.springframework.data.repository.core.NamedQueries)
-		 */
 		@Override
 		public RepositoryQuery resolveQuery(Method method, RepositoryMetadata metadata, ProjectionFactory factory,
 				NamedQueries namedQueries) {
@@ -141,13 +118,13 @@ public class CassandraRepositoryFactory extends RepositoryFactorySupport {
 
 			if (namedQueries.hasQuery(namedQueryName)) {
 				String namedQuery = namedQueries.getQuery(namedQueryName);
-				return new StringBasedCassandraQuery(namedQuery, queryMethod, operations, EXPRESSION_PARSER,
-						evaluationContextProvider);
+				return new StringBasedCassandraQuery(namedQuery, queryMethod, operations, valueExpressionDelegate);
 			} else if (queryMethod.hasAnnotatedQuery()) {
-				return new StringBasedCassandraQuery(queryMethod, operations, EXPRESSION_PARSER, evaluationContextProvider);
+				return new StringBasedCassandraQuery(queryMethod, operations, valueExpressionDelegate);
 			} else {
 				return new PartTreeCassandraQuery(queryMethod, operations);
 			}
 		}
 	}
 }
+

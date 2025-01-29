@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 the original author or authors.
+ * Copyright 2019-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,11 @@ import org.springframework.beans.factory.ObjectFactory;
 import org.springframework.core.Ordered;
 import org.springframework.data.auditing.AuditingHandler;
 import org.springframework.data.auditing.IsNewAwareAuditingHandler;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.mapping.callback.EntityCallback;
 import org.springframework.data.mapping.context.MappingContext;
 import org.springframework.util.Assert;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * {@link EntityCallback} to populate auditing related fields on an entity about to be saved.
@@ -42,23 +43,15 @@ public class AuditingEntityCallback implements BeforeConvertCallback<Object>, Or
 	 */
 	public AuditingEntityCallback(ObjectFactory<IsNewAwareAuditingHandler> auditingHandlerFactory) {
 
-		Assert.notNull(auditingHandlerFactory, "IsNewAwareAuditingHandler must not be null!");
+		Assert.notNull(auditingHandlerFactory, "IsNewAwareAuditingHandler must not be null");
 		this.auditingHandlerFactory = auditingHandlerFactory;
 	}
 
-	/* 
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.event.BeforeConvertCallback#onBeforeConvert(java.lang.Object, org.springframework.data.cassandra.core.cql.CqlIdentifier)
-	 */
 	@Override
 	public Object onBeforeConvert(Object entity, CqlIdentifier tableName) {
 		return auditingHandlerFactory.getObject().markAudited(entity);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.core.Ordered#getOrder()
-	 */
 	@Override
 	public int getOrder() {
 		return 100;

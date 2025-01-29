@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,9 @@ import java.util.Map;
 import org.springframework.lang.Nullable;
 import org.springframework.util.LinkedCaseInsensitiveMap;
 
-import com.datastax.driver.core.ColumnDefinitions;
-import com.datastax.driver.core.Row;
+import com.datastax.oss.driver.api.core.cql.ColumnDefinition;
+import com.datastax.oss.driver.api.core.cql.ColumnDefinitions;
+import com.datastax.oss.driver.api.core.cql.Row;
 
 /**
  * {@link RowMapper} implementation that creates a {@code java.util.Map} for each row, representing all columns as
@@ -42,9 +43,6 @@ import com.datastax.driver.core.Row;
  */
 public class ColumnMapRowMapper implements RowMapper<Map<String, Object>> {
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.RowMapper#mapRow(com.datastax.driver.core.Row, int)
-	 */
 	@Override
 	public Map<String, Object> mapRow(Row rs, int rowNum) {
 
@@ -53,7 +51,8 @@ public class ColumnMapRowMapper implements RowMapper<Map<String, Object>> {
 		Map<String, Object> mapOfColValues = createColumnMap(columnCount);
 
 		for (int i = 0; i < columnCount; i++) {
-			String key = getColumnKey(columnDefinitions.getName(i));
+			ColumnDefinition columnDefinition = columnDefinitions.get(i);
+			String key = getColumnKey(columnDefinition.getName().toString());
 			Object obj = getColumnValue(rs, i);
 			mapOfColValues.put(key, obj);
 		}
@@ -80,7 +79,7 @@ public class ColumnMapRowMapper implements RowMapper<Map<String, Object>> {
 	 *
 	 * @param columnName the column name as returned by the {@link Row}, must not be {@literal null}.
 	 * @return the column key to use.
-	 * @see ColumnDefinitions#getName(int)
+	 * @see ColumnDefinitions#get(int)
 	 */
 	protected String getColumnKey(String columnName) {
 		return columnName;

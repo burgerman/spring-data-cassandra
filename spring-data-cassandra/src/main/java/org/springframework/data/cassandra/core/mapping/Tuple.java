@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,10 +24,10 @@ import java.lang.annotation.Target;
 
 /**
  * Identifies a domain object as Cassandra Tuple. Tuples use ordered fields to map their value to the actual property.
- * <p/>
+ * <p>
  * A mapped tuple type is typically annotated with {@code @Tuple} and its properties/accessors are annotated with
  * {@code @Element(0), @Element(1), ..., @Element(n)}.
- * <p/>
+ * <p>
  * Example usage:
  *
  * <pre class="code">

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@
 package org.springframework.data.cassandra.core.mapping;
 
 import static org.assertj.core.api.Assertions.*;
-import static org.springframework.data.cassandra.core.cql.CqlIdentifier.*;
 
 import java.io.Serializable;
 
-import org.junit.Test;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import org.junit.jupiter.api.Test;
 import org.springframework.data.cassandra.core.cql.PrimaryKeyType;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Unit tests for {@link CassandraMappingContext}.
@@ -30,29 +30,29 @@ import org.springframework.data.cassandra.core.cql.PrimaryKeyType;
  * @author Matthew T. Adams
  * @author Mark Paluch
  */
-public class ForceQuotedPropertiesSimpleUnitTests {
+class ForceQuotedPropertiesSimpleUnitTests {
 
-	public static final String EXPLICIT_PRIMARY_KEY_NAME = "ThePrimaryKey";
-	public static final String EXPLICIT_COLUMN_NAME = "AnotherColumn";
-	public static final String EXPLICIT_KEY_0 = "TheFirstKeyField";
-	public static final String EXPLICIT_KEY_1 = "TheSecondKeyField";
+	private static final String EXPLICIT_PRIMARY_KEY_NAME = "ThePrimaryKey";
+	private static final String EXPLICIT_COLUMN_NAME = "AnotherColumn";
+	private static final String EXPLICIT_KEY_0 = "TheFirstKeyField";
+	private static final String EXPLICIT_KEY_1 = "TheSecondKeyField";
 
-	CassandraMappingContext context = new CassandraMappingContext();
+	private CassandraMappingContext context = new CassandraMappingContext();
 
 	@Test
-	public void testImplicit() {
+	void testImplicit() {
 
 		CassandraPersistentEntity<?> entity = context.getRequiredPersistentEntity(Implicit.class);
 
 		CassandraPersistentProperty primaryKey = entity.getRequiredPersistentProperty("primaryKey");
 		CassandraPersistentProperty aString = entity.getRequiredPersistentProperty("aString");
 
-		assertThat(primaryKey.getColumnName().toCql()).isEqualTo("\"primaryKey\"");
-		assertThat(aString.getColumnName().toCql()).isEqualTo("\"aString\"");
+		assertThat(primaryKey.getColumnName().asCql(false)).isEqualTo("\"primaryKey\"");
+		assertThat(aString.getColumnName().asCql(false)).isEqualTo("\"aString\"");
 	}
 
 	@Table
-	public static class Implicit {
+	private static class Implicit {
 
 		@PrimaryKey(forceQuote = true) String primaryKey;
 
@@ -60,19 +60,19 @@ public class ForceQuotedPropertiesSimpleUnitTests {
 	}
 
 	@Test
-	public void testDefault() {
+	void testDefault() {
 
 		CassandraPersistentEntity<?> entity = context.getRequiredPersistentEntity(Default.class);
 
 		CassandraPersistentProperty primaryKey = entity.getRequiredPersistentProperty("primaryKey");
 		CassandraPersistentProperty aString = entity.getRequiredPersistentProperty("aString");
 
-		assertThat(primaryKey.getColumnName().toCql()).isEqualTo("primarykey");
-		assertThat(aString.getColumnName().toCql()).isEqualTo("astring");
+		assertThat(primaryKey.getColumnName().asCql(true)).isEqualTo("primarykey");
+		assertThat(aString.getColumnName().asCql(true)).isEqualTo("astring");
 	}
 
 	@Table
-	public static class Default {
+	private static class Default {
 
 		@PrimaryKey String primaryKey;
 
@@ -80,19 +80,19 @@ public class ForceQuotedPropertiesSimpleUnitTests {
 	}
 
 	@Test
-	public void testExplicit() {
+	void testExplicit() {
 
 		CassandraPersistentEntity<?> entity = context.getRequiredPersistentEntity(Explicit.class);
 
 		CassandraPersistentProperty primaryKey = entity.getRequiredPersistentProperty("primaryKey");
 		CassandraPersistentProperty aString = entity.getRequiredPersistentProperty("aString");
 
-		assertThat(primaryKey.getColumnName().toCql()).isEqualTo("\"" + EXPLICIT_PRIMARY_KEY_NAME + "\"");
-		assertThat(aString.getColumnName().toCql()).isEqualTo("\"" + EXPLICIT_COLUMN_NAME + "\"");
+		assertThat(primaryKey.getColumnName().asCql(true)).isEqualTo("\"" + EXPLICIT_PRIMARY_KEY_NAME + "\"");
+		assertThat(aString.getColumnName().asCql(true)).isEqualTo("\"" + EXPLICIT_COLUMN_NAME + "\"");
 	}
 
 	@Table
-	public static class Explicit {
+	private static class Explicit {
 
 		@PrimaryKey(value = EXPLICIT_PRIMARY_KEY_NAME, forceQuote = true) String primaryKey;
 
@@ -100,21 +100,19 @@ public class ForceQuotedPropertiesSimpleUnitTests {
 	}
 
 	@Test
-	public void testImplicitComposite() {
+	void testImplicitComposite() {
 
 		CassandraPersistentEntity<?> key = context.getRequiredPersistentEntity(ImplicitKey.class);
 
 		CassandraPersistentProperty stringZero = key.getRequiredPersistentProperty("stringZero");
 		CassandraPersistentProperty stringOne = key.getRequiredPersistentProperty("stringOne");
 
-		assertThat(stringZero.getColumnName().toCql()).isEqualTo("\"stringZero\"");
-		assertThat(stringZero.getColumnName()).isEqualTo(quoted("stringZero"));
-		assertThat(stringOne.getColumnName().toCql()).isEqualTo("\"stringOne\"");
-		assertThat(stringOne.getColumnName()).isEqualTo(quoted("stringOne"));
+		assertThat(stringZero.getColumnName().asCql(true)).isEqualTo("\"stringZero\"");
+		assertThat(stringOne.getColumnName().asCql(true)).isEqualTo("\"stringOne\"");
 	}
 
 	@PrimaryKeyClass
-	public static class ImplicitKey implements Serializable {
+	static class ImplicitKey implements Serializable {
 
 		private static final long serialVersionUID = -1956747638065267667L;
 
@@ -124,7 +122,7 @@ public class ForceQuotedPropertiesSimpleUnitTests {
 	}
 
 	@Table
-	public static class ImplicitComposite {
+	private static class ImplicitComposite {
 
 		@PrimaryKey(forceQuote = true) ImplicitKey primaryKey;
 
@@ -132,21 +130,21 @@ public class ForceQuotedPropertiesSimpleUnitTests {
 	}
 
 	@Test
-	public void testDefaultComposite() {
+	void testDefaultComposite() {
 
 		CassandraPersistentEntity<?> key = context.getRequiredPersistentEntity(DefaultKey.class);
 
 		CassandraPersistentProperty stringZero = key.getRequiredPersistentProperty("stringZero");
 		CassandraPersistentProperty stringOne = key.getRequiredPersistentProperty("stringOne");
 
-		assertThat(stringZero.getColumnName()).isEqualTo(CqlIdentifier.of("stringZero"));
-		assertThat(stringOne.getColumnName()).isEqualTo(CqlIdentifier.of("stringOne"));
-		assertThat(stringZero.getColumnName().toCql()).isEqualTo("stringzero");
-		assertThat(stringOne.getColumnName().toCql()).isEqualTo("stringone");
+		assertThat(stringZero.getColumnName()).isEqualTo(CqlIdentifier.fromInternal("stringzero"));
+		assertThat(stringOne.getColumnName()).isEqualTo(CqlIdentifier.fromInternal("stringone"));
+		assertThat(stringZero.getColumnName().asCql(true)).isEqualTo("stringzero");
+		assertThat(stringOne.getColumnName().asCql(true)).isEqualTo("stringone");
 	}
 
 	@PrimaryKeyClass
-	public static class DefaultKey implements Serializable {
+	static class DefaultKey implements Serializable {
 
 		private static final long serialVersionUID = -1956747638065267667L;
 
@@ -156,7 +154,7 @@ public class ForceQuotedPropertiesSimpleUnitTests {
 	}
 
 	@Table
-	public static class DefaultComposite {
+	private static class DefaultComposite {
 
 		@PrimaryKey DefaultKey primaryKey;
 
@@ -164,7 +162,7 @@ public class ForceQuotedPropertiesSimpleUnitTests {
 	}
 
 	@Test
-	public void testExplicitComposite() {
+	void testExplicitComposite() {
 
 		CassandraPersistentEntity<?> key = context.getRequiredPersistentEntity(ExplicitKey.class);
 
@@ -172,15 +170,14 @@ public class ForceQuotedPropertiesSimpleUnitTests {
 		CassandraPersistentProperty stringOne = key.getRequiredPersistentProperty("stringOne");
 
 		assertThat(stringZero.getColumnName()) //
-				.isEqualTo(CqlIdentifier.of("TheFirstKeyField", true)) //
-				.isNotEqualTo(CqlIdentifier.of("TheFirstKeyField"));
+				.isEqualTo(CqlIdentifier.fromInternal("TheFirstKeyField"));
 
-		assertThat(stringZero.getColumnName().toCql()).isEqualTo("\"" + EXPLICIT_KEY_0 + "\"");
-		assertThat(stringOne.getColumnName().toCql()).isEqualTo("\"" + EXPLICIT_KEY_1 + "\"");
+		assertThat(stringZero.getColumnName().asCql(false)).isEqualTo("\"" + EXPLICIT_KEY_0 + "\"");
+		assertThat(stringOne.getColumnName().asCql(false)).isEqualTo("\"" + EXPLICIT_KEY_1 + "\"");
 	}
 
 	@PrimaryKeyClass
-	public static class ExplicitKey implements Serializable {
+	static class ExplicitKey implements Serializable {
 
 		private static final long serialVersionUID = -1956747638065267667L;
 
@@ -191,7 +188,7 @@ public class ForceQuotedPropertiesSimpleUnitTests {
 	}
 
 	@Table
-	public static class ExplicitComposite {
+	private static class ExplicitComposite {
 
 		@PrimaryKey(forceQuote = true) ExplicitKey primaryKey;
 

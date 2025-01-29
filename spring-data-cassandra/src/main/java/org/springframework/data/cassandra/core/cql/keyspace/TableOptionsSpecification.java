@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,18 +21,18 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.lang.Nullable;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Abstract builder class to support the construction of table specifications that have table options, that is, those
  * options normally specified by {@code WITH ... AND ...}.
- * <p/>
+ * <p>
  * It is important to note that although this class depends on {@link TableOption} for convenient and typesafe use, it
- * ultimately stores its options in a <code>Map<String,Object></code> for flexibility. This means that
- * {@link #with(TableOption)} and {@link #with(TableOption, Object)} delegate to
- * {@link #with(String, Object, boolean, boolean)}. This design allows the API to support new Cassandra options as they
- * are introduced without having to update the code immediately.
+ * ultimately stores its options in a <code>Map</code> for flexibility. This means that {@link #with(TableOption)} and
+ * {@link #with(TableOption, Object)} delegate to {@link #with(String, Object, boolean, boolean)}. This design allows
+ * the API to support new Cassandra options as they are introduced without having to update the code immediately.
  *
  * @author Matthew T. Adams
  * @author Mark Paluch
@@ -44,6 +44,10 @@ public abstract class TableOptionsSpecification<T extends TableOptionsSpecificat
 
 	protected TableOptionsSpecification(CqlIdentifier name) {
 		super(name);
+	}
+
+	protected TableOptionsSpecification(@Nullable CqlIdentifier keyspace, CqlIdentifier name) {
+		super(keyspace, name);
 	}
 
 	/**
@@ -72,7 +76,7 @@ public abstract class TableOptionsSpecification<T extends TableOptionsSpecificat
 
 	/**
 	 * Adds the given option by name to this table's options.
-	 * <p/>
+	 * <p>
 	 * Options that have {@literal null} values are considered single string options where the name of the option is the
 	 * string to be used. Otherwise, the result of {@link Object#toString()} is considered to be the value of the option
 	 * with the given name. The value, after conversion to string, may have embedded single quotes escaped according to

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,6 @@ package org.springframework.data.cassandra.core.mapping;
 
 import java.util.Comparator;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
-
 /**
  * {@link Comparator} implementation that orders {@link CassandraPersistentProperty} instances.
  * <p>
@@ -27,7 +25,7 @@ import org.springframework.data.cassandra.core.cql.CqlIdentifier;
  * <li>Composite primary keys first (equal if both {@link CassandraPersistentProperty} are a composite primary key)</li>
  * <li>Primary key columns (see {@link CassandraPrimaryKeyColumnAnnotationComparator}, compare by ordinal/name/ordering)
  * </li>
- * <li>Regular columns, compared by column name (see {@link CqlIdentifier#compareTo(CqlIdentifier)})</li>
+ * <li>Regular columns, compared by column name (see {@link String#compareTo(String)}).</li>
  * </ul>
  *
  * @author Alex Shvid
@@ -44,21 +42,8 @@ public enum CassandraPersistentPropertyComparator implements Comparator<Cassandr
 	 */
 	INSTANCE;
 
-	/* (non-Javadoc)
-	 * @see java.util.Comparator#compare(java.lang.Object, java.lang.Object)
-	 */
 	@Override
 	public int compare(CassandraPersistentProperty left, CassandraPersistentProperty right) {
-
-		if (left == null && right == null) {
-			return 0;
-		} else if (left != null && right == null) {
-			return 1;
-		} else if (left == null) {
-			return -1;
-		} else if (left.equals(right)) {
-			return 0;
-		}
 
 		boolean leftIsCompositePrimaryKey = left.isCompositePrimaryKey();
 		boolean rightIsCompositePrimaryKey = right.isCompositePrimaryKey();
@@ -91,7 +76,15 @@ public enum CassandraPersistentPropertyComparator implements Comparator<Cassandr
 			return 1;
 		}
 
-		// else, neither property is a composite primary key nor a primary key; compare @Column annotations
-		return left.getRequiredColumnName().compareTo(right.getRequiredColumnName());
+		Element leftAnnotation = left.findAnnotation(Element.class);
+		Element rightAnnotation = right.findAnnotation(Element.class);
+
+		if (leftAnnotation != null && rightAnnotation != null) {
+			return Integer.compare(leftAnnotation.value(), rightAnnotation.value());
+		}
+
+		// else, neither property is a composite primary key nor a primary key; there is nothing more so from that
+		// perspective, columns are equal.
+		return 0;
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,22 @@
  */
 package org.springframework.data.cassandra;
 
+import java.io.Serial;
+
 import org.springframework.dao.NonTransientDataAccessException;
+import org.springframework.lang.Nullable;
 
 /**
  * Spring data access exception for when Cassandra schema element being created already exists.
  *
  * @author Matthew T. Adams
+ * @author Mark Paluch
  */
 public class CassandraSchemaElementExistsException extends NonTransientDataAccessException {
 
-	private static final long serialVersionUID = 7798361273692300162L;
+	@Serial private static final long serialVersionUID = 7798361273692300162L;
 
+	@Deprecated
 	public enum ElementType {
 		KEYSPACE, TABLE, COLUMN, INDEX
 	}
@@ -33,6 +38,15 @@ public class CassandraSchemaElementExistsException extends NonTransientDataAcces
 	private String elementName;
 	private ElementType elementType;
 
+	/**
+	 * Constructor for {@link CassandraSchemaElementExistsException}.
+	 *
+	 * @param elementName the CQL element name.
+	 * @param elementType the CQL element type.
+	 * @param msg the detail message.
+	 * @param cause the root cause from the underlying data access API.
+	 */
+	@Deprecated
 	public CassandraSchemaElementExistsException(String elementName, ElementType elementType, String msg,
 			Throwable cause) {
 		super(msg, cause);
@@ -40,10 +54,24 @@ public class CassandraSchemaElementExistsException extends NonTransientDataAcces
 		this.elementType = elementType;
 	}
 
+	/**
+	 * Constructor for {@link CassandraSchemaElementExistsException}.
+	 *
+	 * @param msg the detail message.
+	 * @param cause the root cause from the underlying data access API.
+	 */
+	public CassandraSchemaElementExistsException(String msg, Throwable cause) {
+		super(msg, cause);
+	}
+
+	@Deprecated
+	@Nullable
 	public String getElementName() {
 		return elementName;
 	}
 
+	@Deprecated
+	@Nullable
 	public ElementType getElementType() {
 		return elementType;
 	}

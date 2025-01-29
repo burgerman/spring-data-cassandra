@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2019 the original author or authors.
+ * Copyright 2014-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,13 @@
  */
 package org.springframework.data.cassandra.repository.cdi;
 
+import jakarta.enterprise.context.spi.CreationalContext;
+import jakarta.enterprise.inject.spi.Bean;
+import jakarta.enterprise.inject.spi.BeanManager;
+
 import java.lang.annotation.Annotation;
 import java.util.Optional;
 import java.util.Set;
-
-import javax.enterprise.context.spi.CreationalContext;
-import javax.enterprise.inject.spi.Bean;
-import javax.enterprise.inject.spi.BeanManager;
 
 import org.springframework.data.cassandra.core.CassandraOperations;
 import org.springframework.data.cassandra.repository.support.CassandraRepositoryFactory;
@@ -53,14 +53,10 @@ public class CassandraRepositoryBean<T> extends CdiRepositoryBean<T> {
 			Class<T> repositoryType, BeanManager beanManager, @Nullable CustomRepositoryImplementationDetector detector) {
 		super(qualifiers, repositoryType, beanManager, Optional.ofNullable(detector));
 
-		Assert.notNull(operations, "Cannot create repository with 'null' for CassandraOperations.");
+		Assert.notNull(operations, "Cannot create repository with 'null' for CassandraOperations");
 		this.cassandraOperationsBean = operations;
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.repository.cdi.CdiRepositoryBean#create(javax.enterprise.context.spi.CreationalContext, java.lang.Class)
-	 */
 	@Override
 	protected T create(CreationalContext<T> creationalContext, Class<T> repositoryType) {
 

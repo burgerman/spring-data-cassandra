@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,17 @@
  */
 package org.springframework.data.cassandra.test.util;
 
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.*;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,23 +35,26 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.commitlog.CommitLog;
-import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.service.CassandraDaemon;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.util.FileCopyUtils;
+import org.springframework.util.FileSystemUtils;
 
 /**
  * Imported Embedded Cassandra server startup helper.
  *
  * @author Mark Paluch
  */
+@SuppressWarnings("unused")
 class EmbeddedCassandraServerHelper {
 
-	private static Logger log = LoggerFactory.getLogger(EmbeddedCassandraServerHelper.class);
-
 	public static final long DEFAULT_STARTUP_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(20);
-	public static final String DEFAULT_TMP_DIR = "target/embeddedCassandra";
+
+	private static final Log LOG = LogFactory.getLog(EmbeddedCassandraServerHelper.class);
+
+	private static final String DEFAULT_TMP_DIR = "target/embeddedCassandra";
+	private static final String LOCALHOST = "localhost";
 
 	private static final AtomicReference<Object> sync = new AtomicReference<>();
 	private static final AtomicReference<CassandraDaemon> cassandraRef = new AtomicReference<>();
@@ -70,7 +76,20 @@ class EmbeddedCassandraServerHelper {
 	 * @return the cassandra host
 	 */
 	public static String getHost() {
-		return DatabaseDescriptor.getRpcAddress().getHostName();
+
+		return Optional.ofNullable(DatabaseDescriptor.getRpcAddress())
+			.map(InetAddress::getHostName)
+			.orElseGet(EmbeddedCassandraServerHelper::getLocalhost);
+	}
+
+	private static String getLocalhost() {
+
+		try {
+			return InetAddress.getLocalHost().getHostName();
+		}
+		catch (UnknownHostException ignore) {
+			return LOCALHOST;
+		}
 	}
 
 	/**
@@ -94,9 +113,10 @@ class EmbeddedCassandraServerHelper {
 	/**
 	 * Start an embedded Cassandra instance.
 	 *
-	 * @param yamlResource
-	 * @param timeout
-	 * @throws Exception
+	 * @param yamlResource {@link String location} of a YAML file to configure Cassandra.
+	 * @param timeout {@link Long} value specifying the timeout used to wait for the Cassandra server to startup.
+	 * @throws Exception if the Cassandra server fails to start.
+	 * @see #startEmbeddedCassandra(String, String, long)
 	 */
 	public static void startEmbeddedCassandra(String yamlResource, long timeout) throws Exception {
 		startEmbeddedCassandra(yamlResource, DEFAULT_TMP_DIR, timeout);
@@ -105,12 +125,12 @@ class EmbeddedCassandraServerHelper {
 	/**
 	 * Start an embedded Cassandra instance.
 	 *
-	 * @param yamlResource
-	 * @param tmpDir
-	 * @param timeout
-	 * @throws Exception
+	 * @param yamlResource {@link String resource location} of a YAML file to configure Cassandra.
+	 * @param tmpDir {@link String filesystem location} used by the embedded Cassandra instance.
+	 * @param timeout {@link Long} value specifying the timeout used to wait for the Cassandra server to startup.
+	 * @throws Exception if the Cassandra server fails to start.
 	 */
-	public static void startEmbeddedCassandra(String yamlResource, String tmpDir, long timeout) throws Exception {
+	private static void startEmbeddedCassandra(String yamlResource, String tmpDir, long timeout) throws Exception {
 
 		if (cassandraRef.get() != null) {
 			/* Nothing to do; Cassandra is already started */
@@ -152,8 +172,8 @@ class EmbeddedCassandraServerHelper {
 
 		checkConfigNameForRestart(file.getAbsolutePath());
 
-		log.debug("Starting cassandra...");
-		log.debug("Initialization needed");
+		LOG.info(String.format("Starting Embedded Cassandra [v%s]...", System.getProperty("cassandra.version")));
+		LOG.debug("Initialization needed");
 
 		System.setProperty("cassandra.config", "file:" + file.getAbsolutePath());
 		System.setProperty("cassandra-foreground", "true");
@@ -174,12 +194,12 @@ class EmbeddedCassandraServerHelper {
 			future.get(timeout, MILLISECONDS);
 		} catch (ExecutionException cause) {
 
-			log.error("Cassandra daemon did not start after " + timeout + " ms. Consider increasing the timeout");
+			LOG.error("Cassandra daemon did not start after " + timeout + " ms. Consider increasing the timeout");
 
 			throw new IllegalStateException("Cassandra daemon did not start within timeout", cause);
 		} catch (InterruptedException cause) {
 
-			log.error("Interrupted waiting for Cassandra daemon to start:", cause);
+			LOG.error("Interrupted waiting for Cassandra daemon to start:", cause);
 			Thread.currentThread().interrupt();
 
 			throw new IllegalStateException(cause);
@@ -228,7 +248,7 @@ class EmbeddedCassandraServerHelper {
 	 */
 	private static void copy(String resource, File targetDirectory) throws IOException {
 
-		FileUtils.createDirectory(targetDirectory);
+		targetDirectory.mkdirs();
 
 		File file = new File(targetDirectory, new File(resource).getName());
 		InputStream is = EmbeddedCassandraServerHelper.class.getClassLoader().getResourceAsStream(resource);
@@ -253,8 +273,6 @@ class EmbeddedCassandraServerHelper {
 
 	private static void rmdirs(File... fileOrDirectories) throws IOException {
 
-		Arrays.stream(fileOrDirectories)
-				.filter(File::exists)
-				.forEach(FileUtils::deleteRecursive);
+		Arrays.stream(fileOrDirectories).filter(File::exists).forEach(FileSystemUtils::deleteRecursively);
 	}
 }

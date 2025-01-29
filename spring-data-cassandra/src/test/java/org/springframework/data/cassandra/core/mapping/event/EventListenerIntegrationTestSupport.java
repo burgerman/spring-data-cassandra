@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,18 +23,17 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.cassandra.core.CassandraTemplate;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.query.Query;
 import org.springframework.data.cassandra.domain.User;
 import org.springframework.data.cassandra.repository.support.SchemaTestUtils;
-import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTest;
+import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTests;
 
-import com.datastax.driver.core.SimpleStatement;
-import com.datastax.driver.core.Statement;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
 
 /**
  * Integration tests for lifecycle events.
@@ -42,13 +41,13 @@ import com.datastax.driver.core.Statement;
  * @author Lukasz Antoniak
  * @author Mark Paluch
  */
-public abstract class EventListenerIntegrationTestSupport extends AbstractKeyspaceCreatingIntegrationTest {
+public abstract class EventListenerIntegrationTestSupport extends AbstractKeyspaceCreatingIntegrationTests {
 
 	private CaptureEventListener listener = new CaptureEventListener();
 	User firstUser = null;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		CassandraTemplate setup = new CassandraTemplate(session);
 
@@ -62,48 +61,48 @@ public abstract class EventListenerIntegrationTestSupport extends AbstractKeyspa
 		listener.clear();
 	}
 
-	public CaptureEventListener getListener() {
+	CaptureEventListener getListener() {
 		return listener;
 	}
 
-	public ApplicationEventPublisher getApplicationEventPublisher() {
+	ApplicationEventPublisher getApplicationEventPublisher() {
 		return it -> listener.onApplicationEvent((CassandraMappingEvent) it);
 	}
 
-	public abstract CassandraOperationsAccessor getAccessor();
+	protected abstract CassandraOperationsAccessor getAccessor();
 
 	@Test // DATACASS-106
-	public void selectByIdShouldEmitLoadEvents() {
+	void selectByIdShouldEmitLoadEvents() {
 
 		User loaded = getAccessor().selectOneById(firstUser.getId(), User.class);
 
 		assertThat(listener.getAfterLoad()).extracting(CassandraMappingEvent::getTableName)
-				.containsOnly(CqlIdentifier.of("users"));
+				.containsOnly(CqlIdentifier.fromCql("users"));
 		assertThat(listener.getAfterConvert()).extracting(CassandraMappingEvent::getSource).containsOnly(loaded);
 	}
 
 	@Test // DATACASS-106
-	public void selectByQueryShouldEmitLoadEvents() {
+	void selectByQueryShouldEmitLoadEvents() {
 
 		List<User> loaded = getAccessor().select(query(where("id").is(firstUser.getId())), User.class);
 
 		assertThat(listener.getAfterLoad()).extracting(CassandraMappingEvent::getTableName)
-				.containsOnly(CqlIdentifier.of("users"));
+				.containsOnly(CqlIdentifier.fromCql("users"));
 		assertThat(listener.getAfterConvert()).extracting(CassandraMappingEvent::getSource).containsOnly(loaded.get(0));
 	}
 
 	@Test // DATACASS-106
-	public void selectByStatementShouldEmitLoadEvents() {
+	void selectByStatementShouldEmitLoadEvents() {
 
-		List<User> loaded = getAccessor().select(new SimpleStatement("SELECT * FROM users"), User.class);
+		List<User> loaded = getAccessor().select(SimpleStatement.newInstance("SELECT * FROM users"), User.class);
 
 		assertThat(listener.getAfterLoad()).extracting(CassandraMappingEvent::getTableName)
-				.containsOnly(CqlIdentifier.of("users"));
+				.containsOnly(CqlIdentifier.fromCql("users"));
 		assertThat(listener.getAfterConvert()).extracting(CassandraMappingEvent::getSource).containsOnly(loaded.get(0));
 	}
 
 	@Test // DATACASS-106
-	public void insertShouldEmitEvents() {
+	void insertShouldEmitEvents() {
 
 		User user = new User("id-2", "Lukasz", "Antoniak");
 		getAccessor().insert(user);
@@ -113,7 +112,7 @@ public abstract class EventListenerIntegrationTestSupport extends AbstractKeyspa
 	}
 
 	@Test // DATACASS-106
-	public void updateShouldEmitEvents() {
+	void updateShouldEmitEvents() {
 
 		firstUser.setLastname("Wayne");
 		getAccessor().update(firstUser);
@@ -123,51 +122,51 @@ public abstract class EventListenerIntegrationTestSupport extends AbstractKeyspa
 	}
 
 	@Test // DATACASS-106
-	public void deleteShouldEmitEvents() {
+	void deleteShouldEmitEvents() {
 
 		getAccessor().delete(firstUser);
 
 		assertThat(listener.getBeforeDelete()).extracting(CassandraMappingEvent::getTableName)
-				.containsExactly(CqlIdentifier.of("users"));
+				.containsExactly(CqlIdentifier.fromCql("users"));
 		assertThat(listener.getAfterDelete()).extracting(CassandraMappingEvent::getTableName)
-				.containsExactly(CqlIdentifier.of("users"));
+				.containsExactly(CqlIdentifier.fromCql("users"));
 	}
 
 	@Test // DATACASS-106
-	public void deleteByIdShouldEmitEvents() {
+	void deleteByIdShouldEmitEvents() {
 
 		getAccessor().deleteById(firstUser.getId(), User.class);
 
 		assertThat(listener.getBeforeDelete()).extracting(CassandraMappingEvent::getTableName)
-				.containsExactly(CqlIdentifier.of("users"));
+				.containsExactly(CqlIdentifier.fromCql("users"));
 		assertThat(listener.getAfterDelete()).extracting(CassandraMappingEvent::getTableName)
-				.containsExactly(CqlIdentifier.of("users"));
+				.containsExactly(CqlIdentifier.fromCql("users"));
 	}
 
 	@Test // DATACASS-106
-	public void deleteByQueryShouldEmitEvents() {
+	void deleteByQueryShouldEmitEvents() {
 
 		getAccessor().delete(query(where("id").is(firstUser.getId())), User.class);
 
 		assertThat(listener.getBeforeDelete()).extracting(CassandraMappingEvent::getTableName)
-				.containsExactly(CqlIdentifier.of("users"));
+				.containsExactly(CqlIdentifier.fromCql("users"));
 		assertThat(listener.getAfterDelete()).extracting(CassandraMappingEvent::getTableName)
-				.containsExactly(CqlIdentifier.of("users"));
+				.containsExactly(CqlIdentifier.fromCql("users"));
 	}
 
 	@Test // DATACASS-106
-	public void truncateShouldEmitEvents() {
+	void truncateShouldEmitEvents() {
 
 		getAccessor().truncate(User.class);
 
 		assertThat(listener.getBeforeDelete()).extracting(CassandraMappingEvent::getTableName)
-				.containsExactly(CqlIdentifier.of("users"));
+				.containsExactly(CqlIdentifier.fromCql("users"));
 		assertThat(listener.getAfterDelete()).extracting(CassandraMappingEvent::getTableName)
-				.containsExactly(CqlIdentifier.of("users"));
+				.containsExactly(CqlIdentifier.fromCql("users"));
 	}
 
 	@Test // DATACASS-106
-	public void shouldEmitMultipleEvents() {
+	void shouldEmitMultipleEvents() {
 
 		User user = new User("id-2", "Lukasz", "Antoniak");
 		getAccessor().insert(user);
@@ -221,19 +220,19 @@ public abstract class EventListenerIntegrationTestSupport extends AbstractKeyspa
 			events.clear();
 		}
 
-		List<BeforeSaveEvent<User>> getBeforeSave() {
+		private List<BeforeSaveEvent<User>> getBeforeSave() {
 			return filter(BeforeSaveEvent.class);
 		}
 
-		List<AfterSaveEvent<User>> getAfterSave() {
+		private List<AfterSaveEvent<User>> getAfterSave() {
 			return filter(AfterSaveEvent.class);
 		}
 
-		List<BeforeDeleteEvent<User>> getBeforeDelete() {
+		private List<BeforeDeleteEvent<User>> getBeforeDelete() {
 			return filter(BeforeDeleteEvent.class);
 		}
 
-		List<AfterDeleteEvent<User>> getAfterDelete() {
+		private List<AfterDeleteEvent<User>> getAfterDelete() {
 			return filter(AfterDeleteEvent.class);
 		}
 
@@ -269,6 +268,6 @@ public abstract class EventListenerIntegrationTestSupport extends AbstractKeyspa
 
 		<T> List<T> select(Query query, Class<T> entityClass);
 
-		<T> List<T> select(Statement statement, Class<T> entityClass);
+		<T> List<T> select(SimpleStatement statement, Class<T> entityClass);
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,14 @@
  */
 package org.springframework.data.cassandra.core.cql.keyspace;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.DataType;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.type.DataType;
 
 /**
  * Base value object class to specify user type fields.
- * <p/>
+ * <p>
  * A {@link FieldSpecification} consists of a name and a {@link DataType}.
  *
  * @author Mark Paluch
@@ -50,7 +50,7 @@ public class FieldSpecification {
 	 * @param type must not be {@literal null}.
 	 */
 	public static FieldSpecification of(String name, DataType type) {
-		return new FieldSpecification(CqlIdentifier.of(name), type);
+		return new FieldSpecification(CqlIdentifier.fromCql(name), type);
 	}
 
 	/**
@@ -69,13 +69,9 @@ public class FieldSpecification {
 	}
 
 	public StringBuilder toCql(StringBuilder cql) {
-		return cql.append(name).append(" ").append(type);
+		return cql.append(name.asCql(true)).append(" ").append(type.asCql(true, true));
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see java.lang.Object#toString()
-	 */
 	@Override
 	public String toString() {
 		return toCql(new StringBuilder()).toString();

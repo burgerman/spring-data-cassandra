@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,17 +34,11 @@ import org.w3c.dom.Element;
  */
 class CassandraTemplateParser extends AbstractSingleBeanDefinitionParser {
 
-	/* (non-Javadoc)
-	 * @see org.springframework.cassandra.config.xml.CassandraCqlTemplateParser#getBeanClass(org.w3c.dom.Element)
-	 */
 	@Override
 	protected Class<?> getBeanClass(Element element) {
 		return CassandraTemplateFactoryBean.class;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.cassandra.config.xml.CassandraCqlTemplateParser#resolveId(org.w3c.dom.Element, org.springframework.beans.factory.support.AbstractBeanDefinition, org.springframework.beans.factory.xml.ParserContext)
-	 */
 	@Override
 	protected String resolveId(Element element, AbstractBeanDefinition definition, ParserContext parserContext)
 			throws BeanDefinitionStoreException {
@@ -53,22 +47,23 @@ class CassandraTemplateParser extends AbstractSingleBeanDefinitionParser {
 		return StringUtils.hasText(id) ? id : DefaultBeanNames.DATA_TEMPLATE;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.cassandra.config.xml.CassandraCqlTemplateParser#doParse(org.w3c.dom.Element, org.springframework.beans.factory.xml.ParserContext, org.springframework.beans.factory.support.BeanDefinitionBuilder)
-	 */
 	@Override
 	protected void doParse(Element element, ParserContext parserContext, BeanDefinitionBuilder builder) {
 
-		CassandraMappingXmlBeanFactoryPostProcessorRegistrar.ensureRegistration(element, parserContext);
-
 		super.doParse(element, parserContext, builder);
 
-		if (StringUtils.hasText(element.getAttribute("cql-template-ref"))) {
+		if (element.hasAttribute("cql-template-ref")) {
 			addRequiredPropertyReference(builder, "cqlOperations", element, "cql-template-ref");
+		} else if (element.hasAttribute("session-factory-ref")) {
+			addRequiredPropertyReference(builder, "sessionFactory", element, "session-factory-ref");
 		} else {
 			addOptionalPropertyReference(builder, "session", element, "session-ref", DefaultBeanNames.SESSION);
 		}
 
-		addOptionalPropertyReference(builder, "converter", element, "cassandra-converter-ref", DefaultBeanNames.CONVERTER);
+		if (element.hasAttribute("cassandra-converter-ref")) {
+			addRequiredPropertyReference(builder, "converter", element, "cassandra-converter-ref");
+		}
+
+		builder.getRawBeanDefinition().setSource(element);
 	}
 }

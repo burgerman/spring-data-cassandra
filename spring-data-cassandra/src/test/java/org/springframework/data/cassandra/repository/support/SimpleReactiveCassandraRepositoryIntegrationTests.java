@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,18 +15,23 @@
  */
 package org.springframework.data.cassandra.repository.support;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
-import java.util.Arrays;
+import static org.assertj.core.api.Assertions.*;
+import static org.junit.Assume.*;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanClassLoaderAware;
 import org.springframework.beans.factory.BeanFactory;
@@ -34,23 +39,32 @@ import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.cassandra.core.ReactiveCassandraOperations;
+import org.springframework.data.cassandra.core.query.CassandraPageRequest;
 import org.springframework.data.cassandra.domain.User;
+import org.springframework.data.cassandra.domain.UserToken;
 import org.springframework.data.cassandra.repository.ReactiveCassandraRepository;
-import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTest;
-import org.springframework.data.repository.query.ExtensionAwareQueryMethodEvaluationContextProvider;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringRunner;
+import org.springframework.data.cassandra.support.CassandraVersion;
+import org.springframework.data.cassandra.test.util.IntegrationTestsSupport;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.util.Version;
+import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
+
+import com.datastax.oss.driver.api.core.CqlSession;
 
 /**
  * Integration tests for {@link SimpleReactiveCassandraRepository}.
  *
  * @author Mark Paluch
  * @author Christoph Strobl
+ * @author Jens Schauder
  */
-@RunWith(SpringRunner.class)
-@ContextConfiguration
-public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractKeyspaceCreatingIntegrationTest
+@SpringJUnitConfig
+public class SimpleReactiveCassandraRepositoryIntegrationTests extends IntegrationTestsSupport
 		implements BeanClassLoaderAware, BeanFactoryAware {
+
+	private static final Version CASSANDRA_3 = Version.parse("3.0");
 
 	@Configuration
 	public static class Config extends IntegrationTestConfig {
@@ -61,9 +75,10 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 		}
 	}
 
-	@Autowired
-	private ReactiveCassandraOperations operations;
+	@Autowired private CqlSession session;
+	@Autowired private ReactiveCassandraOperations operations;
 
+	private Version cassandraVersion;
 	private BeanFactory beanFactory;
 	private ClassLoader classLoader;
 	private ReactiveCassandraRepositoryFactory factory;
@@ -81,16 +96,17 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 		this.beanFactory = beanFactory;
 	}
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		factory = new ReactiveCassandraRepositoryFactory(operations);
 		factory.setRepositoryBaseClass(SimpleReactiveCassandraRepository.class);
 		factory.setBeanClassLoader(classLoader);
 		factory.setBeanFactory(beanFactory);
-		factory.setEvaluationContextProvider(ExtensionAwareQueryMethodEvaluationContextProvider.DEFAULT);
 
 		repository = factory.getRepository(UserRepostitory.class);
+
+		cassandraVersion = CassandraVersion.get(session);
 
 		deleteAll();
 
@@ -110,7 +126,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void existsByIdShouldReturnTrueForExistingObject() {
+	void existsByIdShouldReturnTrueForExistingObject() {
 
 		insertTestData();
 
@@ -118,12 +134,12 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void existsByIdShouldReturnFalseForAbsentObject() {
+	void existsByIdShouldReturnFalseForAbsentObject() {
 		repository.existsById("unknown").as(StepVerifier::create).expectNext(false).verifyComplete();
 	}
 
 	@Test // DATACASS-335
-	public void existsByMonoOfIdShouldReturnTrueForExistingObject() {
+	void existsByMonoOfIdShouldReturnTrueForExistingObject() {
 
 		insertTestData();
 
@@ -131,7 +147,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-462
-	public void existsByIdUsingFluxShouldReturnTrueForExistingObject() {
+	void existsByIdUsingFluxShouldReturnTrueForExistingObject() {
 
 		insertTestData();
 
@@ -140,12 +156,12 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void existsByEmptyMonoOfIdShouldReturnEmptyMono() {
+	void existsByEmptyMonoOfIdShouldReturnEmptyMono() {
 		repository.existsById(Mono.empty()).as(StepVerifier::create).verifyComplete();
 	}
 
 	@Test // DATACASS-335
-	public void findByIdShouldReturnObject() {
+	void findByIdShouldReturnObject() {
 
 		insertTestData();
 
@@ -153,12 +169,12 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void findByIdShouldCompleteWithoutValueForAbsentObject() {
+	void findByIdShouldCompleteWithoutValueForAbsentObject() {
 		repository.findById("unknown").as(StepVerifier::create).verifyComplete();
 	}
 
 	@Test // DATACASS-335
-	public void findByIdByMonoOfIdShouldReturnTrueForExistingObject() {
+	void findByIdByMonoOfIdShouldReturnTrueForExistingObject() {
 
 		insertTestData();
 
@@ -166,7 +182,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-462
-	public void findByIdUsingFluxShouldReturnTrueForExistingObject() {
+	void findByIdUsingFluxShouldReturnTrueForExistingObject() {
 
 		insertTestData();
 
@@ -175,12 +191,12 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void findByIdByEmptyMonoOfIdShouldReturnEmptyMono() {
+	void findByIdByEmptyMonoOfIdShouldReturnEmptyMono() {
 		repository.findById(Mono.empty()).as(StepVerifier::create).verifyComplete();
 	}
 
 	@Test // DATACASS-335
-	public void findAllShouldReturnAllResults() {
+	void findAllShouldReturnAllResults() {
 
 		insertTestData();
 
@@ -188,7 +204,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void findAllByIterableOfIdShouldReturnResults() {
+	void findAllByIterableOfIdShouldReturnResults() {
 
 		insertTestData();
 
@@ -198,7 +214,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void findAllByPublisherOfIdShouldReturnResults() {
+	void findAllByPublisherOfIdShouldReturnResults() {
 
 		insertTestData();
 
@@ -208,12 +224,45 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void findAllByEmptyPublisherOfIdShouldReturnResults() {
+	void findAllByEmptyPublisherOfIdShouldReturnResults() {
 		repository.findAllById(Flux.empty()).as(StepVerifier::create).verifyComplete();
 	}
 
+	@Test // DATACASS-700
+	void findAllWithPagingAndSorting() {
+
+		assumeTrue(cassandraVersion.isGreaterThan(CASSANDRA_3));
+
+		UserTokenRepostitory repository = factory.getRepository(UserTokenRepostitory.class);
+		repository.deleteAll();
+
+		UUID id = UUID.randomUUID();
+		List<UserToken> users = IntStream.range(0, 100).mapToObj(value -> {
+
+			UserToken token = new UserToken();
+			token.setUserId(id);
+			token.setToken(UUID.randomUUID());
+
+			return token;
+		}).collect(Collectors.toList());
+
+		repository.saveAll(users).then().as(StepVerifier::create).verifyComplete();
+
+		List<UserToken> result = new ArrayList<>();
+		Slice<UserToken> slice = repository.findAllByUserId(id, CassandraPageRequest.first(10, Sort.by("token")))
+				.block(Duration.ofSeconds(10));
+
+		while (!slice.isEmpty() || slice.hasNext()) {
+
+			result.addAll(slice.getContent());
+			slice = repository.findAllByUserId(id, slice.nextPageable()).block(Duration.ofSeconds(10));
+		}
+
+		assertThat(result).hasSize(100);
+	}
+
 	@Test // DATACASS-335
-	public void countShouldReturnNumberOfRecords() {
+	void countShouldReturnNumberOfRecords() {
 
 		insertTestData();
 
@@ -221,7 +270,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void insertEntityShouldInsertEntity() {
+	void insertEntityShouldInsertEntity() {
 
 		User person = new User("36", "Homer", "Simpson");
 
@@ -231,7 +280,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void insertShouldDeferredWrite() {
+	void insertShouldDeferredWrite() {
 
 		User person = new User("36", "Homer", "Simpson");
 
@@ -241,7 +290,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void insertIterableOfEntitiesShouldInsertEntity() {
+	void insertIterableOfEntitiesShouldInsertEntity() {
 
 		repository.insert(Arrays.asList(dave, oliver, boyd)).as(StepVerifier::create).expectNextCount(3L).verifyComplete();
 
@@ -249,7 +298,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void insertPublisherOfEntitiesShouldInsertEntity() {
+	void insertPublisherOfEntitiesShouldInsertEntity() {
 
 		repository.insert(Flux.just(dave, oliver, boyd)).as(StepVerifier::create).expectNextCount(3L).verifyComplete();
 
@@ -257,7 +306,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void saveEntityShouldUpdateExistingEntity() {
+	void saveEntityShouldUpdateExistingEntity() {
 
 		dave.setFirstname("Hello, Dave");
 		dave.setLastname("Bowman");
@@ -272,7 +321,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void saveEntityShouldInsertNewEntity() {
+	void saveEntityShouldInsertNewEntity() {
 
 		User person = new User("36", "Homer", "Simpson");
 
@@ -282,7 +331,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void saveIterableOfNewEntitiesShouldInsertEntity() {
+	void saveIterableOfNewEntitiesShouldInsertEntity() {
 
 		repository.saveAll(Arrays.asList(dave, oliver, boyd)).as(StepVerifier::create).expectNextCount(3).verifyComplete();
 
@@ -290,7 +339,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void saveIterableOfMixedEntitiesShouldInsertEntity() {
+	void saveIterableOfMixedEntitiesShouldInsertEntity() {
 
 		User person = new User("36", "Homer", "Simpson");
 
@@ -305,7 +354,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void savePublisherOfEntitiesShouldInsertEntity() {
+	void savePublisherOfEntitiesShouldInsertEntity() {
 
 		repository.saveAll(Flux.just(dave, oliver, boyd)).as(StepVerifier::create).expectNextCount(3).verifyComplete();
 
@@ -313,7 +362,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void deleteAllShouldRemoveEntities() {
+	void deleteAllShouldRemoveEntities() {
 
 		insertTestData();
 
@@ -323,7 +372,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void deleteByIdShouldRemoveEntity() {
+	void deleteByIdShouldRemoveEntity() {
 
 		insertTestData();
 
@@ -333,7 +382,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-462
-	public void deleteByIdUsingMonoShouldRemoveEntity() {
+	void deleteByIdUsingMonoShouldRemoveEntity() {
 
 		insertTestData();
 
@@ -342,8 +391,19 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 		repository.existsById(dave.getId()).as(StepVerifier::create).expectNext(false).verifyComplete();
 	}
 
+	@Test // DATACASS-825
+	void deleteAllByIdRemovesEntities() {
+
+		insertTestData();
+
+		repository.deleteAllById(Arrays.asList(dave.getId(), carter.getId())).as(StepVerifier::create).verifyComplete();
+
+		repository.existsById(dave.getId()).as(StepVerifier::create).expectNext(false).verifyComplete();
+		repository.existsById(carter.getId()).as(StepVerifier::create).expectNext(false).verifyComplete();
+	}
+
 	@Test // DATACASS-462
-	public void deleteByIdUsingFluxShouldRemoveFirstEntity() {
+	void deleteByIdUsingFluxShouldRemoveFirstEntity() {
 
 		insertTestData();
 
@@ -354,7 +414,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void deleteShouldRemoveEntity() {
+	void deleteShouldRemoveEntity() {
 
 		insertTestData();
 
@@ -364,7 +424,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void deleteIterableOfEntitiesShouldRemoveEntities() {
+	void deleteIterableOfEntitiesShouldRemoveEntities() {
 
 		insertTestData();
 
@@ -374,7 +434,7 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 	}
 
 	@Test // DATACASS-335
-	public void deletePublisherOfEntitiesShouldRemoveEntities() {
+	void deletePublisherOfEntitiesShouldRemoveEntities() {
 
 		insertTestData();
 
@@ -383,6 +443,10 @@ public class SimpleReactiveCassandraRepositoryIntegrationTests extends AbstractK
 		repository.findById(boyd.getId()).as(StepVerifier::create).expectNextCount(0).verifyComplete();
 	}
 
-	interface UserRepostitory extends ReactiveCassandraRepository<User, String> { }
+	interface UserRepostitory extends ReactiveCassandraRepository<User, String> {}
+
+	interface UserTokenRepostitory extends ReactiveCassandraRepository<UserToken, UUID> {
+		Mono<Slice<UserToken>> findAllByUserId(UUID id, Pageable pageRequest);
+	}
 
 }

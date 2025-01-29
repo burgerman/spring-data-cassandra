@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,32 +15,35 @@
  */
 package org.springframework.data.cassandra;
 
-import com.datastax.driver.core.Session;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.session.Session;
 
 /**
- * A factory for Apache Cassandra sessions.
- * <p>
- * An alternative to the {@link com.datastax.driver.core.Cluster} facility, a {@link SessionFactory} object is the
- * preferred means of getting a connection. The {@link SessionFactory} interface is implemented by a {@link Session}
- * provider.
- * <p>
+ * A factory for Apache Cassandra {@link Session sessions}.
+ *
+ * A {@link SessionFactory} object is the preferred means of getting a connection. The {@link SessionFactory} interface
+ * is implemented by a {@link CqlSession} provider.
+ *
  * A {@link SessionFactory} object can have properties that can be modified when necessary. For example, if the
- * {@link Session} is moved to a different server, the property for the server can be changed. The benefit is that
+ * {@link CqlSession} is moved to a different server, the property for the server can be changed. The benefit is that
  * because the data source's properties can be changed, any code accessing that {@link SessionFactory} does not need to
  * be changed.
  *
  * @author Mark Paluch
+ * @see com.datastax.oss.driver.api.core.CqlSession
+ * @see com.datastax.oss.driver.api.core.session.Session
  * @since 2.0
  */
 @FunctionalInterface
 public interface SessionFactory {
 
 	/**
-	 * Attempts to establish a {@link Session} with the connection infrastructure that this {@link SessionFactory} object
-	 * represents.
+	 * Attempts to establish a {@link CqlSession} with the connection infrastructure that this {@link SessionFactory}
+	 * object represents.
 	 *
-	 * @return a {@link Session} to Apache Cassandra.
+	 * @return a {@link CqlSession} to Apache Cassandra.
+	 * @see com.datastax.oss.driver.api.core.CqlSession
 	 */
-	Session getSession();
+	CqlSession getSession();
 
 }

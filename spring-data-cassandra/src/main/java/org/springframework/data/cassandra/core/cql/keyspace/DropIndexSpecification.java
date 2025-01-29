@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,9 @@
  */
 package org.springframework.data.cassandra.core.cql.keyspace;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import org.springframework.lang.Nullable;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Value object representing a {@code DROP INDEX} specification.
@@ -24,10 +26,10 @@ import org.springframework.data.cassandra.core.cql.CqlIdentifier;
  * @author David Webb
  * @author Mark Paluch
  */
-public class DropIndexSpecification extends IndexNameSpecification<DropIndexSpecification> {
+public class DropIndexSpecification extends IndexNameSpecification<DropIndexSpecification> implements CqlSpecification {
 
-	private DropIndexSpecification(CqlIdentifier name) {
-		super(name);
+	private DropIndexSpecification(@Nullable CqlIdentifier keyspace, CqlIdentifier name) {
+		super(keyspace, name);
 	}
 
 	/**
@@ -37,7 +39,7 @@ public class DropIndexSpecification extends IndexNameSpecification<DropIndexSpec
 	 * @return a new {@link DropIndexSpecification}.
 	 */
 	public static DropIndexSpecification dropIndex(String indexName) {
-		return dropIndex(CqlIdentifier.of(indexName));
+		return dropIndex(CqlIdentifier.fromCql(indexName));
 	}
 
 	/**
@@ -47,6 +49,19 @@ public class DropIndexSpecification extends IndexNameSpecification<DropIndexSpec
 	 * @return a new {@link DropIndexSpecification}.
 	 */
 	public static DropIndexSpecification dropIndex(CqlIdentifier indexName) {
-		return new DropIndexSpecification(indexName);
+		return new DropIndexSpecification(null, indexName);
+	}
+
+	/**
+	 * Create a new {@link DropIndexSpecification} for the given {@code indexName}. Uses the default keyspace if
+	 * {@code keyspace} is null; otherwise, of the {@code keyspace} is not {@link null}, then the index name is prefixed
+	 * with {@code keyspace}.
+	 *
+	 * @param keyspace can be {@literal null}.
+	 * @param indexName must not be {@literal null}.
+	 * @return a new {@link DropIndexSpecification}.
+	 */
+	public static DropIndexSpecification dropIndex(@Nullable CqlIdentifier keyspace, CqlIdentifier indexName) {
+		return new DropIndexSpecification(keyspace, indexName);
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 package org.springframework.data.cassandra.repository.support;
 
 import org.springframework.data.cassandra.core.convert.CassandraConverter;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty;
 import org.springframework.data.cassandra.core.mapping.MapId;
@@ -24,6 +23,8 @@ import org.springframework.data.cassandra.repository.query.CassandraEntityInform
 import org.springframework.data.repository.core.support.PersistentEntityInformation;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * {@link CassandraEntityInformation} implementation using a {@link CassandraPersistentEntity} instance to lookup the
@@ -53,9 +54,6 @@ public class MappingCassandraEntityInformation<T, ID> extends PersistentEntityIn
 		this.converter = converter;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.core.EntityInformation#getId(java.lang.Object)
-	 */
 	@SuppressWarnings("unchecked")
 	@Override
 	@Nullable
@@ -69,9 +67,6 @@ public class MappingCassandraEntityInformation<T, ID> extends PersistentEntityIn
 				: (ID) converter.getId(entity, entityMetadata);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.core.EntityInformation#getIdType()
-	 */
 	@SuppressWarnings("unchecked")
 	@Override
 	public Class<ID> getIdType() {
@@ -83,17 +78,11 @@ public class MappingCassandraEntityInformation<T, ID> extends PersistentEntityIn
 		return (Class<ID>) MapId.class;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.CassandraEntityInformation#getIdAttribute()
-	 */
 	@Override
 	public String getIdAttribute() {
 		return this.entityMetadata.getRequiredIdProperty().getName();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.CassandraEntityMetadata#getTableName()
-	 */
 	@Override
 	public CqlIdentifier getTableName() {
 		return this.entityMetadata.getTableName();

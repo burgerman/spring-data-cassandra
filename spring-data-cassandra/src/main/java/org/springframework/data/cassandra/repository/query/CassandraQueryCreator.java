@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2019 the original author or authors.
+ * Copyright 2010-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,9 +21,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty;
@@ -31,7 +30,6 @@ import org.springframework.data.cassandra.core.query.Criteria;
 import org.springframework.data.cassandra.core.query.CriteriaDefinition;
 import org.springframework.data.cassandra.core.query.Filter;
 import org.springframework.data.cassandra.core.query.Query;
-import org.springframework.data.cassandra.repository.query.ConvertingParameterAccessor.PotentiallyConvertingIterator;
 import org.springframework.data.domain.Range;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mapping.PersistentPropertyPath;
@@ -42,8 +40,6 @@ import org.springframework.data.repository.query.parser.Part.Type;
 import org.springframework.data.repository.query.parser.PartTree;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.querybuilder.Clause;
-
 /**
  * Custom query creator to create Cassandra criteria.
  *
@@ -53,7 +49,7 @@ import com.datastax.driver.core.querybuilder.Clause;
  */
 class CassandraQueryCreator extends AbstractQueryCreator<Query, Filter> {
 
-	private static final Logger LOG = LoggerFactory.getLogger(CassandraQueryCreator.class);
+	private static final Log LOG = LogFactory.getLog(CassandraQueryCreator.class);
 
 	private final MappingContext<?, CassandraPersistentProperty> mappingContext;
 
@@ -97,9 +93,6 @@ class CassandraQueryCreator extends AbstractQueryCreator<Query, Filter> {
 		return this.queryBuilder;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.query.parser.AbstractQueryCreator#create(org.springframework.data.repository.query.parser.Part, java.util.Iterator)
-	 */
 	@Override
 	protected Filter create(Part part, Iterator<Object> iterator) {
 
@@ -110,8 +103,7 @@ class CassandraQueryCreator extends AbstractQueryCreator<Query, Filter> {
 
 		Assert.state(property != null && path.toDotPath() != null, "Leaf property must not be null");
 
-		Object filterOrCriteria = from(part, property, Criteria.where(path.toDotPath()),
-				(PotentiallyConvertingIterator) iterator);
+		Object filterOrCriteria = from(part, property, Criteria.where(path.toDotPath()), iterator);
 
 		if (filterOrCriteria instanceof CriteriaDefinition) {
 			return Filter.from((CriteriaDefinition) filterOrCriteria);
@@ -120,9 +112,6 @@ class CassandraQueryCreator extends AbstractQueryCreator<Query, Filter> {
 		return (Filter) filterOrCriteria;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.query.parser.AbstractQueryCreator#and(org.springframework.data.repository.query.parser.Part, java.lang.Object, java.util.Iterator)
-	 */
 	@Override
 	protected Filter and(Part part, Filter base, Iterator<Object> iterator) {
 
@@ -133,20 +122,11 @@ class CassandraQueryCreator extends AbstractQueryCreator<Query, Filter> {
 		return create(part, iterator);
 	}
 
-	/*
-	 * Cassandra does not support OR queries.
-	 *
-	 * (non-Javadoc)
-	 * @see org.springframework.data.repository.query.parser.AbstractQueryCreator#or(java.lang.Object, java.lang.Object)
-	 */
 	@Override
 	protected Filter or(Filter base, Filter criteria) {
 		throw new InvalidDataAccessApiUsageException("Cassandra does not support an OR operator");
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.query.parser.AbstractQueryCreator#complete(java.lang.Object, org.springframework.data.domain.Sort)
-	 */
 	@Override
 	protected Query complete(Filter criteria, Sort sort) {
 
@@ -169,38 +149,37 @@ class CassandraQueryCreator extends AbstractQueryCreator<Query, Filter> {
 	/**
 	 * Returns a {@link Filter} or {@link CriteriaDefinition} object representing the criterion for a {@link Part}.
 	 */
-	private Object from(Part part, CassandraPersistentProperty property, Criteria where,
-			PotentiallyConvertingIterator parameters) {
+	private Object from(Part part, CassandraPersistentProperty property, Criteria where, Iterator<Object> parameters) {
 
 		Type type = part.getType();
 
 		switch (type) {
 			case AFTER:
 			case GREATER_THAN:
-				return where.gt(parameters.nextConverted(property));
+				return where.gt(parameters.next());
 			case GREATER_THAN_EQUAL:
-				return where.gte(parameters.nextConverted(property));
+				return where.gte(parameters.next());
 			case BEFORE:
 			case LESS_THAN:
-				return where.lt(parameters.nextConverted(property));
+				return where.lt(parameters.next());
 			case LESS_THAN_EQUAL:
-				return where.lte(parameters.nextConverted(property));
+				return where.lte(parameters.next());
 			case BETWEEN:
 				return computeBetweenPart(where, parameters);
 			case IN:
-				return where.in(nextAsArray(property, parameters));
+				return where.in(nextAsArray(parameters));
 			case LIKE:
 			case STARTING_WITH:
 			case ENDING_WITH:
-				return where.like(like(type, parameters.nextConverted(property)));
+				return where.like(like(type, parameters.next()));
 			case CONTAINING:
-				return containing(where, property, parameters.nextConverted(property));
+				return containing(where, property, parameters.next());
 			case TRUE:
 				return where.is(true);
 			case FALSE:
 				return where.is(false);
 			case SIMPLE_PROPERTY:
-				return where.is(parameters.nextConverted(property));
+				return where.is(parameters.next());
 			default:
 				throw new InvalidDataAccessApiUsageException(
 						String.format("Unsupported keyword [%s] in part [%s]", type, part));
@@ -209,9 +188,9 @@ class CassandraQueryCreator extends AbstractQueryCreator<Query, Filter> {
 
 	/**
 	 * Compute a {@link Type#BETWEEN} {@link Part}.
-	 * <p/>
+	 * <p>
 	 * In case the first {@literal value} is actually a {@link Range} the lower and upper bounds of the {@link Range} are
-	 * used according to their {@link Range.Bound#isInclusive() inclusion} definition. Otherwise the {@literal value} is
+	 * used according to their {@link Range.Bound#isInclusive() inclusion} definition. Otherwise, the {@literal value} is
 	 * used for greater than and {@link Iterator#next() parameters.next()} as less than criterions.
 	 *
 	 * @param where must not be {@literal null}.
@@ -278,9 +257,9 @@ class CassandraQueryCreator extends AbstractQueryCreator<Query, Filter> {
 		throw new IllegalArgumentException(String.format("Part Type [%s] not supported with like queries", type));
 	}
 
-	private Object[] nextAsArray(CassandraPersistentProperty property, PotentiallyConvertingIterator iterator) {
+	private Object[] nextAsArray(Iterator<Object> iterator) {
 
-		Object next = iterator.nextConverted(property);
+		Object next = iterator.next();
 
 		if (next instanceof Collection) {
 			return ((Collection<?>) next).toArray();
@@ -292,7 +271,8 @@ class CassandraQueryCreator extends AbstractQueryCreator<Query, Filter> {
 	}
 
 	/**
-	 * Where clause builder. Collects {@link Clause clauses} and builds the where-clause depending on the WHERE type.
+	 * Where clause builder. Collects {@link CriteriaDefinition clauses} and builds the where-clause depending on the
+	 * WHERE type.
 	 *
 	 * @author Mark Paluch
 	 */

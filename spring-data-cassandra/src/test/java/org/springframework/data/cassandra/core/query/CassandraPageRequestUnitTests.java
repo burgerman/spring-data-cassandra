@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,30 +15,27 @@
  */
 package org.springframework.data.cassandra.core.query;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.springframework.data.domain.Sort.Order.asc;
+import static org.assertj.core.api.Assertions.*;
+import static org.springframework.data.domain.Sort.Order.*;
 
-import org.junit.Test;
+import java.nio.ByteBuffer;
 
+import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.Sort.Direction;
-
-import com.datastax.driver.core.PagingState;
 
 /**
  * Unit tests for {@link CassandraPageRequest}.
  *
  * @author Mark Paluch
  */
-public class CassandraPageRequestUnitTests {
+class CassandraPageRequestUnitTests {
 
-	PagingState pagingState =
-			PagingState.fromString("001400100c68656973656e62657267313600f07ffffff5006f934c985d6110148e1385ca793a75780004");
+	private ByteBuffer pagingState = ByteBuffer.allocate(1);
 
 	@Test // DATACASS-56
-	public void shouldNotAllowNonZeroPageConstruction() {
+	void shouldNotAllowNonZeroPageConstruction() {
 
 		assertThatThrownBy(() -> CassandraPageRequest.of(1, 1)).isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> CassandraPageRequest.of(1, 1, Sort.unsorted()))
@@ -48,7 +45,7 @@ public class CassandraPageRequestUnitTests {
 	}
 
 	@Test // DATACASS-56
-	public void shouldCreateFirstUnsortedPageRequest() {
+	void shouldCreateFirstUnsortedPageRequest() {
 
 		CassandraPageRequest pageRequest = CassandraPageRequest.first(10);
 
@@ -58,7 +55,7 @@ public class CassandraPageRequestUnitTests {
 	}
 
 	@Test // DATACASS-56
-	public void shouldCreateFirstSortedPageRequest() {
+	void shouldCreateFirstSortedPageRequest() {
 
 		CassandraPageRequest pageRequest = CassandraPageRequest.first(10, Direction.ASC, "foo");
 
@@ -68,7 +65,7 @@ public class CassandraPageRequestUnitTests {
 	}
 
 	@Test // DATACASS-56
-	public void shouldFailIfNoNextPageIsAvailable() {
+	void shouldFailIfNoNextPageIsAvailable() {
 
 		CassandraPageRequest pageRequest = CassandraPageRequest.first(10, Direction.ASC, "foo");
 
@@ -76,7 +73,7 @@ public class CassandraPageRequestUnitTests {
 	}
 
 	@Test // DATACASS-56
-	public void shouldCreateNextPageRequest() {
+	void shouldCreateNextPageRequest() {
 
 		CassandraPageRequest pageRequest = CassandraPageRequest.first(10, Direction.ASC, "foo");
 		CassandraPageRequest next = CassandraPageRequest.of(pageRequest, pagingState).next();
@@ -86,7 +83,7 @@ public class CassandraPageRequestUnitTests {
 	}
 
 	@Test // DATACASS-56
-	public void shouldNotAllowPreviousPageNavigationToIntermediatePages() {
+	void shouldNotAllowPreviousPageNavigationToIntermediatePages() {
 
 		CassandraPageRequest next = CassandraPageRequest.of(PageRequest.of(5, 10), pagingState);
 
@@ -94,7 +91,7 @@ public class CassandraPageRequestUnitTests {
 	}
 
 	@Test // DATACASS-56
-	public void shouldCheckEquality() {
+	void shouldCheckEquality() {
 
 		CassandraPageRequest first = CassandraPageRequest.first(10);
 		CassandraPageRequest anotherFirst = CassandraPageRequest.first(10);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2019 the original author or authors.
+ * Copyright 2014-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import org.springframework.data.repository.query.QueryMethod;
 import org.springframework.data.repository.query.RepositoryQuery;
 import org.springframework.data.repository.query.parser.PartTree;
 
-import com.datastax.driver.core.Statement;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
 
 /**
  * {@link RepositoryQuery} implementation for Cassandra.
@@ -56,7 +56,8 @@ public class PartTreeCassandraQuery extends AbstractCassandraQuery {
 
 		this.tree = new PartTree(queryMethod.getName(), queryMethod.getResultProcessor().getReturnedType().getDomainType());
 		this.mappingContext = operations.getConverter().getMappingContext();
-		this.statementFactory = new StatementFactory(new UpdateMapper(operations.getConverter()));
+		this.statementFactory = operations instanceof CassandraTemplate ct ? ct.getStatementFactory()
+				: new StatementFactory(new UpdateMapper(operations.getConverter()));
 	}
 
 	/**
@@ -89,12 +90,8 @@ public class PartTreeCassandraQuery extends AbstractCassandraQuery {
 		return this.tree;
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.AbstractCassandraQuery#createQuery(org.springframework.data.cassandra.repository.query.CassandraParameterAccessor, boolean)
-	 */
 	@Override
-	protected Statement createQuery(CassandraParameterAccessor parameterAccessor) {
+	protected SimpleStatement createQuery(CassandraParameterAccessor parameterAccessor) {
 
 		if (isCountQuery()) {
 			return getQueryStatementCreator().count(getStatementFactory(), getTree(), parameterAccessor);
@@ -112,33 +109,21 @@ public class PartTreeCassandraQuery extends AbstractCassandraQuery {
 				getQueryMethod().getResultProcessor());
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.AbstractCassandraQuery#isCountQuery()
-	 */
 	@Override
 	protected boolean isCountQuery() {
 		return getTree().isCountProjection();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.AbstractCassandraQuery#isExistsQuery()
-	 */
 	@Override
 	protected boolean isExistsQuery() {
 		return getTree().isExistsProjection();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.AbstractCassandraQuery#isLimiting()
-	 */
 	@Override
 	protected boolean isLimiting() {
 		return getTree().isLimiting();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.AbstractCassandraQuery#isModifyingQuery()
-	 */
 	@Override
 	protected boolean isModifyingQuery() {
 		return getTree().isDelete();

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,22 +15,19 @@
  */
 package org.springframework.data.cassandra.support;
 
-import lombok.experimental.UtilityClass;
-
 import org.springframework.data.util.Version;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
-import com.datastax.driver.core.Session;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
+import com.datastax.oss.driver.api.core.cql.Row;
 
 /**
  * Utility to retrieve the Cassandra release version.
  *
  * @author Mark Paluch
  */
-@UtilityClass
-public class CassandraVersion {
+public final class CassandraVersion {
 
 	/**
 	 * Retrieve the Cassandra release version.
@@ -38,7 +35,7 @@ public class CassandraVersion {
 	 * @param session must not be {@literal null}.
 	 * @return the release {@link Version}.
 	 */
-	public static Version get(Session session) {
+	public static Version get(CqlSession session) {
 
 		Assert.notNull(session, "Session must not be null");
 

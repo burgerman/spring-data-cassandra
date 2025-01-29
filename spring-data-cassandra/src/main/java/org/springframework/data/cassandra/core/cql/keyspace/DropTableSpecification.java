@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,9 @@
  */
 package org.springframework.data.cassandra.core.cql.keyspace;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import org.springframework.lang.Nullable;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Object to configure a {@code DROP TABLE} specification.
@@ -23,12 +25,12 @@ import org.springframework.data.cassandra.core.cql.CqlIdentifier;
  * @author Matthew T. Adams
  * @author Mark Paluch
  */
-public class DropTableSpecification extends TableNameSpecification {
+public class DropTableSpecification extends TableNameSpecification implements CqlSpecification {
 
 	private boolean ifExists = false;
 
-	private DropTableSpecification(CqlIdentifier name) {
-		super(name);
+	private DropTableSpecification(@Nullable CqlIdentifier keyspace, CqlIdentifier name) {
+		super(keyspace, name);
 	}
 
 	/**
@@ -39,7 +41,7 @@ public class DropTableSpecification extends TableNameSpecification {
 	 * @return a new {@link DropTableSpecification}.
 	 */
 	public static DropTableSpecification dropTable(String tableName) {
-		return dropTable(CqlIdentifier.of(tableName));
+		return dropTable(CqlIdentifier.fromCql(tableName));
 	}
 
 	/**
@@ -50,7 +52,21 @@ public class DropTableSpecification extends TableNameSpecification {
 	 * @return a new {@link DropTableSpecification}.
 	 */
 	public static DropTableSpecification dropTable(CqlIdentifier tableName) {
-		return new DropTableSpecification(tableName);
+		return new DropTableSpecification(null, tableName);
+	}
+
+	/**
+	 * Entry point into the {@link DropTableSpecification}'s fluent API given {@code tableName} to drop a table.
+	 * Convenient if imported statically. Uses the default keyspace if {@code keyspace} is null; otherwise, of the
+	 * {@code keyspace} is not {@link null}, then the table name is prefixed with {@code keyspace}.
+	 *
+	 * @param keyspace can be {@literal null}.
+	 * @param tableName must not be {@literal null}.
+	 * @return a new {@link DropTableSpecification}.
+	 * @since 4.4
+	 */
+	public static DropTableSpecification dropTable(@Nullable CqlIdentifier keyspace, CqlIdentifier tableName) {
+		return new DropTableSpecification(keyspace, tableName);
 	}
 
 	/**

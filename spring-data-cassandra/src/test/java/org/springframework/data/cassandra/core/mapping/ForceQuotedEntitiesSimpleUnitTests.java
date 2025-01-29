@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,54 +18,54 @@ package org.springframework.data.cassandra.core.mapping;
 
 import static org.assertj.core.api.Assertions.*;
 
-import org.junit.Test;
-import org.springframework.data.util.ClassTypeInformation;
+import org.junit.jupiter.api.Test;
+import org.springframework.data.util.TypeInformation;
 
 /**
  * Unit tests for {@link BasicCassandraPersistentEntity}.
  *
  * @author Matthew T. Adams
  */
-public class ForceQuotedEntitiesSimpleUnitTests {
+class ForceQuotedEntitiesSimpleUnitTests {
 
 	@Test
-	public void testImplicitTableNameForceQuoted() {
+	void testImplicitTableNameForceQuoted() {
 		BasicCassandraPersistentEntity<ImplicitTableNameForceQuoted> entity = new BasicCassandraPersistentEntity<>(
-				ClassTypeInformation.from(ImplicitTableNameForceQuoted.class));
+				TypeInformation.of(ImplicitTableNameForceQuoted.class));
 
-		assertThat(entity.getTableName().toCql())
+		assertThat(entity.getTableName().asCql(false))
 				.isEqualTo("\"" + ImplicitTableNameForceQuoted.class.getSimpleName() + "\"");
-		assertThat(entity.getTableName().getUnquoted()).isEqualTo(ImplicitTableNameForceQuoted.class.getSimpleName());
+		assertThat(entity.getTableName().asInternal()).isEqualTo(ImplicitTableNameForceQuoted.class.getSimpleName());
 	}
 
 	@Table(forceQuote = true)
-	public static class ImplicitTableNameForceQuoted {}
+	private static class ImplicitTableNameForceQuoted {}
 
-	public static final String EXPLICIT_TABLE_NAME = "Xx";
+	private static final String EXPLICIT_TABLE_NAME = "Xx";
 
 	@Test
-	public void testExplicitTableNameForceQuoted() {
+	void testExplicitTableNameForceQuoted() {
 		BasicCassandraPersistentEntity<ExplicitTableNameForceQuoted> entity = new BasicCassandraPersistentEntity<>(
-				ClassTypeInformation.from(ExplicitTableNameForceQuoted.class));
+				TypeInformation.of(ExplicitTableNameForceQuoted.class));
 
-		assertThat(entity.getTableName().toCql()).isEqualTo("\"" + EXPLICIT_TABLE_NAME + "\"");
-		assertThat(entity.getTableName().getUnquoted()).isEqualTo(EXPLICIT_TABLE_NAME);
+		assertThat(entity.getTableName().asCql(true)).isEqualTo("\"" + EXPLICIT_TABLE_NAME + "\"");
+		assertThat(entity.getTableName().asInternal()).isEqualTo(EXPLICIT_TABLE_NAME);
 	}
 
 	@Table(value = EXPLICIT_TABLE_NAME, forceQuote = true)
-	public static class ExplicitTableNameForceQuoted {}
+	private static class ExplicitTableNameForceQuoted {}
 
 	@Test
-	public void testDefaultTableNameForceQuoted() {
+	void testDefaultTableNameForceQuoted() {
 		BasicCassandraPersistentEntity<DefaultTableNameForceQuoted> entity = new BasicCassandraPersistentEntity<>(
-				ClassTypeInformation.from(DefaultTableNameForceQuoted.class));
+				TypeInformation.of(DefaultTableNameForceQuoted.class));
 
-		assertThat(entity.getTableName().toCql())
+		assertThat(entity.getTableName().asCql(true))
 				.isEqualTo(DefaultTableNameForceQuoted.class.getSimpleName().toLowerCase());
-		assertThat(entity.getTableName().getUnquoted())
+		assertThat(entity.getTableName().asInternal())
 				.isEqualTo(DefaultTableNameForceQuoted.class.getSimpleName().toLowerCase());
 	}
 
 	@Table
-	public static class DefaultTableNameForceQuoted {}
+	private static class DefaultTableNameForceQuoted {}
 }

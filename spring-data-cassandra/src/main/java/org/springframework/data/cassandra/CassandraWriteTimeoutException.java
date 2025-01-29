@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 package org.springframework.data.cassandra;
 
+import java.io.Serial;
+
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.lang.Nullable;
 
@@ -26,10 +28,18 @@ import org.springframework.lang.Nullable;
  */
 public class CassandraWriteTimeoutException extends QueryTimeoutException {
 
-	private static final long serialVersionUID = -4374826375213670718L;
+	@Serial private static final long serialVersionUID = -4374826375213670718L;
 
 	private @Nullable String writeType;
 
+	/**
+	 * Constructor for {@link CassandraWriteTimeoutException}.
+	 *
+	 * @param writeType the write type.
+	 * @param msg the detail message.
+	 * @param cause the root cause from the underlying data access API.
+	 * @see com.datastax.oss.driver.api.core.servererrors.WriteType
+	 */
 	public CassandraWriteTimeoutException(@Nullable String writeType, String msg, Throwable cause) {
 		super(msg, cause);
 		this.writeType = writeType;

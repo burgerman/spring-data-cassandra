@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +18,11 @@ package org.springframework.data.cassandra.core
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatExceptionOfType
-import org.junit.Test
+import org.junit.jupiter.api.Test
 import org.springframework.data.cassandra.domain.Person
 import org.springframework.data.cassandra.domain.User
 import reactor.core.publisher.Flux
@@ -220,7 +219,6 @@ class ReactiveSelectOperationExtensionsUnitTests {
 	}
 
 	@Test // DATACASS-648
-	@ExperimentalCoroutinesApi
 	fun terminatingFindAllAsFlow() {
 
 		val spec = mockk<ReactiveSelectOperation.TerminatingSelect<String>>()

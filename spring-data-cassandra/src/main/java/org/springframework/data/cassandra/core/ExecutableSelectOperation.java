@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.query.Query;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
 
 /**
  * The {@link ExecutableSelectOperation} interface allows creation and execution of Cassandra {@code SELECT} operations
@@ -30,7 +32,7 @@ import org.springframework.util.Assert;
  * <p>
  * The starting {@literal domainType} is used for mapping the {@link Query} provided via {@code matching} into the
  * Cassandra-specific representation. By default, the originating {@literal domainType} is also used for mapping back
- * the result from the {@link com.datastax.driver.core.Row}. However, it is possible to define an different
+ * the result from the {@link com.datastax.oss.driver.api.core.cql.Row}. However, it is possible to define an different
  * {@literal returnType} via {@code as} for mapping the result.
  * <p>
  * By default, the table to operate on is derived from the initial {@literal domainType} and can be defined there with
@@ -85,7 +87,7 @@ public interface ExecutableSelectOperation {
 
 			Assert.hasText(table, "Table name must not be null or empty");
 
-			return inTable(CqlIdentifier.of(table));
+			return inTable(CqlIdentifier.fromCql(table));
 		}
 
 		/**
@@ -96,7 +98,7 @@ public interface ExecutableSelectOperation {
 		 * @param table {@link CqlIdentifier name} of the table; must not be {@literal null}.
 		 * @return new instance of {@link SelectWithProjection}.
 		 * @throws IllegalArgumentException if {@link CqlIdentifier table} is {@literal null}.
-		 * @see org.springframework.data.cassandra.core.cql.CqlIdentifier
+		 * @see com.datastax.oss.driver.api.core.CqlIdentifier
 		 * @see SelectWithProjection
 		 */
 		SelectWithProjection<T> inTable(CqlIdentifier table);
@@ -211,8 +213,8 @@ public interface ExecutableSelectOperation {
 		/**
 		 * Stream all matching elements.
 		 *
-		 * @return a {@link Stream} wrapping the Cassandra {@link com.datastax.driver.core.ResultSet}, which needs to be
-		 *         closed; never {@literal null}.
+		 * @return a {@link Stream} wrapping the Cassandra {@link ResultSet}, which needs to be closed; never
+		 *         {@literal null}.
 		 * @see java.util.stream.Stream
 		 * @see #all()
 		 */

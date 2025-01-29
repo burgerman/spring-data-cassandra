@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,14 @@ package org.springframework.data.cassandra.repository.query;
 import org.springframework.data.cassandra.core.cql.QueryOptions;
 import org.springframework.data.cassandra.core.mapping.CassandraSimpleTypeHolder;
 import org.springframework.data.cassandra.core.mapping.CassandraType;
+import org.springframework.data.cassandra.core.query.CassandraScrollPosition;
+import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.ScrollPosition;
 import org.springframework.data.repository.query.ParameterAccessor;
 import org.springframework.data.repository.query.ParametersParameterAccessor;
 import org.springframework.lang.Nullable;
 
-import com.datastax.driver.core.DataType;
+import com.datastax.oss.driver.api.core.type.DataType;
 
 /**
  * Cassandra-specific {@link ParameterAccessor} exposing Cassandra {@link DataType types} that are supported by the
@@ -46,10 +49,6 @@ public class CassandraParametersParameterAccessor extends ParametersParameterAcc
 		super(method.getParameters(), values);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.CassandraParameterAccessor#getDataType(int)
-	 */
 	@Override
 	public DataType getDataType(int index) {
 
@@ -59,41 +58,53 @@ public class CassandraParametersParameterAccessor extends ParametersParameterAcc
 				: CassandraSimpleTypeHolder.getDataTypeFor(getParameterType(index)));
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.CassandraParameterAccessor#findCassandraType(int)
-	 */
 	@Nullable
+	@Override
 	public CassandraType findCassandraType(int index) {
 		return getParameters().getParameter(index).getCassandraType();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.CassandraParameterAccessor#getParameterType(int)
-	 */
 	@Override
 	public Class<?> getParameterType(int index) {
 		return getParameters().getParameter(index).getType();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.query.ParametersParameterAccessor#getParameters()
-	 */
 	@Override
 	public CassandraParameters getParameters() {
 		return (CassandraParameters) super.getParameters();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.CassandraParameterAccessor#getValues()
-	 */
 	@Override
 	public Object[] getValues() {
 		return super.getValues();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.query.CassandraParameterAccessor#getQueryOptions()
-	 */
+	@Override
+	public CassandraScrollPosition getScrollPosition() {
+
+		ScrollPosition scrollPosition = super.getScrollPosition();
+		if (scrollPosition instanceof CassandraScrollPosition csp) {
+			return csp;
+		}
+
+		if (scrollPosition == null) {
+			return CassandraScrollPosition.initial();
+		}
+
+		throw new IllegalArgumentException(
+				"Unsupported scroll position " + scrollPosition + ". Only CassandraScrollPosition supported.");
+	}
+
+	@Override
+	public Limit getLimit() {
+
+		if (!getParameters().hasLimitParameter()) {
+			return Limit.unlimited();
+		}
+
+		return super.getLimit();
+	}
+
 	@Nullable
 	@Override
 	public QueryOptions getQueryOptions() {

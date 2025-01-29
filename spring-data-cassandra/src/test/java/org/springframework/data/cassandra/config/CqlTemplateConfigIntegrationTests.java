@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,17 +18,16 @@ package org.springframework.data.cassandra.config;
 import static org.assertj.core.api.Assertions.*;
 
 import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.cassandra.core.cql.CqlTemplate;
-import org.springframework.data.cassandra.support.IntegrationTestNettyOptions;
-import org.springframework.data.cassandra.test.util.AbstractEmbeddedCassandraIntegrationTest;
+import org.springframework.data.cassandra.test.util.CassandraExtension;
+import org.springframework.data.cassandra.test.util.IntegrationTestsSupport;
 
-import com.datastax.driver.core.NettyOptions;
-import com.datastax.driver.core.Session;
+import com.datastax.oss.driver.api.core.CqlSession;
 
 /**
  * Integration tests for {@link AbstractCqlTemplateConfiguration}.
@@ -37,7 +36,7 @@ import com.datastax.driver.core.Session;
  * @author Oliver Gierke
  * @author Mark Paluch
  */
-public class CqlTemplateConfigIntegrationTests extends AbstractEmbeddedCassandraIntegrationTest {
+class CqlTemplateConfigIntegrationTests extends IntegrationTestsSupport {
 
 	@Configuration
 	static class Config extends AbstractCqlTemplateConfiguration {
@@ -49,32 +48,28 @@ public class CqlTemplateConfigIntegrationTests extends AbstractEmbeddedCassandra
 
 		@Override
 		protected int getPort() {
-			return cassandraEnvironment.getPort();
+			return CassandraExtension.getResources().getPort();
 		}
 
-		@Override
-		protected NettyOptions getNettyOptions() {
-			return IntegrationTestNettyOptions.INSTANCE;
-		}
 	}
 
-	Session session;
-	ConfigurableApplicationContext context;
+	private CqlSession session;
+	private ConfigurableApplicationContext context;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		this.context = new AnnotationConfigApplicationContext(Config.class);
-		this.session = context.getBean(Session.class);
+		this.session = context.getBean(CqlSession.class);
 	}
 
 	@After
-	public void tearDown() {
+	void tearDown() {
 		context.close();
 	}
 
 	@Test
-	public void test() {
+	void test() {
 
 		CqlTemplate cqlTemplate = context.getBean(CqlTemplate.class);
 		assertThat(cqlTemplate.describeRing()).isNotEmpty();

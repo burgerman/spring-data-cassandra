@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,13 +23,17 @@ import reactor.test.StepVerifier;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import org.springframework.data.cassandra.CassandraConnectionFailureException;
 import org.springframework.data.cassandra.ReactiveResultSet;
 import org.springframework.data.cassandra.core.convert.MappingCassandraConverter;
+import org.springframework.data.cassandra.core.cql.QueryOptions;
 import org.springframework.data.cassandra.core.cql.ReactiveCqlTemplate;
 import org.springframework.data.cassandra.core.cql.WriteOptions;
 import org.springframework.data.cassandra.core.cql.session.DefaultBridgedReactiveSession;
@@ -37,7 +41,13 @@ import org.springframework.data.cassandra.domain.FlatGroup;
 import org.springframework.data.cassandra.domain.Group;
 import org.springframework.data.cassandra.domain.GroupKey;
 import org.springframework.data.cassandra.repository.support.SchemaTestUtils;
-import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTest;
+import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTests;
+
+import com.datastax.oss.driver.api.core.AllNodesFailedException;
+import com.datastax.oss.driver.api.core.ConsistencyLevel;
+import com.datastax.oss.driver.api.core.cql.BatchType;
+import com.datastax.oss.driver.api.core.cql.Row;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
 
 /**
  * Integration tests for {@link ReactiveCassandraBatchTemplate}.
@@ -45,15 +55,15 @@ import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingInte
  * @author Oleh Dokuka
  * @author Mark Paluch
  */
-public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCreatingIntegrationTest {
+class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeyspaceCreatingIntegrationTests {
 
-	ReactiveCassandraTemplate template;
+	private ReactiveCassandraTemplate template;
 
-	Group walter = new Group(new GroupKey("users", "0x1", "walter"));
-	Group mike = new Group(new GroupKey("users", "0x1", "mike"));
+	private Group walter = new Group(new GroupKey("users", "0x1", "walter"));
+	private Group mike = new Group(new GroupKey("users", "0x1", "mike"));
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		MappingCassandraConverter converter = new MappingCassandraConverter();
 		CassandraTemplate cassandraTemplate = new CassandraTemplate(this.session, converter);
@@ -73,10 +83,44 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 				.verifyComplete();
 	}
 
-	@Test // DATACASS-574
-	public void shouldInsertEntities() {
+	@Test // GH-1499
+	void shouldAddStatements() {
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
+
+		List<SimpleStatement> statements = List.of(SimpleStatement
+				.newInstance("INSERT INTO GROUP (groupname, hash_prefix, username) VALUES('users', '0x1', 'walter')"));
+
+		batchOperations.addStatements(statements).execute().as(StepVerifier::create).expectNextCount(1).verifyComplete();
+
+		template.selectOneById(walter.getId(), Group.class) //
+				.as(StepVerifier::create) //
+				.assertNext(loaded -> assertThat(loaded.getId().getUsername()).isEqualTo(walter.getId().getUsername()))
+				.verifyComplete();
+	}
+
+	@Test // GH-1499
+	void insertUpdateDeleteShouldRejectStatements() {
+
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
+
+		SimpleStatement statement = SimpleStatement.newInstance("FOO");
+
+		assertThatIllegalArgumentException().isThrownBy(() -> batchOperations.insert(statement));
+		assertThatIllegalArgumentException().isThrownBy(() -> batchOperations.update(statement));
+		assertThatIllegalArgumentException().isThrownBy(() -> batchOperations.delete(statement));
+	}
+
+	@Test // #1135
+	void insertAsVarargsShouldRejectQueryOptions() {
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> template.batchOps().insert(mike, walter, InsertOptions.empty()));
+	}
+
+	@Test // DATACASS-574
+	void shouldInsertEntities() {
+
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
 		Mono<WriteResult> execution = batchOperations.insert(walter).insert(mike).execute();
 
 		Mono<Group> loadedMono = execution.then(template.selectOneById(walter.getId(), Group.class));
@@ -88,9 +132,9 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-574
-	public void shouldInsertCollectionOfEntities() {
+	void shouldInsertCollectionOfEntities() {
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
 		Mono<Group> loadedMono = batchOperations.insert(Arrays.asList(walter, mike)).execute()
 				.then(template.selectOneById(walter.getId(), Group.class));
 
@@ -101,26 +145,35 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-574
-	public void shouldInsertCollectionOfEntitiesWithTtl() {
+	void shouldInsertCollectionOfEntitiesWithTtl() {
 
 		walter.setEmail("walter@white.com");
-		mike.setEmail("mike@sauls.com");
 
 		int ttl = 30;
 		WriteOptions options = WriteOptions.builder().ttl(30).build();
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
-		Mono<ReactiveResultSet> resultSet = batchOperations.insert(Arrays.asList(walter, mike), options).execute()
-				.then(template.getReactiveCqlOperations().queryForResultSet("SELECT TTL(email) FROM group;"));
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
+		Mono<ReactiveResultSet> resultSet = batchOperations.insert(walter, options).execute()
+				.then(template.getReactiveCqlOperations().queryForResultSet("SELECT TTL(email), email FROM group;"));
 
 		resultSet.flatMapMany(ReactiveResultSet::availableRows) //
-				.as(StepVerifier::create) //
-				.assertNext(row -> assertThat(row.getInt(0)).isBetween(1, ttl))
-				.assertNext(row -> assertThat(row.getInt(0)).isBetween(1, ttl)).verifyComplete();
+				.collectList().as(StepVerifier::create) //
+				.assertNext(rows -> {
+
+					for (Row row : rows) {
+
+						if (walter.getEmail().equals(row.getString(1))) {
+							assertThat(row.getInt(0)).isBetween(1, ttl);
+						} else {
+							assertThat(row.getInt(0)).isZero();
+						}
+
+					}
+				}).verifyComplete();
 	}
 
 	@Test // DATACASS-574
-	public void shouldInsertMonoOfEntitiesWithTtl() {
+	void shouldInsertMonoOfEntitiesWithTtl() {
 
 		walter.setEmail("walter@white.com");
 		mike.setEmail("mike@sauls.com");
@@ -128,7 +181,7 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 		int ttl = 30;
 		WriteOptions options = WriteOptions.builder().ttl(30).build();
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
 		Mono<ReactiveResultSet> resultSet = batchOperations.insert(Mono.just(Arrays.asList(walter, mike)), options)
 				.execute().then(template.getReactiveCqlOperations().queryForResultSet("SELECT TTL(email) FROM group;"));
 
@@ -138,13 +191,19 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 				.assertNext(row -> assertThat(row.getInt(0)).isBetween(1, ttl)).verifyComplete();
 	}
 
+	@Test // #1135
+	void updateAsVarargsShouldRejectQueryOptions() {
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> template.batchOps().update(mike, walter, InsertOptions.empty()));
+	}
+
 	@Test // DATACASS-574
-	public void shouldUpdateEntities() {
+	void shouldUpdateEntities() {
 
 		walter.setEmail("walter@white.com");
 		mike.setEmail("mike@sauls.com");
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
 		Mono<Group> loadedMono = batchOperations.update(walter).update(mike).execute()
 				.then(template.selectOneById(walter.getId(), Group.class));
 
@@ -154,12 +213,12 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-574
-	public void shouldUpdateMonoEntities() {
+	void shouldUpdateMonoEntities() {
 
 		walter.setEmail("walter@white.com");
 		mike.setEmail("mike@sauls.com");
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
 		Mono<Group> loadedMono = batchOperations.update(walter).update(Mono.just(Collections.singletonList(mike))).execute()
 				.then(template.selectOneById(walter.getId(), Group.class));
 
@@ -169,12 +228,12 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-574
-	public void shouldUpdateCollectionOfEntities() {
+	void shouldUpdateCollectionOfEntities() {
 
 		walter.setEmail("walter@white.com");
 		mike.setEmail("mike@sauls.com");
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
 		Mono<Group> loadedMono = batchOperations.update(Arrays.asList(walter, mike)).execute()
 				.then(template.selectOneById(walter.getId(), Group.class));
 
@@ -184,27 +243,35 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-574
-	public void shouldUpdateCollectionOfEntitiesWithTtl() {
+	void shouldUpdateCollectionOfEntitiesWithTtl() {
 
 		walter.setEmail("walter@white.com");
-		mike.setEmail("mike@sauls.com");
 
 		int ttl = 30;
 		WriteOptions options = WriteOptions.builder().ttl(ttl).build();
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
-		Mono<ReactiveResultSet> resultSet = batchOperations.update(Arrays.asList(walter, mike), options).execute()
-				.then(template.getReactiveCqlOperations().queryForResultSet("SELECT TTL(email) FROM group;"));
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
+		Mono<ReactiveResultSet> resultSet = batchOperations.update(walter, options).execute()
+				.then(template.getReactiveCqlOperations().queryForResultSet("SELECT TTL(email), email FROM group;"));
 
 		resultSet.flatMapMany(ReactiveResultSet::availableRows) //
-				.as(StepVerifier::create) //
+				.collectList().as(StepVerifier::create) //
+				.assertNext(rows -> {
 
-				.assertNext(row -> assertThat(row.getInt(0)).isBetween(1, ttl))
-				.assertNext(row -> assertThat(row.getInt(0)).isBetween(1, ttl)).verifyComplete();
+					for (Row row : rows) {
+
+						if (walter.getEmail().equals(row.getString(1))) {
+							assertThat(row.getInt(0)).isBetween(1, ttl);
+						} else {
+							assertThat(row.getInt(0)).isZero();
+						}
+
+					}
+				}).verifyComplete();
 	}
 
 	@Test // DATACASS-574
-	public void shouldUpdateMonoCollectionOfEntitiesWithTtl() {
+	void shouldUpdateMonoCollectionOfEntitiesWithTtl() {
 
 		walter.setEmail("walter@white.com");
 		mike.setEmail("mike@sauls.com");
@@ -212,7 +279,7 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 		int ttl = 30;
 		WriteOptions options = WriteOptions.builder().ttl(ttl).build();
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
 		Mono<ReactiveResultSet> resultSet = batchOperations.update(Collections.singletonList(walter), options)
 				.update(Mono.just(Collections.singletonList(mike)), options).execute()
 				.then(template.getReactiveCqlOperations().queryForResultSet("SELECT TTL(email) FROM group;"));
@@ -224,12 +291,12 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-574
-	public void shouldUpdateMonoOfEntities() {
+	void shouldUpdateMonoOfEntities() {
 
 		FlatGroup walter = new FlatGroup("users", "0x1", "walter");
 		FlatGroup mike = new FlatGroup("users", "0x1", "mike");
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
 		Mono<FlatGroup> loadedMono = template.insert(walter).then(template.insert(mike)).then(Mono.fromRunnable(() -> {
 			walter.setEmail("walter@white.com");
 			mike.setEmail("mike@sauls.com");
@@ -242,12 +309,12 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-574
-	public void shouldUpdateMonoCollectionOfEntities() {
+	void shouldUpdateMonoCollectionOfEntities() {
 
 		FlatGroup walter = new FlatGroup("users", "0x1", "walter");
 		FlatGroup mike = new FlatGroup("users", "0x1", "mike");
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
 		Mono<FlatGroup> loadedMono = template.insert(walter).then(template.insert(mike)).then(Mono.fromRunnable(() -> {
 			walter.setEmail("walter@white.com");
 			mike.setEmail("mike@sauls.com");
@@ -260,10 +327,16 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 				.assertNext(loaded -> assertThat(loaded.getEmail()).isEqualTo(walter.getEmail())).verifyComplete();
 	}
 
-	@Test // DATACASS-574
-	public void shouldDeleteEntities() {
+	@Test // #1135
+	void deleteAsVarargsShouldRejectQueryOptions() {
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> template.batchOps().delete(mike, walter, InsertOptions.empty()));
+	}
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
+	@Test // DATACASS-574
+	void shouldDeleteEntities() {
+
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
 
 		Mono<Group> loadedMono = batchOperations.delete(walter).delete(mike).execute()
 				.then(template.selectOneById(walter.getId(), Group.class));
@@ -274,9 +347,9 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-574
-	public void shouldDeleteCollectionOfEntities() {
+	void shouldDeleteCollectionOfEntities() {
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
 
 		Mono<Group> loadedMono = batchOperations.delete(Arrays.asList(walter, mike)).execute()
 				.then(template.selectOneById(walter.getId(), Group.class));
@@ -287,9 +360,9 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-574
-	public void shouldDeleteMonoOfEntities() {
+	void shouldDeleteMonoOfEntities() {
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
 
 		Mono<Group> loadedMono = batchOperations.delete(Mono.just(Arrays.asList(walter, mike))).execute()
 				.then(template.selectOneById(walter.getId(), Group.class));
@@ -300,14 +373,14 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-574
-	public void shouldApplyTimestampToAllEntities() {
+	void shouldApplyTimestampToAllEntities() {
 
 		walter.setEmail("walter@white.com");
 		mike.setEmail("mike@sauls.com");
 
 		long timestamp = (System.currentTimeMillis() + TimeUnit.DAYS.toMillis(1)) * 1000;
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
 		Mono<ReactiveResultSet> resultSet = batchOperations.insert(walter).insert(mike).withTimestamp(timestamp).execute()
 				.then(template.getReactiveCqlOperations().queryForResultSet("SELECT writetime(email) FROM group;"));
 
@@ -317,10 +390,24 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 				.assertNext(row -> assertThat(row.getLong(0)).isEqualTo(timestamp)).verifyComplete();
 	}
 
-	@Test // DATACASS-574
-	public void shouldNotExecuteTwice() {
+	@Test // GH-1192
+	void shouldApplyQueryOptions() {
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
+		QueryOptions options = QueryOptions.builder().consistencyLevel(ConsistencyLevel.THREE).build();
+
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
+		Mono<WriteResult> execute = batchOperations.insert(walter).insert(mike).withQueryOptions(options).execute();
+
+		execute.as(StepVerifier::create).verifyErrorSatisfies(e -> {
+			assertThat(e).isInstanceOf(CassandraConnectionFailureException.class)
+					.hasRootCauseInstanceOf(AllNodesFailedException.class);
+		});
+	}
+
+	@Test // DATACASS-574
+	void shouldNotExecuteTwice() {
+
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
 
 		batchOperations.insert(walter).execute() //
 				.then(batchOperations.execute()) //
@@ -329,9 +416,9 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-574
-	public void shouldNotAllowModificationAfterExecution() {
+	void shouldNotAllowModificationAfterExecution() {
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
 
 		batchOperations.insert(walter).execute().then(Mono.fromRunnable(() -> batchOperations.update(new Group()))) //
 				.as(StepVerifier::create) //
@@ -339,9 +426,9 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-574
-	public void shouldNotAllowModificationAfterExecutionMonoCase() {
+	void shouldNotAllowModificationAfterExecutionMonoCase() {
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
 
 		batchOperations.insert(Mono.just(Collections.singletonList(walter))).execute()
 				.then(Mono.fromRunnable(() -> batchOperations.update(new Group()))) //
@@ -350,17 +437,19 @@ public class ReactiveCassandraBatchTemplateIntegrationTests extends AbstractKeys
 	}
 
 	@Test // DATACASS-574
-	public void shouldSupportMultithreadedMerge() {
+	void shouldSupportMultithreadedMerge() {
 
-		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template);
+		ReactiveCassandraBatchOperations batchOperations = new ReactiveCassandraBatchTemplate(template, BatchType.LOGGED);
 		Random random = new Random();
 
 		for (int i = 0; i < 100; i++) {
 
-			batchOperations.insert(Mono.just(Arrays.asList(new Group(new GroupKey("users", "0x1", "walter" + random.longs())),
-					new Group(new GroupKey("users", "0x1", "walter" + random.longs())),
-					new Group(new GroupKey("users", "0x1", "walter" + random.longs())),
-					new Group(new GroupKey("users", "0x1", "walter" + random.longs())))).publishOn(Schedulers.elastic()));
+			batchOperations.insert(Mono
+					.just(Arrays.asList(new Group(new GroupKey("users", "0x1", "walter" + random.longs())),
+							new Group(new GroupKey("users", "0x1", "walter" + random.longs())),
+							new Group(new GroupKey("users", "0x1", "walter" + random.longs())),
+							new Group(new GroupKey("users", "0x1", "walter" + random.longs()))))
+					.publishOn(Schedulers.boundedElastic()));
 		}
 
 		batchOperations.execute()

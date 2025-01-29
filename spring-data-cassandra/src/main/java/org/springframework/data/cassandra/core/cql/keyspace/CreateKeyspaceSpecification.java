@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,25 +15,24 @@
  */
 package org.springframework.data.cassandra.core.cql.keyspace;
 
-import lombok.EqualsAndHashCode;
-
 import org.springframework.data.cassandra.core.cql.KeyspaceIdentifier;
 import org.springframework.data.cassandra.core.cql.keyspace.KeyspaceOption.ReplicationStrategy;
 import org.springframework.data.cassandra.util.MapBuilder;
 import org.springframework.lang.Nullable;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Object to configure a {@code CREATE KEYSPACE} specification.
  *
  * @author Mark Paluch
  */
-@EqualsAndHashCode(callSuper = true)
 public class CreateKeyspaceSpecification extends KeyspaceOptionsSpecification<CreateKeyspaceSpecification>
-		implements KeyspaceDescriptor {
+		implements KeyspaceDescriptor, CqlSpecification {
 
 	private boolean ifNotExists = false;
 
-	private CreateKeyspaceSpecification(KeyspaceIdentifier name) {
+	private CreateKeyspaceSpecification(CqlIdentifier name) {
 		super(name);
 	}
 
@@ -45,7 +44,7 @@ public class CreateKeyspaceSpecification extends KeyspaceOptionsSpecification<Cr
 	 * @return a new {@link CreateKeyspaceSpecification}.
 	 */
 	public static CreateKeyspaceSpecification createKeyspace(String name) {
-		return new CreateKeyspaceSpecification(KeyspaceIdentifier.of(name));
+		return new CreateKeyspaceSpecification(CqlIdentifier.fromCql(name));
 	}
 
 	/**
@@ -54,8 +53,22 @@ public class CreateKeyspaceSpecification extends KeyspaceOptionsSpecification<Cr
 	 *
 	 * @param name must not be {@literal null}.
 	 * @return a new {@link CreateKeyspaceSpecification}.
+	 * @deprecated since 3.0, use {@link #createKeyspace(CqlIdentifier)}
 	 */
+	@Deprecated
 	public static CreateKeyspaceSpecification createKeyspace(KeyspaceIdentifier name) {
+		return new CreateKeyspaceSpecification(CqlIdentifier.fromCql(name.toCql()));
+	}
+
+	/**
+	 * Entry point into the {@link CreateKeyspaceSpecification}'s fluent API given {@code name} to create a keyspace.
+	 * Convenient if imported statically.
+	 *
+	 * @param name must not be {@literal null}.
+	 * @return a new {@link CreateKeyspaceSpecification}.
+	 * @since 3.0
+	 */
+	public static CreateKeyspaceSpecification createKeyspace(CqlIdentifier name) {
 		return new CreateKeyspaceSpecification(name);
 	}
 
@@ -123,27 +136,44 @@ public class CreateKeyspaceSpecification extends KeyspaceOptionsSpecification<Cr
 		return with(KeyspaceOption.REPLICATION, builder.build());
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.keyspace.KeyspaceOptionsSpecification#with(org.springframework.data.cassandra.core.cql.keyspace.KeyspaceOption)
-	 */
 	@Override
 	public CreateKeyspaceSpecification with(KeyspaceOption option) {
 		return super.with(option);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.keyspace.KeyspaceOptionsSpecification#with(org.springframework.data.cassandra.core.cql.keyspace.KeyspaceOption, java.lang.Object)
-	 */
 	@Override
 	public CreateKeyspaceSpecification with(KeyspaceOption option, Object value) {
 		return super.with(option, value);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.keyspace.KeyspaceOptionsSpecification#with(java.lang.String, java.lang.Object, boolean, boolean)
-	 */
 	@Override
 	public CreateKeyspaceSpecification with(String name, @Nullable Object value, boolean escape, boolean quote) {
 		return super.with(name, value, escape, quote);
+	}
+
+	@Override
+	public boolean equals(@Nullable Object o) {
+
+		if (this == o) {
+			return true;
+		}
+
+		if (!(o instanceof CreateKeyspaceSpecification)) {
+			return false;
+		}
+
+		if (!super.equals(o)) {
+			return false;
+		}
+
+		CreateKeyspaceSpecification that = (CreateKeyspaceSpecification) o;
+		return ifNotExists == that.ifNotExists;
+	}
+
+	@Override
+	public int hashCode() {
+		int result = super.hashCode();
+		result = 31 * result + (ifNotExists ? 1 : 0);
+		return result;
 	}
 }

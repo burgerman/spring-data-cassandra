@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,16 +18,11 @@ package org.springframework.data.cassandra.repository;
 
 import static org.assertj.core.api.Assertions.*;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
 import java.math.BigInteger;
 import java.util.Collections;
 import java.util.Set;
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.ComponentScan.Filter;
 import org.springframework.context.annotation.Configuration;
@@ -39,8 +34,7 @@ import org.springframework.data.cassandra.core.mapping.Table;
 import org.springframework.data.cassandra.repository.config.EnableCassandraRepositories;
 import org.springframework.data.cassandra.repository.support.AbstractSpringDataEmbeddedCassandraIntegrationTest;
 import org.springframework.data.cassandra.repository.support.IntegrationTestConfig;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
 /**
  * Integration tests for {@link BigInteger} usage in repositories.
@@ -48,9 +42,8 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
  * @author Pete Cable
  * @author Mark Paluch
  */
-@RunWith(SpringJUnit4ClassRunner.class)
-@ContextConfiguration
-public class BigIntParamIntegrationTests extends AbstractSpringDataEmbeddedCassandraIntegrationTest {
+@SpringJUnitConfig
+class BigIntParamIntegrationTests extends AbstractSpringDataEmbeddedCassandraIntegrationTest {
 
 	@Configuration
 	@EnableCassandraRepositories(basePackageClasses = BigThingRepo.class, considerNestedRepositories = true,
@@ -71,7 +64,7 @@ public class BigIntParamIntegrationTests extends AbstractSpringDataEmbeddedCassa
 	@Autowired BigThingRepo repo;
 
 	@Test
-	public void testQueryWithReference() {
+	void testQueryWithReference() {
 		BigInteger number = new BigInteger("42");
 		BigThing saved = new BigThing(number);
 		repo.save(saved);
@@ -84,12 +77,23 @@ public class BigIntParamIntegrationTests extends AbstractSpringDataEmbeddedCassa
 	 * @author Pete Cable
 	 */
 	@Table
-	@Data
-	@AllArgsConstructor
-	@NoArgsConstructor
 	static class BigThing {
 
 		@PrimaryKeyColumn(ordinal = 0, type = PrimaryKeyType.PARTITIONED) private BigInteger number;
+
+		public BigThing(BigInteger number) {
+			this.number = number;
+		}
+
+		public BigThing() {}
+
+		public BigInteger getNumber() {
+			return this.number;
+		}
+
+		public void setNumber(BigInteger number) {
+			this.number = number;
+		}
 	}
 
 	/**

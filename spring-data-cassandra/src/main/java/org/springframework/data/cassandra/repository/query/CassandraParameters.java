@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,8 +29,11 @@ import org.springframework.data.cassandra.core.mapping.CassandraType;
 import org.springframework.data.cassandra.repository.query.CassandraParameters.CassandraParameter;
 import org.springframework.data.repository.query.Parameter;
 import org.springframework.data.repository.query.Parameters;
+import org.springframework.data.repository.query.ParametersSource;
 import org.springframework.data.repository.util.QueryExecutionConverters;
+import org.springframework.data.repository.util.ReactiveWrapperConverters;
 import org.springframework.data.repository.util.ReactiveWrappers;
+import org.springframework.data.util.TypeInformation;
 import org.springframework.lang.Nullable;
 
 /**
@@ -44,15 +47,16 @@ public class CassandraParameters extends Parameters<CassandraParameters, Cassand
 	private final @Nullable Integer queryOptionsIndex;
 
 	/**
-	 * Create a new {@link CassandraParameters} instance from the given {@link Method}
+	 * Create a new {@link CassandraParameters} instance from the given {@link Method}.
 	 *
-	 * @param method must not be {@literal null}.
+	 * @param parametersSource must not be {@literal null}.
 	 */
-	public CassandraParameters(Method method) {
+	public CassandraParameters(ParametersSource parametersSource) {
+		super(parametersSource,
+				methodParameter -> new CassandraParameter(methodParameter, parametersSource.getDomainTypeInformation()));
 
-		super(method);
-
-		this.queryOptionsIndex = Arrays.asList(method.getParameterTypes()).indexOf(QueryOptions.class);
+		this.queryOptionsIndex = Arrays.asList(parametersSource.getMethod().getParameterTypes())
+				.indexOf(QueryOptions.class);
 	}
 
 	private CassandraParameters(List<CassandraParameter> originals, @Nullable Integer queryOptionsIndex) {
@@ -62,17 +66,6 @@ public class CassandraParameters extends Parameters<CassandraParameters, Cassand
 		this.queryOptionsIndex = queryOptionsIndex;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.query.Parameters#createParameter(org.springframework.core.MethodParameter)
-	 */
-	@Override
-	protected CassandraParameter createParameter(MethodParameter parameter) {
-		return new CassandraParameter(parameter);
-	}
-
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.query.Parameters#createFrom(java.util.List)
-	 */
 	@Override
 	protected CassandraParameters createFrom(List<CassandraParameter> parameters) {
 		return new CassandraParameters(parameters, queryOptionsIndex);
@@ -98,9 +91,9 @@ public class CassandraParameters extends Parameters<CassandraParameters, Cassand
 		private final @Nullable CassandraType cassandraType;
 		private final Class<?> parameterType;
 
-		CassandraParameter(MethodParameter parameter) {
+		CassandraParameter(MethodParameter parameter, TypeInformation<?> domainType) {
 
-			super(parameter);
+			super(parameter, domainType);
 
 			AnnotatedParameter annotatedParameter = new AnnotatedParameter(parameter);
 
@@ -113,9 +106,6 @@ public class CassandraParameters extends Parameters<CassandraParameters, Cassand
 			parameterType = potentiallyUnwrapParameterType(parameter);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.repository.query.Parameter#isSpecialParameter()
-		 */
 		@Override
 		public boolean isSpecialParameter() {
 			return super.isSpecialParameter() || QueryOptions.class.isAssignableFrom(getType());
@@ -132,9 +122,6 @@ public class CassandraParameters extends Parameters<CassandraParameters, Cassand
 			return this.cassandraType;
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.repository.query.Parameter#getType()
-		 */
 		@Override
 		public Class<?> getType() {
 			return this.parameterType;
@@ -164,7 +151,8 @@ public class CassandraParameters extends Parameters<CassandraParameters, Cassand
 		 * @see QueryExecutionConverters
 		 */
 		private static boolean isWrapped(MethodParameter parameter) {
-			return QueryExecutionConverters.supports(parameter.getParameterType());
+			return QueryExecutionConverters.supports(parameter.getParameterType())
+					|| ReactiveWrapperConverters.supports(parameter.getParameterType());
 		}
 
 		/**

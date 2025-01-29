@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package org.springframework.data.cassandra.core.cql.keyspace;
 
-import static org.springframework.data.cassandra.core.cql.CqlIdentifier.*;
 import static org.springframework.data.cassandra.core.cql.PrimaryKeyType.*;
 
 import java.util.ArrayList;
@@ -23,12 +22,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.cql.Ordering;
 import org.springframework.data.cassandra.core.cql.PrimaryKeyType;
+import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.DataType;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.type.DataType;
 
 /**
  * Object to support the configuration of table specifications that have columns. This class can also be used as a
@@ -37,31 +37,41 @@ import com.datastax.driver.core.DataType;
  * @author Matthew T. Adams
  * @author Alex Shvid
  * @author Mark Paluch
+ * @author Aleksei Zotov
  */
 public class TableSpecification<T> extends TableOptionsSpecification<TableSpecification<T>> implements TableDescriptor {
 
 	/**
 	 * List of all columns.
 	 */
-	private List<ColumnSpecification> columns = new ArrayList<>();
+	private final List<ColumnSpecification> columns = new ArrayList<>();
 
 	/**
 	 * List of only those columns that comprise the partition key.
 	 */
-	private List<ColumnSpecification> partitionKeyColumns = new ArrayList<>();
+	private final List<ColumnSpecification> partitionKeyColumns = new ArrayList<>();
 
 	/**
 	 * List of only those columns that comprise the primary key that are not also part of the partition key.
 	 */
-	private List<ColumnSpecification> clusteredKeyColumns = new ArrayList<>();
+	private final List<ColumnSpecification> clusteredKeyColumns = new ArrayList<>();
 
 	/**
 	 * List of only those columns that are not partition or primary key columns.
 	 */
-	private List<ColumnSpecification> nonKeyColumns = new ArrayList<>();
+	private final List<ColumnSpecification> nonKeyColumns = new ArrayList<>();
+
+	/**
+	 * List of static columns.
+	 */
+	private final List<ColumnSpecification> staticColumns = new ArrayList<>();
 
 	protected TableSpecification(CqlIdentifier name) {
 		super(name);
+	}
+
+	protected TableSpecification(@Nullable CqlIdentifier keyspace, CqlIdentifier name) {
+		super(keyspace, name);
 	}
 
 	/**
@@ -72,7 +82,7 @@ public class TableSpecification<T> extends TableOptionsSpecification<TableSpecif
 	 * @param type The data type of the column, must not be {@literal null}.
 	 */
 	public T column(String name, DataType type) {
-		return column(of(name), type);
+		return column(CqlIdentifier.fromCql(name), type);
 	}
 
 	/**
@@ -83,7 +93,31 @@ public class TableSpecification<T> extends TableOptionsSpecification<TableSpecif
 	 * @param type The data type of the column, must not be {@literal null}.
 	 */
 	public T column(CqlIdentifier name, DataType type) {
-		return column(name, type, Optional.empty(), Optional.empty());
+		return column(name, type, Optional.empty(), Optional.empty(), false);
+	}
+
+	/**
+	 * Adds the given static column to the table. Must be specified after all primary key columns.
+	 *
+	 * @param name The column name; must be a valid unquoted or quoted identifier without the surrounding double quotes,
+	 *          must not be {@literal null}.
+	 * @param type The data type of the column, must not be {@literal null}.
+	 * @since 3.2
+	 */
+	public T staticColumn(String name, DataType type) {
+		return staticColumn(CqlIdentifier.fromCql(name), type);
+	}
+
+	/**
+	 * Adds the given static column to the table. Must be specified after all primary key columns.
+	 *
+	 * @param name The column name; must be a valid unquoted or quoted identifier without the surrounding double quotes,
+	 *          must not be {@literal null}.
+	 * @param type The data type of the column, must not be {@literal null}.
+	 * @since 3.2
+	 */
+	public T staticColumn(CqlIdentifier name, DataType type) {
+		return column(name, type, Optional.empty(), Optional.empty(), true);
 	}
 
 	/**
@@ -95,7 +129,7 @@ public class TableSpecification<T> extends TableOptionsSpecification<TableSpecif
 	 * @return this
 	 */
 	public T partitionKeyColumn(String name, DataType type) {
-		return partitionKeyColumn(of(name), type);
+		return partitionKeyColumn(CqlIdentifier.fromCql(name), type);
 	}
 
 	/**
@@ -107,7 +141,7 @@ public class TableSpecification<T> extends TableOptionsSpecification<TableSpecif
 	 * @return this
 	 */
 	public T partitionKeyColumn(CqlIdentifier name, DataType type) {
-		return column(name, type, Optional.of(PARTITIONED), Optional.empty());
+		return column(name, type, Optional.of(PARTITIONED), Optional.empty(), false);
 	}
 
 	/**
@@ -120,7 +154,7 @@ public class TableSpecification<T> extends TableOptionsSpecification<TableSpecif
 	 * @return this
 	 */
 	public T clusteredKeyColumn(String name, DataType type) {
-		return clusteredKeyColumn(of(name), type);
+		return clusteredKeyColumn(CqlIdentifier.fromCql(name), type);
 	}
 
 	/**
@@ -138,7 +172,7 @@ public class TableSpecification<T> extends TableOptionsSpecification<TableSpecif
 
 		Assert.notNull(ordering, "Ordering must not be null");
 
-		return column(CqlIdentifier.of(name), type, Optional.of(CLUSTERED), Optional.of(ordering));
+		return column(CqlIdentifier.fromCql(name), type, Optional.of(CLUSTERED), Optional.of(ordering), false);
 	}
 
 	/**
@@ -168,7 +202,7 @@ public class TableSpecification<T> extends TableOptionsSpecification<TableSpecif
 
 		Assert.notNull(ordering, "Ordering must not be null");
 
-		return column(name, type, Optional.of(CLUSTERED), Optional.of(ordering));
+		return column(name, type, Optional.of(CLUSTERED), Optional.of(ordering), false);
 	}
 
 	/**
@@ -182,7 +216,7 @@ public class TableSpecification<T> extends TableOptionsSpecification<TableSpecif
 	 * @return this
 	 */
 	public T clusteredKeyColumn(CqlIdentifier name, DataType type, Optional<Ordering> ordering) {
-		return column(name, type, Optional.of(CLUSTERED), ordering);
+		return column(name, type, Optional.of(CLUSTERED), ordering, false);
 	}
 
 	/**
@@ -216,7 +250,7 @@ public class TableSpecification<T> extends TableOptionsSpecification<TableSpecif
 		Assert.notNull(keyType, "PrimaryKeyType must not be null");
 		Assert.notNull(ordering, "Ordering must not be null");
 
-		return column(of(name), type, Optional.of(keyType), Optional.of(ordering));
+		return column(CqlIdentifier.fromCql(name), type, Optional.of(keyType), Optional.of(ordering), false);
 	}
 
 	/**
@@ -236,17 +270,18 @@ public class TableSpecification<T> extends TableOptionsSpecification<TableSpecif
 		Assert.notNull(keyType, "PrimaryKeyType must not be null");
 		Assert.notNull(ordering, "Ordering must not be null");
 
-		return column(of(name), type, Optional.of(keyType), ordering);
+		return column(CqlIdentifier.fromCql(name), type, Optional.of(keyType), ordering, false);
 	}
 
 	@SuppressWarnings("unchecked")
 	protected T column(CqlIdentifier name, DataType type, Optional<PrimaryKeyType> optionalKeyType,
-			Optional<Ordering> optionalOrdering) {
+			Optional<Ordering> optionalOrdering, boolean isStatic) {
 
 		Assert.notNull(name, "Name must not be null");
 		Assert.notNull(type, "DataType must not be null");
 		Assert.notNull(optionalKeyType, "PrimaryKeyType must not be null");
 		Assert.notNull(optionalOrdering, "Ordering must not be null");
+		Assert.isTrue(!(optionalKeyType.isPresent() && isStatic),"PrimaryKey must not be static");
 
 		ColumnSpecification column = ColumnSpecification.name(name).type(type);
 
@@ -266,8 +301,13 @@ public class TableSpecification<T> extends TableOptionsSpecification<TableSpecif
 
 		this.columns.add(column);
 
-		if (!optionalKeyType.isPresent()) {
+		if (optionalKeyType.isEmpty()) {
 			this.nonKeyColumns.add(column);
+		}
+
+		if (isStatic) {
+			column.staticColumn();
+			this.staticColumns.add(column);
 		}
 
 		return (T) this;
@@ -317,5 +357,13 @@ public class TableSpecification<T> extends TableOptionsSpecification<TableSpecif
 	@Override
 	public List<ColumnSpecification> getNonKeyColumns() {
 		return Collections.unmodifiableList(this.nonKeyColumns);
+	}
+
+	/**
+	 * Returns an unmodifiable list of static columns.
+	 */
+	@Override
+	public List<ColumnSpecification> getStaticColumns() {
+		return Collections.unmodifiableList(this.staticColumns);
 	}
 }

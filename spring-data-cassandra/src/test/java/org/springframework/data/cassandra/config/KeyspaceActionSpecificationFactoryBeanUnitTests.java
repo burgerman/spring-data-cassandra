@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,25 +20,26 @@ import static org.assertj.core.api.Assertions.*;
 import java.util.Arrays;
 import java.util.List;
 
-import org.junit.Test;
-import org.springframework.data.cassandra.core.cql.KeyspaceIdentifier;
+import org.junit.jupiter.api.Test;
 import org.springframework.data.cassandra.core.cql.keyspace.AlterKeyspaceSpecification;
 import org.springframework.data.cassandra.core.cql.keyspace.CreateKeyspaceSpecification;
 import org.springframework.data.cassandra.core.cql.keyspace.DropKeyspaceSpecification;
 import org.springframework.data.cassandra.core.cql.keyspace.KeyspaceActionSpecification;
 import org.springframework.data.cassandra.core.cql.keyspace.KeyspaceOption.ReplicationStrategy;
 
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+
 /**
  * Unit tests for {@link KeyspaceActionSpecificationFactoryBean}.
  *
  * @author Mark Paluch
  */
-public class KeyspaceActionSpecificationFactoryBeanUnitTests {
+class KeyspaceActionSpecificationFactoryBeanUnitTests {
 
-	KeyspaceActionSpecificationFactoryBean bean = new KeyspaceActionSpecificationFactoryBean();
+	private KeyspaceActionSpecificationFactoryBean bean = new KeyspaceActionSpecificationFactoryBean();
 
 	@Test // DATACASS-502
-	public void shouldCreateKeyspace() {
+	void shouldCreateKeyspace() {
 
 		bean.setAction(KeyspaceAction.CREATE);
 		bean.setName("my_keyspace");
@@ -53,12 +54,12 @@ public class KeyspaceActionSpecificationFactoryBeanUnitTests {
 
 		CreateKeyspaceSpecification create = (CreateKeyspaceSpecification) actions.get(0);
 
-		assertThat(create.getName()).isEqualTo(KeyspaceIdentifier.of("my_keyspace"));
+		assertThat(create.getName()).isEqualTo(CqlIdentifier.fromCql("my_keyspace"));
 		assertThat(create.getOptions()).containsKeys("durable_writes", "replication");
 	}
 
 	@Test // DATACASS-502
-	public void shouldCreateAndDropKeyspace() {
+	void shouldCreateAndDropKeyspace() {
 
 		bean.setAction(KeyspaceAction.CREATE_DROP);
 		bean.setName("my_keyspace");
@@ -72,11 +73,11 @@ public class KeyspaceActionSpecificationFactoryBeanUnitTests {
 
 		DropKeyspaceSpecification drop = (DropKeyspaceSpecification) actions.get(1);
 
-		assertThat(drop.getName()).isEqualTo(KeyspaceIdentifier.of("my_keyspace"));
+		assertThat(drop.getName()).isEqualTo(CqlIdentifier.fromCql("my_keyspace"));
 	}
 
 	@Test // DATACASS-502
-	public void shouldAlterKeyspace() {
+	void shouldAlterKeyspace() {
 
 		bean.setAction(KeyspaceAction.ALTER);
 		bean.setDurableWrites(true);
@@ -93,12 +94,12 @@ public class KeyspaceActionSpecificationFactoryBeanUnitTests {
 
 		AlterKeyspaceSpecification alter = (AlterKeyspaceSpecification) actions.get(0);
 
-		assertThat(alter.getName()).isEqualTo(KeyspaceIdentifier.of("my_keyspace"));
+		assertThat(alter.getName()).isEqualTo(CqlIdentifier.fromCql("my_keyspace"));
 		assertThat(alter.getOptions()).containsKeys("durable_writes", "replication");
 	}
 
 	@Test // DATACASS-502
-	public void shouldAlterKeyspaceWithSimpleReplication() {
+	void shouldAlterKeyspaceWithSimpleReplication() {
 
 		bean.setAction(KeyspaceAction.ALTER);
 		bean.setDurableWrites(true);
@@ -113,12 +114,12 @@ public class KeyspaceActionSpecificationFactoryBeanUnitTests {
 
 		AlterKeyspaceSpecification alter = (AlterKeyspaceSpecification) actions.get(0);
 
-		assertThat(alter.getName()).isEqualTo(KeyspaceIdentifier.of("my_keyspace"));
+		assertThat(alter.getName()).isEqualTo(CqlIdentifier.fromCql("my_keyspace"));
 		assertThat(alter.getOptions()).containsKeys("durable_writes", "replication");
 	}
 
 	@Test // DATACASS-502
-	public void shouldAlterKeyspaceWithoutReplication() {
+	void shouldAlterKeyspaceWithoutReplication() {
 
 		bean.setAction(KeyspaceAction.ALTER);
 		bean.setDurableWrites(true);
@@ -131,7 +132,7 @@ public class KeyspaceActionSpecificationFactoryBeanUnitTests {
 
 		AlterKeyspaceSpecification alter = (AlterKeyspaceSpecification) actions.get(0);
 
-		assertThat(alter.getName()).isEqualTo(KeyspaceIdentifier.of("my_keyspace"));
+		assertThat(alter.getName()).isEqualTo(CqlIdentifier.fromCql("my_keyspace"));
 		assertThat(alter.getOptions()).doesNotContainKeys("replication");
 	}
 }

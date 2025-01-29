@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.cassandra.ReactiveResultSet;
 import org.springframework.data.cassandra.core.convert.CassandraConverter;
 import org.springframework.data.cassandra.core.cql.QueryOptions;
 import org.springframework.data.cassandra.core.cql.ReactiveCqlOperations;
@@ -28,7 +29,8 @@ import org.springframework.data.cassandra.core.query.Query;
 import org.springframework.data.cassandra.core.query.Update;
 import org.springframework.data.domain.Slice;
 
-import com.datastax.driver.core.Statement;
+import com.datastax.oss.driver.api.core.cql.BatchType;
+import com.datastax.oss.driver.api.core.cql.Statement;
 
 /**
  * Interface specifying a basic set of reactive Cassandra operations. Implemented by {@link ReactiveCassandraTemplate}.
@@ -37,6 +39,7 @@ import com.datastax.driver.core.Statement;
  * @author Mark Paluch
  * @author Hleb Albau
  * @author Oleh Dokuka
+ * @author Sam Lightfoot
  * @since 2.0
  * @see ReactiveCassandraTemplate
  * @see ReactiveCqlOperations
@@ -49,21 +52,27 @@ import com.datastax.driver.core.Statement;
 public interface ReactiveCassandraOperations extends ReactiveFluentCassandraOperations {
 
 	/**
-	 * Returns a new {@link ReactiveCassandraBatchOperations}. Each {@link ReactiveCassandraBatchOperations} instance can
-	 * be executed only once so you might want to obtain new {@link ReactiveCassandraBatchOperations} instances for each
-	 * batch.
+	 * Returns a new {@link ReactiveCassandraBatchOperations} using {@link BatchType#LOGGED}. Each
+	 * {@link ReactiveCassandraBatchOperations} instance can be executed only once, so you need to obtain new
+	 * {@link ReactiveCassandraBatchOperations} instances for each batch.
 	 *
 	 * @return a new {@link ReactiveCassandraBatchOperations} associated with the given entity class.
 	 * @since 2.1
+	 * @see #batchOps(BatchType)
 	 */
-	ReactiveCassandraBatchOperations batchOps();
+	default ReactiveCassandraBatchOperations batchOps() {
+		return batchOps(BatchType.LOGGED);
+	}
 
 	/**
-	 * Returns the underlying {@link CassandraConverter}.
+	 * Returns a new {@link ReactiveCassandraBatchOperations}. Each {@link ReactiveCassandraBatchOperations} instance can
+	 * be executed only once, so you need to obtain new {@link ReactiveCassandraBatchOperations} instances for each batch.
 	 *
-	 * @return the underlying {@link CassandraConverter}.
+	 * @param batchType must not be {@literal null}.
+	 * @return a new {@link ReactiveCassandraBatchOperations} associated with the given entity class.
+	 * @since 3.2.6
 	 */
-	CassandraConverter getConverter();
+	ReactiveCassandraBatchOperations batchOps(BatchType batchType);
 
 	/**
 	 * Expose the underlying {@link ReactiveCqlOperations} to allow CQL operations.
@@ -72,6 +81,13 @@ public interface ReactiveCassandraOperations extends ReactiveFluentCassandraOper
 	 * @see ReactiveCqlOperations
 	 */
 	ReactiveCqlOperations getReactiveCqlOperations();
+
+	/**
+	 * Returns the underlying {@link CassandraConverter}.
+	 *
+	 * @return the underlying {@link CassandraConverter}.
+	 */
+	CassandraConverter getConverter();
 
 	// -------------------------------------------------------------------------
 	// Methods dealing with static CQL
@@ -98,7 +114,7 @@ public interface ReactiveCassandraOperations extends ReactiveFluentCassandraOper
 	<T> Mono<T> selectOne(String cql, Class<T> entityClass) throws DataAccessException;
 
 	// -------------------------------------------------------------------------
-	// Methods dealing with com.datastax.driver.core.Statement
+	// Methods dealing with com.datastax.oss.driver.api.core.cql.Statement
 	// -------------------------------------------------------------------------
 
 	/**
@@ -109,7 +125,7 @@ public interface ReactiveCassandraOperations extends ReactiveFluentCassandraOper
 	 * @return the result objects returned by the action.
 	 * @throws DataAccessException if there is any problem issuing the execution.
 	 */
-	<T> Flux<T> select(Statement statement, Class<T> entityClass) throws DataAccessException;
+	<T> Flux<T> select(Statement<?> statement, Class<T> entityClass) throws DataAccessException;
 
 	/**
 	 * Execute a {@code SELECT} query with paging and convert the result set to a {@link Slice} of entities. A sliced
@@ -121,7 +137,7 @@ public interface ReactiveCassandraOperations extends ReactiveFluentCassandraOper
 	 * @throws DataAccessException if there is any problem executing the query.
 	 * @since 2.1
 	 */
-	<T> Mono<Slice<T>> slice(Statement statement, Class<T> entityClass) throws DataAccessException;
+	<T> Mono<Slice<T>> slice(Statement<?> statement, Class<T> entityClass) throws DataAccessException;
 
 	/**
 	 * Execute a {@code SELECT} query and convert the resulting item to an entity.
@@ -131,11 +147,22 @@ public interface ReactiveCassandraOperations extends ReactiveFluentCassandraOper
 	 * @return the result object returned by the action or {@link Mono#empty()}
 	 * @throws DataAccessException if there is any problem issuing the execution.
 	 */
-	<T> Mono<T> selectOne(Statement statement, Class<T> entityClass) throws DataAccessException;
+	<T> Mono<T> selectOne(Statement<?> statement, Class<T> entityClass) throws DataAccessException;
 
 	// -------------------------------------------------------------------------
 	// Methods dealing with org.springframework.data.cassandra.core.query.Query
 	// -------------------------------------------------------------------------
+
+	/**
+	 * Execute the given Cassandra {@link Statement}. Any errors that result from executing this command will be converted
+	 * into Spring's DAO exception hierarchy.
+	 *
+	 * @param statement a Cassandra {@link Statement}, must not be {@literal null}.
+	 * @return the {@link ReactiveResultSet}.
+	 * @throws DataAccessException if there is any problem issuing the execution.
+	 * @since 3.2
+	 */
+	Mono<ReactiveResultSet> execute(Statement<?> statement) throws DataAccessException;
 
 	/**
 	 * Execute a {@code SELECT} query and convert the resulting items to a stream of entities.
@@ -291,7 +318,7 @@ public interface ReactiveCassandraOperations extends ReactiveFluentCassandraOper
 	<T> Mono<EntityWriteResult<T>> update(T entity, UpdateOptions options) throws DataAccessException;
 
 	/**
-	 * Delete the given entity and emit the entity if the delete was applied.
+	 * Delete the given entity and emit the entity if the delete statement was applied.
 	 *
 	 * @param entity must not be {@literal null}.
 	 * @return the deleted entity.
@@ -300,7 +327,7 @@ public interface ReactiveCassandraOperations extends ReactiveFluentCassandraOper
 	<T> Mono<T> delete(T entity) throws DataAccessException;
 
 	/**
-	 * Delete the given entity applying {@link QueryOptions} and emit the entity if the delete was applied.
+	 * Delete the given entity applying {@link QueryOptions} and emit the entity if the delete statement was applied.
 	 *
 	 * @param entity must not be {@literal null}.
 	 * @param options must not be {@literal null}.
@@ -311,7 +338,7 @@ public interface ReactiveCassandraOperations extends ReactiveFluentCassandraOper
 	Mono<WriteResult> delete(Object entity, QueryOptions options) throws DataAccessException;
 
 	/**
-	 * Delete the given entity applying {@link QueryOptions} and emit the entity if the delete was applied.
+	 * Delete the given entity applying {@link QueryOptions} and emit the entity if the delete statement was applied.
 	 *
 	 * @param entity must not be {@literal null}.
 	 * @param options must not be {@literal null}.

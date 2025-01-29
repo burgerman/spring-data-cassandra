@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 the original author or authors.
+ * Copyright 2019-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,42 +19,40 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-import lombok.AllArgsConstructor;
-import lombok.NoArgsConstructor;
-import lombok.Value;
-import lombok.experimental.Wither;
-
 import java.util.Collections;
 import java.util.Date;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.AdditionalAnswers;
-import org.mockito.junit.MockitoJUnitRunner;
-
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.core.Ordered;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.auditing.IsNewAwareAuditingHandler;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
 import org.springframework.data.mapping.context.PersistentEntities;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Unit tests for {@link AuditingEntityCallback}.
  *
  * @author Mark Paluch
  */
-@RunWith(MockitoJUnitRunner.class)
-public class AuditingEntityCallbackUnitTests {
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+class AuditingEntityCallbackUnitTests {
 
-	IsNewAwareAuditingHandler handler;
-	AuditingEntityCallback callback;
+	private IsNewAwareAuditingHandler handler;
+	private AuditingEntityCallback callback;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		CassandraMappingContext mappingContext = new CassandraMappingContext();
 		mappingContext.getPersistentEntity(Sample.class);
@@ -68,68 +66,62 @@ public class AuditingEntityCallbackUnitTests {
 	}
 
 	@Test // DATACASS-4
-	public void rejectsNullAuditingHandler() {
+	void rejectsNullAuditingHandler() {
 		assertThatIllegalArgumentException().isThrownBy(() -> new AuditingEntityCallback(null));
 	}
 
 	@Test // DATACASS-4
-	public void triggersCreationMarkForObjectWithEmptyId() {
+	void triggersCreationMarkForObjectWithEmptyId() {
 
 		Sample sample = new Sample();
-		callback.onBeforeConvert(sample, CqlIdentifier.of("foo"));
+		callback.onBeforeConvert(sample, CqlIdentifier.fromCql("foo"));
 
 		verify(handler, times(1)).markCreated(sample);
 		verify(handler, times(0)).markModified(any());
 	}
 
 	@Test // DATACASS-4
-	public void triggersModificationMarkForObjectWithSetId() {
+	void triggersModificationMarkForObjectWithSetId() {
 
 		Sample sample = new Sample();
 		sample.id = "id";
-		callback.onBeforeConvert(sample, CqlIdentifier.of("foo"));
+		callback.onBeforeConvert(sample, CqlIdentifier.fromCql("foo"));
 
 		verify(handler, times(0)).markCreated(any());
 		verify(handler, times(1)).markModified(sample);
 	}
 
 	@Test // DATACASS-4
-	public void hasExplicitOrder() {
+	void hasExplicitOrder() {
 
 		assertThat(callback).isInstanceOf(Ordered.class);
 		assertThat(callback.getOrder()).isEqualTo(100);
 	}
 
 	@Test // DATACASS-4
-	public void propagatesChangedInstanceToEvent() {
+	void propagatesChangedInstanceToEvent() {
 
-		ImmutableSample sample = new ImmutableSample();
+		ImmutableSample sample = new ImmutableSample("a", null, null);
 
-		ImmutableSample newSample = new ImmutableSample();
+		ImmutableSample newSample = new ImmutableSample("a", null, null);
 		IsNewAwareAuditingHandler handler = mock(IsNewAwareAuditingHandler.class);
 		doReturn(newSample).when(handler).markAudited(eq(sample));
 
 		AuditingEntityCallback listener = new AuditingEntityCallback(() -> handler);
-		Object result = listener.onBeforeConvert(sample, CqlIdentifier.of("foo"));
+		Object result = listener.onBeforeConvert(sample, CqlIdentifier.fromCql("foo"));
 
 		assertThat(result).isSameAs(newSample);
 	}
 
-	static class Sample {
+	private static class Sample {
 
-		@Id String id;
+		@Id private String id;
 		@CreatedDate Date created;
 		@LastModifiedDate Date modified;
 	}
 
-	@Value
-	@Wither
-	@AllArgsConstructor
-	@NoArgsConstructor(force = true)
-	static class ImmutableSample {
+	record ImmutableSample(
 
-		@Id String id;
-		@CreatedDate Date created;
-		@LastModifiedDate Date modified;
+			@Id String id, @CreatedDate Date created, @LastModifiedDate Date modified) {
 	}
 }

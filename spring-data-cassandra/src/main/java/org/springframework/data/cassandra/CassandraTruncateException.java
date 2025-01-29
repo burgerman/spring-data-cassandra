@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 package org.springframework.data.cassandra;
 
+import java.io.Serial;
+
 import org.springframework.dao.TransientDataAccessException;
 
 /**
@@ -24,12 +26,23 @@ import org.springframework.dao.TransientDataAccessException;
  */
 public class CassandraTruncateException extends TransientDataAccessException {
 
-	private static final long serialVersionUID = 5730642491362430311L;
+	@Serial private static final long serialVersionUID = 5730642491362430311L;
 
+	/**
+	 * Constructor for {@link CassandraTruncateException}.
+	 *
+	 * @param msg the detail message.
+	 */
 	public CassandraTruncateException(String msg) {
 		super(msg);
 	}
 
+	/**
+	 * Constructor for {@link CassandraTruncateException}.
+	 *
+	 * @param msg the detail message.
+	 * @param cause the root cause from the underlying data access API.
+	 */
 	public CassandraTruncateException(String msg, Throwable cause) {
 		super(msg, cause);
 	}

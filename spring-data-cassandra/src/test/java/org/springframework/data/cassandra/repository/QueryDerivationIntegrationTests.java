@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,24 +22,28 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 import org.assertj.core.api.Assertions;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.ComponentScan.Filter;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.dao.IncorrectResultSizeDataAccessException;
+import org.springframework.data.annotation.Id;
 import org.springframework.data.cassandra.config.SchemaAction;
 import org.springframework.data.cassandra.core.CassandraOperations;
-import org.springframework.data.cassandra.core.cql.generator.CreateIndexCqlGenerator;
+import org.springframework.data.cassandra.core.cql.generator.CqlGenerator;
 import org.springframework.data.cassandra.core.cql.keyspace.CreateIndexSpecification;
+import org.springframework.data.cassandra.core.mapping.Embedded;
+import org.springframework.data.cassandra.core.mapping.Indexed;
+import org.springframework.data.cassandra.core.mapping.Table;
 import org.springframework.data.cassandra.core.query.CassandraPageRequest;
+import org.springframework.data.cassandra.core.query.CassandraScrollPosition;
 import org.springframework.data.cassandra.domain.AddressType;
 import org.springframework.data.cassandra.domain.Person;
 import org.springframework.data.cassandra.repository.QueryDerivationIntegrationTests.PersonRepository.NumberOfChildren;
@@ -49,52 +53,59 @@ import org.springframework.data.cassandra.repository.config.EnableCassandraRepos
 import org.springframework.data.cassandra.repository.support.AbstractSpringDataEmbeddedCassandraIntegrationTest;
 import org.springframework.data.cassandra.repository.support.IntegrationTestConfig;
 import org.springframework.data.cassandra.support.CassandraVersion;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.ScrollPosition;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Window;
+import org.springframework.data.support.WindowIterator;
+import org.springframework.data.util.Streamable;
 import org.springframework.data.util.Version;
 import org.springframework.lang.Nullable;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
+import org.springframework.util.ObjectUtils;
 
-import com.datastax.driver.core.Session;
+import com.datastax.oss.driver.api.core.CqlSession;
 
 /**
  * Integration tests for query derivation through {@link PersonRepository}.
  *
  * @author Mark Paluch
+ * @author Christoph Strobl
  */
-@RunWith(SpringJUnit4ClassRunner.class)
-@ContextConfiguration
+@SpringJUnitConfig
 @SuppressWarnings("all")
-public class QueryDerivationIntegrationTests extends AbstractSpringDataEmbeddedCassandraIntegrationTest {
+class QueryDerivationIntegrationTests extends AbstractSpringDataEmbeddedCassandraIntegrationTest {
 
 	@Configuration
 	@EnableCassandraRepositories(considerNestedRepositories = true,
-			includeFilters = @Filter(pattern = ".*PersonRepository", type = FilterType.REGEX))
+			includeFilters = @Filter(classes = { PersonRepository.class, EmbeddedPersonRepository.class },
+					type = FilterType.ASSIGNABLE_TYPE))
 	public static class Config extends IntegrationTestConfig {
 
 		@Override
 		protected Set<Class<?>> getInitialEntitySet() {
-			return Collections.singleton(Person.class);
+			return new HashSet<>(Arrays.asList(Person.class, PersonWithEmbedded.class));
 		}
 
 		@Override
 		public SchemaAction getSchemaAction() {
-			return SchemaAction.RECREATE_DROP_UNUSED;
+			return SchemaAction.CREATE;
 		}
 	}
 
 	@Autowired CassandraOperations template;
-	@Autowired Session session;
+	@Autowired CqlSession session;
 	@Autowired PersonRepository personRepository;
+	@Autowired EmbeddedPersonRepository personWithEmbeddedRepository;
 
 	private Person walter;
 	private Person skyler;
 	private Person flynn;
 	private Version cassandraVersion;
 
-	@Before
+	@BeforeEach
 	public void before() {
 
 		deleteAllEntities();
@@ -122,9 +133,10 @@ public class QueryDerivationIntegrationTests extends AbstractSpringDataEmbeddedC
 		assertThat(result).contains(walter, skyler, flynn);
 	}
 
-	@Test(expected = IncorrectResultSizeDataAccessException.class) // DATACASS-525
+	@Test // DATACASS-525
 	public void findOneWithManyResultsShouldFail() {
-		personRepository.findSomeByLastname("White");
+		assertThatExceptionOfType(IncorrectResultSizeDataAccessException.class)
+				.isThrownBy(() -> personRepository.findSomeByLastname("White"));
 	}
 
 	@Test // DATACASS-525
@@ -167,7 +179,7 @@ public class QueryDerivationIntegrationTests extends AbstractSpringDataEmbeddedC
 		CreateIndexSpecification indexSpecification = CreateIndexSpecification.createIndex("person_main_address")
 				.ifNotExists().tableName("person").columnName("mainaddress");
 
-		template.getCqlOperations().execute(CreateIndexCqlGenerator.toCql(indexSpecification));
+		template.getCqlOperations().execute(CqlGenerator.toCql(indexSpecification));
 
 		// Give Cassandra some time to build the index
 		Thread.sleep(500);
@@ -183,7 +195,7 @@ public class QueryDerivationIntegrationTests extends AbstractSpringDataEmbeddedC
 		CreateIndexSpecification indexSpecification = CreateIndexSpecification.createIndex("person_main_address")
 				.ifNotExists().tableName("person").columnName("mainaddress");
 
-		template.getCqlOperations().execute(CreateIndexCqlGenerator.toCql(indexSpecification));
+		template.getCqlOperations().execute(CqlGenerator.toCql(indexSpecification));
 
 		// Give Cassandra some time to build the index
 		Thread.sleep(500);
@@ -198,8 +210,8 @@ public class QueryDerivationIntegrationTests extends AbstractSpringDataEmbeddedC
 
 		Collection<PersonProjection> collection = personRepository.findPersonProjectedBy();
 
-		assertThat(collection).hasSize(3).extracting("firstname").contains(flynn.getFirstname(),
-				skyler.getFirstname(), walter.getFirstname());
+		assertThat(collection).hasSize(3).extracting("firstname").contains(flynn.getFirstname(), skyler.getFirstname(),
+				walter.getFirstname());
 	}
 
 	@Test // DATACASS-359
@@ -207,8 +219,8 @@ public class QueryDerivationIntegrationTests extends AbstractSpringDataEmbeddedC
 
 		Collection<PersonDto> collection = personRepository.findPersonDtoBy();
 
-		assertThat(collection).hasSize(3).extracting("firstname").contains(flynn.getFirstname(),
-				skyler.getFirstname(), walter.getFirstname());
+		assertThat(collection).hasSize(3).extracting("firstname").contains(flynn.getFirstname(), skyler.getFirstname(),
+				walter.getFirstname());
 	}
 
 	@Test // DATACASS-359
@@ -219,7 +231,7 @@ public class QueryDerivationIntegrationTests extends AbstractSpringDataEmbeddedC
 		CreateIndexSpecification indexSpecification = CreateIndexSpecification.createIndex("fn_starts_with").ifNotExists()
 				.tableName("person").columnName("nickname").using("org.apache.cassandra.index.sasi.SASIIndex");
 
-		template.getCqlOperations().execute(CreateIndexCqlGenerator.toCql(indexSpecification));
+		template.getCqlOperations().execute(CqlGenerator.toCql(indexSpecification));
 
 		// Give Cassandra some time to build the index
 		Thread.sleep(500);
@@ -239,7 +251,7 @@ public class QueryDerivationIntegrationTests extends AbstractSpringDataEmbeddedC
 		CreateIndexSpecification indexSpecification = CreateIndexSpecification.createIndex("person_number_of_children")
 				.ifNotExists().tableName("person").columnName("numberofchildren");
 
-		template.getCqlOperations().execute(CreateIndexCqlGenerator.toCql(indexSpecification));
+		template.getCqlOperations().execute(CqlGenerator.toCql(indexSpecification));
 
 		// Give Cassandra some time to build the index
 		Thread.sleep(500);
@@ -255,7 +267,7 @@ public class QueryDerivationIntegrationTests extends AbstractSpringDataEmbeddedC
 		CreateIndexSpecification indexSpecification = CreateIndexSpecification.createIndex("person_created_date")
 				.ifNotExists().tableName("person").columnName("createddate");
 
-		template.getCqlOperations().execute(CreateIndexCqlGenerator.toCql(indexSpecification));
+		template.getCqlOperations().execute(CqlGenerator.toCql(indexSpecification));
 
 		// Give Cassandra some time to build the index
 		Thread.sleep(500);
@@ -288,7 +300,7 @@ public class QueryDerivationIntegrationTests extends AbstractSpringDataEmbeddedC
 		CreateIndexSpecification indexSpecification = CreateIndexSpecification.createIndex("fn_starts_with").ifNotExists()
 				.tableName("person").columnName("nickname").using("org.apache.cassandra.index.sasi.SASIIndex");
 
-		template.getCqlOperations().execute(CreateIndexCqlGenerator.toCql(indexSpecification));
+		template.getCqlOperations().execute(CqlGenerator.toCql(indexSpecification));
 
 		// Give Cassandra some time to build the index
 		Thread.sleep(500);
@@ -308,7 +320,7 @@ public class QueryDerivationIntegrationTests extends AbstractSpringDataEmbeddedC
 				.tableName("person").columnName("nickname").using("org.apache.cassandra.index.sasi.SASIIndex")
 				.withOption("mode", "CONTAINS");
 
-		template.getCqlOperations().execute(CreateIndexCqlGenerator.toCql(indexSpecification));
+		template.getCqlOperations().execute(CqlGenerator.toCql(indexSpecification));
 
 		// Give Cassandra some time to build the index
 		Thread.sleep(500);
@@ -333,6 +345,57 @@ public class QueryDerivationIntegrationTests extends AbstractSpringDataEmbeddedC
 		assertThat(firstPage).hasSize(2);
 		assertThat(nextPage).hasSize(1);
 		assertThat(result).contains(walter, skyler, flynn);
+	}
+
+	@Test // GH-1408
+	public void shouldSelectWindow() {
+
+		List<Person> result = new ArrayList<>();
+
+		Window<Person> firstWindow = personRepository.findAllWindowByLastname("White", CassandraScrollPosition.initial(),
+				Limit.of(2));
+		Window<Person> nextWindow = personRepository.findAllWindowByLastname("White",
+				firstWindow.positionAt(firstWindow.size() - 1), Limit.of(10));
+
+		result.addAll(firstWindow.getContent());
+		result.addAll(nextWindow.getContent());
+
+		assertThat(firstWindow).hasSize(2);
+
+		assertThat(nextWindow).hasSize(1);
+		assertThat(result).contains(walter, skyler, flynn);
+
+		WindowIterator<Person> iterator = WindowIterator
+				.of(scrollPosition -> personRepository.findAllWindowByLastname("White", scrollPosition, Limit.of(2)))
+				.startingAt(CassandraScrollPosition.initial());
+
+		List<Person> people = Streamable.of(() -> iterator).toList();
+		assertThat(people).containsOnly(walter, skyler, flynn);
+	}
+
+	@Test // GH-1408
+	public void shouldSelectWindowWithTopKeyword() {
+
+		List<Person> result = new ArrayList<>();
+
+		Window<Person> firstWindow = personRepository.findTop2ByLastname("White", CassandraScrollPosition.initial());
+		Window<Person> nextWindow = personRepository.findTop2ByLastname("White",
+				firstWindow.positionAt(firstWindow.size() - 1));
+
+		result.addAll(firstWindow.getContent());
+		result.addAll(nextWindow.getContent());
+
+		assertThat(firstWindow).hasSize(2);
+		assertThat(nextWindow).hasSize(1);
+		assertThat(result).contains(walter, skyler, flynn);
+	}
+
+	@Test // GH-1407
+	public void shouldSelectWithLimit() {
+
+		List<Person> result = personRepository.findAllLimitedByLastname("White", Limit.of(2));
+
+		assertThat(result).hasSize(2);
 	}
 
 	@Test // DATACASS-512
@@ -365,6 +428,20 @@ public class QueryDerivationIntegrationTests extends AbstractSpringDataEmbeddedC
 
 		assertThat(personRepository.existsByLastname("White")).isTrue();
 		assertThat(personRepository.existsByLastname("Schrader")).isFalse();
+	}
+
+	@Test // DATACASS-167
+	public void derivedQueryOnPropertyOfEmbeddedEntity() {
+
+		PersonWithEmbedded source = new PersonWithEmbedded();
+		source.id = "id-1";
+		source.name = new Name();
+		source.name.firstname = "spring";
+		source.name.lastname = "data";
+
+		personWithEmbeddedRepository.save(source);
+
+		assertThat(personWithEmbeddedRepository.findByName_Firstname("spring")).isEqualTo(source);
 	}
 
 	/**
@@ -408,6 +485,12 @@ public class QueryDerivationIntegrationTests extends AbstractSpringDataEmbeddedC
 
 		Slice<Person> findAllSlicedByLastname(String lastname, Pageable pageable);
 
+		Window<Person> findAllWindowByLastname(String lastname, ScrollPosition scrollPosition, Limit limit);
+
+		Window<Person> findTop2ByLastname(String lastname, ScrollPosition scrollPosition);
+
+		List<Person> findAllLimitedByLastname(String lastname, Limit limit);
+
 		Collection<PersonProjection> findPersonProjectedBy();
 
 		Collection<PersonDto> findPersonDtoBy();
@@ -436,6 +519,112 @@ public class QueryDerivationIntegrationTests extends AbstractSpringDataEmbeddedC
 				this.firstname = firstname;
 				this.lastname = lastname;
 			}
+		}
+	}
+
+	/**
+	 * @author Christoph Strobl
+	 */
+	static interface EmbeddedPersonRepository extends CassandraRepository<PersonWithEmbedded, String> {
+
+		PersonWithEmbedded findByName_Firstname(String firstname);
+
+	}
+
+	@Table
+	static class PersonWithEmbedded {
+
+		@Id String id;
+		@Embedded.Nullable Name name;
+
+		public String getId() {
+			return id;
+		}
+
+		public void setId(String id) {
+			this.id = id;
+		}
+
+		public Name getName() {
+			return name;
+		}
+
+		public void setName(Name name) {
+			this.name = name;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o)
+				return true;
+			if (o == null || getClass() != o.getClass())
+				return false;
+
+			PersonWithEmbedded that = (PersonWithEmbedded) o;
+
+			if (!ObjectUtils.nullSafeEquals(id, that.id)) {
+				return false;
+			}
+			if (!ObjectUtils.nullSafeEquals(name, that.name)) {
+				return false;
+			}
+
+			return true;
+		}
+
+		@Override
+		public int hashCode() {
+			int result = ObjectUtils.nullSafeHashCode(id);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(name);
+			return result;
+		}
+	}
+
+	static class Name {
+
+		@Indexed String firstname;
+		String lastname;
+
+		public String getFirstname() {
+			return firstname;
+		}
+
+		public void setFirstname(String firstname) {
+			this.firstname = firstname;
+		}
+
+		public String getLastname() {
+			return lastname;
+		}
+
+		public void setLastname(String lastname) {
+			this.lastname = lastname;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o)
+				return true;
+			if (o == null || getClass() != o.getClass())
+				return false;
+
+			Name name = (Name) o;
+
+			if (!ObjectUtils.nullSafeEquals(firstname, name.firstname)) {
+				return false;
+			}
+			if (!ObjectUtils.nullSafeEquals(lastname, name.lastname)) {
+				return false;
+			}
+
+			return true;
+		}
+
+		@Override
+		public int hashCode() {
+			int result = ObjectUtils.nullSafeHashCode(firstname);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(lastname);
+			return result;
 		}
 	}
 }

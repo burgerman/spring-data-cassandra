@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package org.springframework.data.cassandra.core;
 
-import lombok.Value;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SynchronousSink;
@@ -23,7 +22,10 @@ import reactor.core.publisher.SynchronousSink;
 import java.util.Collections;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.reactivestreams.Publisher;
 
 import org.springframework.beans.BeansException;
@@ -33,25 +35,18 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.ApplicationEventPublisherAware;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.dao.support.DataAccessUtils;
 import org.springframework.data.cassandra.ReactiveResultSet;
 import org.springframework.data.cassandra.ReactiveSession;
 import org.springframework.data.cassandra.ReactiveSessionFactory;
 import org.springframework.data.cassandra.core.EntityOperations.AdaptibleEntity;
 import org.springframework.data.cassandra.core.convert.CassandraConverter;
 import org.springframework.data.cassandra.core.convert.MappingCassandraConverter;
-import org.springframework.data.cassandra.core.convert.QueryMapper;
-import org.springframework.data.cassandra.core.convert.UpdateMapper;
-import org.springframework.data.cassandra.core.cql.CassandraAccessor;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
-import org.springframework.data.cassandra.core.cql.CqlProvider;
-import org.springframework.data.cassandra.core.cql.QueryOptions;
-import org.springframework.data.cassandra.core.cql.ReactiveCqlOperations;
-import org.springframework.data.cassandra.core.cql.ReactiveCqlTemplate;
-import org.springframework.data.cassandra.core.cql.ReactiveSessionCallback;
-import org.springframework.data.cassandra.core.cql.RowMapper;
-import org.springframework.data.cassandra.core.cql.WriteOptions;
+import org.springframework.data.cassandra.core.cql.*;
 import org.springframework.data.cassandra.core.cql.session.DefaultReactiveSessionFactory;
+import org.springframework.data.cassandra.core.cql.util.StatementBuilder;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity;
+import org.springframework.data.cassandra.core.mapping.SimpleUserTypeResolver;
 import org.springframework.data.cassandra.core.mapping.event.AfterConvertEvent;
 import org.springframework.data.cassandra.core.mapping.event.AfterDeleteEvent;
 import org.springframework.data.cassandra.core.mapping.event.AfterLoadEvent;
@@ -67,23 +62,29 @@ import org.springframework.data.domain.Slice;
 import org.springframework.data.domain.SliceImpl;
 import org.springframework.data.mapping.callback.EntityCallbacks;
 import org.springframework.data.mapping.callback.ReactiveEntityCallbacks;
+import org.springframework.data.projection.EntityProjection;
 import org.springframework.data.projection.ProjectionFactory;
 import org.springframework.data.projection.SpelAwareProxyProjectionFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.RegularStatement;
-import com.datastax.driver.core.Row;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.SimpleStatement;
-import com.datastax.driver.core.Statement;
-import com.datastax.driver.core.exceptions.DriverException;
-import com.datastax.driver.core.querybuilder.Delete;
-import com.datastax.driver.core.querybuilder.Insert;
-import com.datastax.driver.core.querybuilder.QueryBuilder;
-import com.datastax.driver.core.querybuilder.Select;
-import com.datastax.driver.core.querybuilder.Truncate;
-import com.datastax.driver.core.querybuilder.Update;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.DriverException;
+import com.datastax.oss.driver.api.core.config.DefaultDriverOption;
+import com.datastax.oss.driver.api.core.context.DriverContext;
+import com.datastax.oss.driver.api.core.cql.BatchType;
+import com.datastax.oss.driver.api.core.cql.BoundStatement;
+import com.datastax.oss.driver.api.core.cql.PreparedStatement;
+import com.datastax.oss.driver.api.core.cql.Row;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
+import com.datastax.oss.driver.api.core.cql.Statement;
+import com.datastax.oss.driver.api.querybuilder.QueryBuilder;
+import com.datastax.oss.driver.api.querybuilder.delete.Delete;
+import com.datastax.oss.driver.api.querybuilder.insert.Insert;
+import com.datastax.oss.driver.api.querybuilder.insert.RegularInsert;
+import com.datastax.oss.driver.api.querybuilder.select.Select;
+import com.datastax.oss.driver.api.querybuilder.truncate.Truncate;
+import com.datastax.oss.driver.api.querybuilder.update.Update;
 
 /**
  * Primary implementation of {@link ReactiveCassandraOperations}. It simplifies the use of Reactive Cassandra usage and
@@ -94,6 +95,13 @@ import com.datastax.driver.core.querybuilder.Update;
  * Can be used within a service implementation via direct instantiation with a {@link ReactiveSessionFactory} reference,
  * or get prepared in an application context and given to services as bean reference.
  * <p>
+ * This class supports the use of prepared statements when enabling {@link #setUsePreparedStatements(boolean)}. All
+ * statements created by methods of this class (such as {@link #select(Query, Class)} or
+ * {@link #update(Query, org.springframework.data.cassandra.core.query.Update, Class)} will be executed as prepared
+ * statements. Also, statements accepted by methods (such as {@link #select(String, Class)} or
+ * {@link #select(Statement, Class) and others}) will be prepared prior to execution. Note that {@link Statement}
+ * objects passed to methods must be {@link SimpleStatement} so that these can be prepared.
+ * <p>
  * Note: The {@link ReactiveSessionFactory} should always be configured as a bean in the application context, in the
  * first case given to the service directly, in the second case to the prepared template.
  *
@@ -101,24 +109,27 @@ import com.datastax.driver.core.querybuilder.Update;
  * @author John Blum
  * @author Lukasz Antoniak
  * @author Hleb Albau
+ * @author Sam Lightfoot
  * @since 2.0
  */
 public class ReactiveCassandraTemplate
 		implements ReactiveCassandraOperations, ApplicationEventPublisherAware, ApplicationContextAware {
 
-	private @Nullable ApplicationEventPublisher eventPublisher;
+	private final Log log = LogFactory.getLog(getClass());
 
-	private @Nullable ReactiveEntityCallbacks entityCallbacks;
+	private final ReactiveCqlOperations cqlOperations;
 
 	private final CassandraConverter converter;
 
 	private final EntityOperations entityOperations;
 
-	private final ReactiveCqlOperations cqlOperations;
-
-	private final SpelAwareProxyProjectionFactory projectionFactory;
-
 	private final StatementFactory statementFactory;
+
+	private final EntityLifecycleEventDelegate eventDelegate;
+
+	private @Nullable ReactiveEntityCallbacks entityCallbacks;
+
+	private boolean usePreparedStatements = true;
 
 	/**
 	 * Creates an instance of {@link ReactiveCassandraTemplate} initialized with the given {@link ReactiveSession} and a
@@ -126,10 +137,10 @@ public class ReactiveCassandraTemplate
 	 *
 	 * @param session {@link ReactiveSession} used to interact with Cassandra; must not be {@literal null}.
 	 * @see CassandraConverter
-	 * @see Session
+	 * @see ReactiveSession
 	 */
 	public ReactiveCassandraTemplate(ReactiveSession session) {
-		this(session, newConverter());
+		this(session, newConverter(session));
 	}
 
 	/**
@@ -140,7 +151,7 @@ public class ReactiveCassandraTemplate
 	 * @param converter {@link CassandraConverter} used to convert between Java and Cassandra types; must not be
 	 *          {@literal null}.
 	 * @see org.springframework.data.cassandra.core.convert.CassandraConverter
-	 * @see com.datastax.driver.core.Session
+	 * @see ReactiveSession
 	 */
 	public ReactiveCassandraTemplate(ReactiveSession session, CassandraConverter converter) {
 		this(new DefaultReactiveSessionFactory(session), converter);
@@ -154,7 +165,7 @@ public class ReactiveCassandraTemplate
 	 * @param converter {@link CassandraConverter} used to convert between Java and Cassandra types; must not be
 	 *          {@literal null}.
 	 * @see org.springframework.data.cassandra.core.convert.CassandraConverter
-	 * @see com.datastax.driver.core.Session
+	 * @see ReactiveSession
 	 */
 	public ReactiveCassandraTemplate(ReactiveSessionFactory sessionFactory, CassandraConverter converter) {
 		this(new ReactiveCqlTemplate(sessionFactory), converter);
@@ -169,7 +180,7 @@ public class ReactiveCassandraTemplate
 	 * @param converter {@link CassandraConverter} used to convert between Java and Cassandra types; must not be
 	 *          {@literal null}.
 	 * @see org.springframework.data.cassandra.core.convert.CassandraConverter
-	 * @see com.datastax.driver.core.Session
+	 * @see ReactiveSession
 	 */
 	public ReactiveCassandraTemplate(ReactiveCqlOperations reactiveCqlOperations, CassandraConverter converter) {
 
@@ -178,39 +189,27 @@ public class ReactiveCassandraTemplate
 
 		this.converter = converter;
 		this.cqlOperations = reactiveCqlOperations;
-		this.entityOperations = new EntityOperations(converter.getMappingContext());
-		this.projectionFactory = new SpelAwareProxyProjectionFactory();
-		this.statementFactory = new StatementFactory(new QueryMapper(converter), new UpdateMapper(converter));
+		this.entityOperations = new EntityOperations(converter);
+		this.statementFactory = new StatementFactory(converter);
+		this.eventDelegate = new EntityLifecycleEventDelegate();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#batchOps()
-	 */
 	@Override
-	public ReactiveCassandraBatchOperations batchOps() {
-		return new ReactiveCassandraBatchTemplate(this);
+	public ReactiveCassandraBatchOperations batchOps(BatchType batchType) {
+		return new ReactiveCassandraBatchTemplate(this, batchType);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.context.ApplicationEventPublisherAware#setApplicationEventPublisher(org.springframework.context.ApplicationEventPublisher)
-	 */
 	@Override
 	public void setApplicationEventPublisher(ApplicationEventPublisher applicationEventPublisher) {
-		this.eventPublisher = applicationEventPublisher;
+		this.eventDelegate.setPublisher(applicationEventPublisher);
 	}
 
-	/* (non-Javadoc)
-	* @see org.springframework.context.ApplicationContextAware(org.springframework.context.ApplicationContext)
-	*/
 	@Override
 	public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
 
 		if (entityCallbacks == null) {
 			setEntityCallbacks(ReactiveEntityCallbacks.create(applicationContext));
 		}
-
-		projectionFactory.setBeanFactory(applicationContext);
-		projectionFactory.setBeanClassLoader(applicationContext.getClassLoader());
 	}
 
 	/**
@@ -222,12 +221,63 @@ public class ReactiveCassandraTemplate
 		this.entityCallbacks = entityCallbacks;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#getConverter()
+	/**
+	 * Configure whether lifecycle events such as {@link AfterLoadEvent}, {@link BeforeSaveEvent}, etc. should be
+	 * published or whether emission should be suppressed. Enabled by default.
+	 *
+	 * @param enabled {@code true} to enable entity lifecycle events; {@code false} to disable entity lifecycle events.
+	 * @since 4.0
+	 * @see CassandraMappingEvent
 	 */
+	public void setEntityLifecycleEventsEnabled(boolean enabled) {
+		this.eventDelegate.setEventsEnabled(enabled);
+	}
+
+	@Override
+	public ReactiveCqlOperations getReactiveCqlOperations() {
+		return this.cqlOperations;
+	}
+
 	@Override
 	public CassandraConverter getConverter() {
 		return this.converter;
+	}
+
+	/**
+	 * Returns the {@link StatementFactory} used by this template to construct and run Cassandra CQL statements.
+	 *
+	 * @return the {@link StatementFactory} used by this template to construct and run Cassandra CQL statements.
+	 * @see org.springframework.data.cassandra.core.StatementFactory
+	 * @since 2.1
+	 */
+	public StatementFactory getStatementFactory() {
+		return this.statementFactory;
+	}
+
+	/**
+	 * Returns whether this instance is configured to use {@link PreparedStatement prepared statements}. If enabled
+	 * (default), then all persistence methods (such as {@link #select}, {@link #update}, and others) will make use of
+	 * prepared statements. Note that methods accepting a {@link Statement} must be called with {@link SimpleStatement}
+	 * instances to participate in statement preparation.
+	 *
+	 * @return {@literal true} if prepared statements usage is enabled; {@literal false} otherwise.
+	 * @since 3.2
+	 */
+	public boolean isUsePreparedStatements() {
+		return usePreparedStatements;
+	}
+
+	/**
+	 * Enable/disable {@link PreparedStatement prepared statements} usage. If enabled (default), then all persistence
+	 * methods (such as {@link #select}, {@link #update}, and others) will make use of prepared statements. Note that
+	 * methods accepting a {@link Statement} must be called with {@link SimpleStatement} instances to participate in
+	 * statement preparation.
+	 *
+	 * @param usePreparedStatements whether to use prepared statements.
+	 * @since 3.2
+	 */
+	public void setUsePreparedStatements(boolean usePreparedStatements) {
+		this.usePreparedStatements = usePreparedStatements;
 	}
 
 	/**
@@ -249,97 +299,74 @@ public class ReactiveCassandraTemplate
 	 *         projections.
 	 * @see org.springframework.data.projection.SpelAwareProxyProjectionFactory
 	 * @since 2.1
+	 * @deprecated since 3.4, use {@link CassandraConverter#getProjectionFactory()} instead.
 	 */
+	@Deprecated
 	protected SpelAwareProxyProjectionFactory getProjectionFactory() {
-		return this.projectionFactory;
-	}
-
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#getReactiveCqlOperations()
-	 */
-	@Override
-	public ReactiveCqlOperations getReactiveCqlOperations() {
-		return this.cqlOperations;
+		return (SpelAwareProxyProjectionFactory) getConverter().getProjectionFactory();
 	}
 
 	private CassandraPersistentEntity<?> getRequiredPersistentEntity(Class<?> entityType) {
 		return getEntityOperations().getRequiredPersistentEntity(entityType);
 	}
 
-	/**
-	 * Returns the {@link StatementFactory} used by this template to construct and run Cassandra CQL statements.
-	 *
-	 * @return the {@link StatementFactory} used by this template to construct and run Cassandra CQL statements.
-	 * @see org.springframework.data.cassandra.core.StatementFactory
-	 * @since 2.1
-	 */
-	protected StatementFactory getStatementFactory() {
-		return this.statementFactory;
-	}
-
 	CqlIdentifier getTableName(Class<?> entityClass) {
-		return getEntityOperations().getTableName(entityClass);
+		return getRequiredPersistentEntity(entityClass).getTableName();
 	}
 
 	// -------------------------------------------------------------------------
 	// Methods dealing with static CQL
 	// -------------------------------------------------------------------------
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#select(java.lang.String, java.lang.Class)
-	 */
 	@Override
 	public <T> Flux<T> select(String cql, Class<T> entityClass) {
 
 		Assert.hasText(cql, "CQL must not be empty");
 
-		return select(new SimpleStatement(cql), entityClass);
+		return select(SimpleStatement.newInstance(cql), entityClass);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#selectOne(java.lang.String, java.lang.Class)
-	 */
 	@Override
 	public <T> Mono<T> selectOne(String cql, Class<T> entityClass) {
 		return select(cql, entityClass).next();
 	}
 
 	// -------------------------------------------------------------------------
-	// Methods dealing with com.datastax.driver.core.Statement
+	// Methods dealing with com.datastax.oss.driver.api.core.cql.Statement
 	// -------------------------------------------------------------------------
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#select(com.datastax.driver.core.Statement, java.lang.Class)
-	 */
 	@Override
-	public <T> Flux<T> select(Statement statement, Class<T> entityClass) {
+	public Mono<ReactiveResultSet> execute(Statement<?> statement) throws DataAccessException {
+
+		Assert.notNull(statement, "Statement must not be null");
+
+		return doExecute(statement, Function.identity());
+	}
+
+	@Override
+	public <T> Flux<T> select(Statement<?> statement, Class<T> entityClass) {
 
 		Assert.notNull(statement, "Statement must not be null");
 		Assert.notNull(entityClass, "Entity type must not be null");
 
-		Function<Row, T> mapper = getMapper(entityClass, entityClass, EntityQueryUtils.getTableName(statement));
+		Function<Row, T> mapper = getMapper(EntityProjection.nonProjecting(entityClass),
+				EntityQueryUtils.getTableName(statement));
 
-		return getReactiveCqlOperations().query(statement, (row, rowNum) -> mapper.apply(row));
+		return doQuery(statement, (row, rowNum) -> mapper.apply(row));
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#selectOne(com.datastax.driver.core.Statement, java.lang.Class)
-	 */
 	@Override
-	public <T> Mono<T> selectOne(Statement statement, Class<T> entityClass) {
+	public <T> Mono<T> selectOne(Statement<?> statement, Class<T> entityClass) {
 		return select(statement, entityClass).next();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.CassandraOperations#slice(com.datastax.driver.core.Statement, java.lang.Class)
-	 */
 	@Override
-	public <T> Mono<Slice<T>> slice(Statement statement, Class<T> entityClass) {
+	public <T> Mono<Slice<T>> slice(Statement<?> statement, Class<T> entityClass) {
 
 		Assert.notNull(statement, "Statement must not be null");
 		Assert.notNull(entityClass, "Entity type must not be null");
 
-		Mono<ReactiveResultSet> resultSetMono = getReactiveCqlOperations().queryForResultSet(statement);
+		Mono<ReactiveResultSet> resultSetMono = doExecute(statement, Function.identity());
 		Mono<Integer> effectiveFetchSizeMono = getEffectiveFetchSize(statement);
 		RowMapper<T> rowMapper = (row, i) -> getConverter().read(entityClass, row);
 
@@ -358,9 +385,6 @@ public class ReactiveCassandraTemplate
 	// Methods dealing with org.springframework.data.cassandra.core.query.Query
 	// -------------------------------------------------------------------------
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#select(org.springframework.data.cassandra.core.query.Query, java.lang.Class)
-	 */
 	@Override
 	public <T> Flux<T> select(Query query, Class<T> entityClass) throws DataAccessException {
 
@@ -373,22 +397,18 @@ public class ReactiveCassandraTemplate
 	<T> Flux<T> doSelect(Query query, Class<?> entityClass, CqlIdentifier tableName, Class<T> returnType) {
 
 		CassandraPersistentEntity<?> persistentEntity = getRequiredPersistentEntity(entityClass);
-
-		Columns columns = getStatementFactory().computeColumnsForProjection(query.getColumns(), persistentEntity,
-				returnType);
+		EntityProjection<T, ?> projection = entityOperations.introspectProjection(returnType, entityClass);
+		Columns columns = getStatementFactory().computeColumnsForProjection(projection, query.getColumns(),
+				persistentEntity, returnType);
 
 		Query queryToUse = query.columns(columns);
 
-		RegularStatement select = getStatementFactory().select(queryToUse, persistentEntity, tableName);
+		StatementBuilder<Select> select = getStatementFactory().select(queryToUse, persistentEntity, tableName);
+		Function<Row, T> mapper = getMapper(projection, tableName);
 
-		Function<Row, T> mapper = getMapper(entityClass, returnType, tableName);
-
-		return getReactiveCqlOperations().query(select, (row, rowNum) -> mapper.apply(row));
+		return doQuery(select.build(), (row, rowNum) -> mapper.apply(row));
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#selectOne(org.springframework.data.cassandra.core.query.Query, java.lang.Class)
-	 */
 	@Override
 	public <T> Mono<T> selectOne(Query query, Class<T> entityClass) throws DataAccessException {
 
@@ -398,23 +418,17 @@ public class ReactiveCassandraTemplate
 		return select(query, entityClass).next();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#slice(org.springframework.data.cassandra.core.query.Query, java.lang.Class)
-	 */
 	@Override
 	public <T> Mono<Slice<T>> slice(Query query, Class<T> entityClass) throws DataAccessException {
 
 		Assert.notNull(query, "Query must not be null");
 		Assert.notNull(entityClass, "Entity type must not be null");
 
-		RegularStatement select = getStatementFactory().select(query, getRequiredPersistentEntity(entityClass));
+		StatementBuilder<Select> select = getStatementFactory().select(query, getRequiredPersistentEntity(entityClass));
 
-		return slice(select, entityClass);
+		return slice(select.build(), entityClass);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#update(org.springframework.data.cassandra.core.query.Query, org.springframework.data.cassandra.core.query.Update, java.lang.Class)
-	 */
 	@Override
 	public Mono<Boolean> update(Query query, org.springframework.data.cassandra.core.query.Update update,
 			Class<?> entityClass) throws DataAccessException {
@@ -429,15 +443,12 @@ public class ReactiveCassandraTemplate
 	Mono<WriteResult> doUpdate(Query query, org.springframework.data.cassandra.core.query.Update update,
 			Class<?> entityClass, CqlIdentifier tableName) {
 
-		RegularStatement statement = getStatementFactory().update(query, update, getRequiredPersistentEntity(entityClass),
-				tableName);
+		StatementBuilder<Update> statement = getStatementFactory().update(query, update,
+				getRequiredPersistentEntity(entityClass), tableName);
 
-		return getReactiveCqlOperations().execute(new StatementCallback(statement)).next();
+		return doExecuteAndFlatMap(statement.build(), ReactiveCassandraTemplate::toWriteResult);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#delete(org.springframework.data.cassandra.core.query.Query, java.lang.Class)
-	 */
 	@Override
 	public Mono<Boolean> delete(Query query, Class<?> entityClass) throws DataAccessException {
 
@@ -449,34 +460,29 @@ public class ReactiveCassandraTemplate
 
 	Mono<WriteResult> doDelete(Query query, Class<?> entityClass, CqlIdentifier tableName) {
 
-		RegularStatement delete = getStatementFactory().delete(query, getRequiredPersistentEntity(entityClass), tableName);
+		StatementBuilder<Delete> builder = getStatementFactory().delete(query, getRequiredPersistentEntity(entityClass),
+				tableName);
 
-		Mono<WriteResult> writeResult = getReactiveCqlOperations().execute(new StatementCallback(delete))
-				.doOnSubscribe(it -> maybeEmitEvent(new BeforeDeleteEvent<>(delete, entityClass, tableName))).next();
+		SimpleStatement delete = builder.build();
 
-		return writeResult.doOnNext(it -> maybeEmitEvent(new AfterDeleteEvent<>(delete, entityClass, tableName)));
+		Mono<WriteResult> writeResult = doExecuteAndFlatMap(delete, ReactiveCassandraTemplate::toWriteResult)
+				.doOnSubscribe(it -> maybeEmitEvent(() -> new BeforeDeleteEvent<>(delete, entityClass, tableName)));
+
+		return writeResult.doOnNext(it -> maybeEmitEvent(() -> new AfterDeleteEvent<>(delete, entityClass, tableName)));
 	}
 
 	// -------------------------------------------------------------------------
 	// Methods dealing with entities
 	// -------------------------------------------------------------------------
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#count(java.lang.Class)
-	 */
 	@Override
 	public Mono<Long> count(Class<?> entityClass) {
 
 		Assert.notNull(entityClass, "Entity type must not be null");
 
-		Select select = QueryBuilder.select().countAll().from(getTableName(entityClass).toCql());
-
-		return getReactiveCqlOperations().queryForObject(select, Long.class);
+		return doCount(Query.empty(), entityClass, getTableName(entityClass));
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#count(org.springframework.data.cassandra.core.query.Query, java.lang.Class)
-	 */
 	@Override
 	public Mono<Long> count(Query query, Class<?> entityClass) throws DataAccessException {
 
@@ -488,14 +494,19 @@ public class ReactiveCassandraTemplate
 
 	Mono<Long> doCount(Query query, Class<?> entityClass, CqlIdentifier tableName) {
 
-		RegularStatement count = getStatementFactory().count(query, getRequiredPersistentEntity(entityClass), tableName);
+		StatementBuilder<Select> count = getStatementFactory().count(query, getRequiredPersistentEntity(entityClass),
+				tableName);
 
-		return getReactiveCqlOperations().queryForObject(count, Long.class).switchIfEmpty(Mono.just(0L));
+		SingleColumnRowMapper<Long> mapper = SingleColumnRowMapper.newInstance(Long.class);
+
+		Mono<Long> mono = doExecuteAndFlatMap(count.build(), rs -> rs.rows() //
+				.map(it -> mapper.mapRow(it, 0)) //
+				.buffer() //
+				.map(DataAccessUtils::nullableSingleResult).next());
+
+		return mono.switchIfEmpty(Mono.just(0L));
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#exists(java.lang.Object, java.lang.Class)
-	 */
 	@Override
 	public Mono<Boolean> exists(Object id, Class<?> entityClass) {
 
@@ -503,17 +514,11 @@ public class ReactiveCassandraTemplate
 		Assert.notNull(entityClass, "Entity type must not be null");
 
 		CassandraPersistentEntity<?> entity = getRequiredPersistentEntity(entityClass);
+		StatementBuilder<Select> builder = getStatementFactory().selectOneById(id, entity, entity.getTableName());
 
-		Select select = QueryBuilder.select().from(entity.getTableName().toCql());
-
-		getConverter().write(id, select.where(), entity);
-
-		return getReactiveCqlOperations().queryForRows(select).hasElements();
+		return doQuery(builder.build(), (row, rowNum) -> row).hasElements();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#exists(org.springframework.data.cassandra.core.query.Query, java.lang.Class)
-	 */
 	@Override
 	public Mono<Boolean> exists(Query query, Class<?> entityClass) throws DataAccessException {
 
@@ -525,41 +530,29 @@ public class ReactiveCassandraTemplate
 
 	Mono<Boolean> doExists(Query query, Class<?> entityClass, CqlIdentifier tableName) {
 
-		RegularStatement select = getStatementFactory().select(query.limit(1), getRequiredPersistentEntity(entityClass),
-				tableName);
+		StatementBuilder<Select> builder = getStatementFactory().select(query.limit(1),
+				getRequiredPersistentEntity(entityClass), tableName);
 
-		return getReactiveCqlOperations().queryForRows(select).hasElements();
+		return doQuery(builder.build(), (row, rowNum) -> row).hasElements();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#selectOneById(java.lang.Object, java.lang.Class)
-	 */
 	@Override
 	public <T> Mono<T> selectOneById(Object id, Class<T> entityClass) {
 
 		Assert.notNull(id, "Id must not be null");
 		Assert.notNull(entityClass, "Entity type must not be null");
 
-		CassandraPersistentEntity<?> entity = getRequiredPersistentEntity(entityClass);
+		StatementBuilder<Select> builder = getStatementFactory().selectOneById(id, getRequiredPersistentEntity(entityClass),
+				getTableName(entityClass));
 
-		Select select = QueryBuilder.select().all().from(entity.getTableName().toCql());
-
-		getConverter().write(id, select.where(), entity);
-
-		return selectOne(select, entityClass);
+		return selectOne(builder.build(), entityClass);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#insert(java.lang.Object)
-	 */
 	@Override
 	public <T> Mono<T> insert(T entity) {
 		return insert(entity, InsertOptions.empty()).map(EntityWriteResult::getEntity);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#insert(java.lang.Object, org.springframework.data.cassandra.core.InsertOptions)
-	 */
 	@Override
 	public <T> Mono<EntityWriteResult<T>> insert(T entity, InsertOptions options) {
 
@@ -579,15 +572,19 @@ public class ReactiveCassandraTemplate
 
 			T entityToUse = source.isVersionedEntity() ? source.initializeVersionProperty() : entityToInsert;
 
-			Insert insert = EntityQueryUtils.createInsertQuery(tableName.toCql(), entityToUse, options, getConverter(),
-					persistentEntity);
+			StatementBuilder<RegularInsert> builder = getStatementFactory().insert(entityToUse, options, persistentEntity,
+					tableName);
 
-			return source.isVersionedEntity() ? doInsertVersioned(insert.ifNotExists(), entityToUse, source, tableName)
-					: doInsert(insert, entityToUse, tableName);
+			if (source.isVersionedEntity()) {
+				builder.apply(Insert::ifNotExists);
+				return doInsertVersioned(builder.build(), entityToUse, source, tableName);
+			}
+
+			return doInsert(builder.build(), entityToUse, tableName);
 		});
 	}
 
-	private <T> Mono<EntityWriteResult<T>> doInsertVersioned(Insert insert, T entity, AdaptibleEntity<T> source,
+	private <T> Mono<EntityWriteResult<T>> doInsertVersioned(SimpleStatement insert, T entity, AdaptibleEntity<T> source,
 			CqlIdentifier tableName) {
 
 		return executeSave(entity, tableName, insert, (result, sink) -> {
@@ -605,21 +602,15 @@ public class ReactiveCassandraTemplate
 		});
 	}
 
-	private <T> Mono<EntityWriteResult<T>> doInsert(Insert insert, T entity, CqlIdentifier tableName) {
+	private <T> Mono<EntityWriteResult<T>> doInsert(SimpleStatement insert, T entity, CqlIdentifier tableName) {
 		return executeSave(entity, tableName, insert);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#update(java.lang.Object)
-	 */
 	@Override
 	public <T> Mono<T> update(T entity) {
 		return update(entity, UpdateOptions.empty()).map(EntityWriteResult::getEntity);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#update(java.lang.Object, org.springframework.data.cassandra.core.UpdateOptions)
-	 */
 	@Override
 	public <T> Mono<EntityWriteResult<T>> update(T entity, UpdateOptions options) {
 
@@ -644,14 +635,15 @@ public class ReactiveCassandraTemplate
 		Number previousVersion = source.getVersion();
 		T toSave = source.incrementVersion();
 
-		Update update = getStatementFactory().update(toSave, options, getConverter(), persistentEntity, tableName);
+		StatementBuilder<Update> builder = getStatementFactory().update(toSave, options, persistentEntity, tableName);
+		SimpleStatement update = source.appendVersionCondition(builder, previousVersion).build();
 
-		return executeSave(toSave, tableName, source.appendVersionCondition(update, previousVersion), (result, sink) -> {
+		return executeSave(toSave, tableName, update, (result, sink) -> {
 
 			if (!result.wasApplied()) {
 
 				sink.error(new OptimisticLockingFailureException(
-						String.format("Cannot save entity %s with version %s to table %s. Has it been modified meanwhile?", toSave,
+						String.format("Cannot save entity %s with version %s to table %s; Has it been modified meanwhile", toSave,
 								source.getVersion(), tableName)));
 
 				return;
@@ -664,22 +656,16 @@ public class ReactiveCassandraTemplate
 	private <T> Mono<EntityWriteResult<T>> doUpdate(T entity, UpdateOptions options, CqlIdentifier tableName,
 			CassandraPersistentEntity<?> persistentEntity) {
 
-		Update update = getStatementFactory().update(entity, options, getConverter(), persistentEntity, tableName);
+		StatementBuilder<Update> builder = getStatementFactory().update(entity, options, persistentEntity, tableName);
 
-		return executeSave(entity, tableName, update);
+		return executeSave(entity, tableName, builder.build());
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#delete(java.lang.Object)
-	 */
 	@Override
 	public <T> Mono<T> delete(T entity) {
 		return delete(entity, QueryOptions.empty()).map(reactiveWriteResult -> entity);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#delete(java.lang.Object, org.springframework.data.cql.core.QueryOptions)
-	 */
 	@Override
 	public Mono<WriteResult> delete(Object entity, QueryOptions options) {
 
@@ -690,22 +676,23 @@ public class ReactiveCassandraTemplate
 		CassandraPersistentEntity<?> persistentEntity = getRequiredPersistentEntity(entity.getClass());
 		CqlIdentifier tableName = persistentEntity.getTableName();
 
-		Delete delete = getStatementFactory().delete(entity, options, getConverter(), persistentEntity, tableName);
+		StatementBuilder<Delete> builder = getStatementFactory().delete(entity, options, getConverter(), tableName);
 
-		return source.isVersionedEntity() ? doDeleteVersioned(delete, entity, source, tableName)
-				: doDelete(delete, entity, tableName);
+		return source.isVersionedEntity()
+				? doDeleteVersioned(source.appendVersionCondition(builder).build(), entity, source, tableName)
+				: doDelete(builder.build(), entity, tableName);
 	}
 
-	private Mono<WriteResult> doDeleteVersioned(Delete delete, Object entity, AdaptibleEntity<Object> source,
+	private Mono<WriteResult> doDeleteVersioned(SimpleStatement delete, Object entity, AdaptibleEntity<Object> source,
 			CqlIdentifier tableName) {
 
-		return executeDelete(entity, tableName, source.appendVersionCondition(delete), (result, sink) -> {
+		return executeDelete(entity, tableName, delete, (result, sink) -> {
 
 			if (!result.wasApplied()) {
 
 				sink.error(new OptimisticLockingFailureException(
-						String.format("Cannot delete entity %s with version %s in table %s. Has it been modified meanwhile?",
-								entity, source.getVersion(), tableName)));
+						String.format("Cannot delete entity %s with version %s in table %s; Has it been modified meanwhile", entity,
+								source.getVersion(), tableName)));
 
 				return;
 			}
@@ -714,13 +701,10 @@ public class ReactiveCassandraTemplate
 		});
 	}
 
-	private Mono<WriteResult> doDelete(Delete delete, Object entity, CqlIdentifier tableName) {
+	private Mono<WriteResult> doDelete(SimpleStatement delete, Object entity, CqlIdentifier tableName) {
 		return executeDelete(entity, tableName, delete, (result, sink) -> sink.next(result));
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#deleteById(java.lang.Object, java.lang.Class)
-	 */
 	@Override
 	public Mono<Boolean> deleteById(Object id, Class<?> entityClass) {
 
@@ -729,64 +713,53 @@ public class ReactiveCassandraTemplate
 
 		CassandraPersistentEntity<?> entity = getRequiredPersistentEntity(entityClass);
 		CqlIdentifier tableName = entity.getTableName();
-		Delete delete = QueryBuilder.delete().from(tableName.toCql());
 
-		getConverter().write(id, delete.where(), entity);
+		StatementBuilder<Delete> builder = getStatementFactory().deleteById(id, entity, tableName);
+		SimpleStatement delete = builder.build();
 
-		Mono<Boolean> result = getReactiveCqlOperations().execute(delete)
-				.doOnSubscribe(it -> maybeEmitEvent(new BeforeDeleteEvent<>(delete, entityClass, tableName)));
+		Mono<Boolean> result = doExecute(delete, ReactiveResultSet::wasApplied)
+				.doOnSubscribe(it -> maybeEmitEvent(() -> new BeforeDeleteEvent<>(delete, entityClass, tableName)));
 
-		return result.doOnNext(it -> maybeEmitEvent(new AfterDeleteEvent<>(delete, entityClass, tableName)));
+		return result.doOnNext(it -> maybeEmitEvent(() -> new AfterDeleteEvent<>(delete, entityClass, tableName)));
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations#truncate(java.lang.Class)
-	 */
 	@Override
 	public Mono<Void> truncate(Class<?> entityClass) {
 
 		Assert.notNull(entityClass, "Entity type must not be null");
 
-		CqlIdentifier tableName = getTableName(entityClass);
-		Truncate truncate = QueryBuilder.truncate(tableName.toCql());
+		CassandraPersistentEntity<?> entity = getRequiredPersistentEntity(entityClass);
+		CqlIdentifier tableName = entity.getTableName();
 
-		Mono<Boolean> result = getReactiveCqlOperations().execute(truncate)
-				.doOnSubscribe(it -> maybeEmitEvent(new BeforeDeleteEvent<>(truncate, entityClass, tableName)));
+		Truncate truncate = QueryBuilder.truncate(entity.getKeyspace(), tableName);
+		SimpleStatement statement = truncate.build();
 
-		return result.doOnNext(it -> maybeEmitEvent(new AfterDeleteEvent<>(truncate, entityClass, tableName))).then();
+		Mono<Boolean> result = doExecute(statement, ReactiveResultSet::wasApplied)
+				.doOnSubscribe(it -> maybeEmitEvent(() -> new BeforeDeleteEvent<>(statement, entityClass, tableName)));
+
+		return result.doOnNext(it -> maybeEmitEvent(() -> new AfterDeleteEvent<>(statement, entityClass, tableName)))
+				.then();
 	}
 
 	// -------------------------------------------------------------------------
 	// Fluent API entry points
 	// -------------------------------------------------------------------------
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveDeleteOperation#remove(java.lang.Class)
-	 */
 	@Override
 	public ReactiveDelete delete(Class<?> domainType) {
 		return new ReactiveDeleteOperationSupport(this).delete(domainType);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveInsertOperation#insert(java.lang.Class)
-	 */
 	@Override
 	public <T> ReactiveInsert<T> insert(Class<T> domainType) {
 		return new ReactiveInsertOperationSupport(this).insert(domainType);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveSelectOperation#query(java.lang.Class)
-	 */
 	@Override
 	public <T> ReactiveSelect<T> query(Class<T> domainType) {
 		return new ReactiveSelectOperationSupport(this).query(domainType);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveUpdateOperation#update(java.lang.Class)
-	 */
 	@Override
 	public ReactiveUpdate update(Class<?> domainType) {
 		return new ReactiveUpdateOperationSupport(this).update(domainType);
@@ -796,94 +769,156 @@ public class ReactiveCassandraTemplate
 	// Implementation hooks and utility methods
 	// -------------------------------------------------------------------------
 
-	private <T> Mono<EntityWriteResult<T>> executeSave(T entity, CqlIdentifier tableName, Statement statement) {
+	/**
+	 * Create a new statement-based {@link ReactivePreparedStatementHandler} using the statement passed in.
+	 * <p>
+	 * This method allows for the creation to be overridden by subclasses.
+	 *
+	 * @param statement the statement to be prepared.
+	 * @return the new {@link PreparedStatementHandler} to use.
+	 * @since 3.3.3
+	 */
+	protected ReactivePreparedStatementHandler createPreparedStatementHandler(Statement<?> statement) {
+		return new PreparedStatementHandler(statement);
+	}
+
+	private <T> Mono<EntityWriteResult<T>> executeSave(T entity, CqlIdentifier tableName, SimpleStatement statement) {
 		return executeSave(entity, tableName, statement, (writeResult, sink) -> sink.next(writeResult));
 	}
 
-	private <T> Mono<EntityWriteResult<T>> executeSave(T entity, CqlIdentifier tableName, Statement statement,
+	private <T> Mono<EntityWriteResult<T>> executeSave(T entity, CqlIdentifier tableName, SimpleStatement statement,
 			BiConsumer<EntityWriteResult<T>, SynchronousSink<EntityWriteResult<T>>> handler) {
 
 		return Mono.defer(() -> {
 
-			maybeEmitEvent(new BeforeSaveEvent<>(entity, tableName, statement));
+			maybeEmitEvent(() -> new BeforeSaveEvent<>(entity, tableName, statement));
 
 			return maybeCallBeforeSave(entity, tableName, statement).flatMapMany(entityToSave -> {
-				Flux<WriteResult> execute = getReactiveCqlOperations().execute(new StatementCallback(statement));
+				Mono<WriteResult> execute = doExecuteAndFlatMap(statement, ReactiveCassandraTemplate::toWriteResult);
 
 				return execute.map(it -> EntityWriteResult.of(it, entityToSave)).handle(handler) //
-						.doOnNext(it -> maybeEmitEvent(new AfterSaveEvent<>(entityToSave, tableName)));
+						.doOnNext(it -> maybeEmitEvent(() -> new AfterSaveEvent<>(entityToSave, tableName)));
 			}).next();
 		});
-
 	}
 
-	private Mono<WriteResult> executeDelete(Object entity, CqlIdentifier tableName, Statement statement,
+	private Mono<WriteResult> executeDelete(Object entity, CqlIdentifier tableName, SimpleStatement statement,
 			BiConsumer<WriteResult, SynchronousSink<WriteResult>> handler) {
 
-		maybeEmitEvent(new BeforeDeleteEvent<>(statement, entity.getClass(), tableName));
+		maybeEmitEvent(() -> new BeforeDeleteEvent<>(statement, entity.getClass(), tableName));
 
-		Flux<WriteResult> execute = getReactiveCqlOperations().execute(new StatementCallback(statement));
+		Mono<WriteResult> execute = doExecuteAndFlatMap(statement, ReactiveCassandraTemplate::toWriteResult);
 
 		return execute.map(it -> EntityWriteResult.of(it, entity)).handle(handler) //
-				.doOnSubscribe(it -> maybeEmitEvent(new BeforeSaveEvent<>(entity, tableName, statement))) //
-				.doOnNext(it -> maybeEmitEvent(new AfterDeleteEvent<>(statement, entity.getClass(), tableName))) //
-				.next();
+				.doOnSubscribe(it -> maybeEmitEvent(() -> new BeforeSaveEvent<>(entity, tableName, statement))) //
+				.doOnNext(it -> maybeEmitEvent(() -> new AfterDeleteEvent<>(statement, entity.getClass(), tableName)));
 	}
 
-	private Mono<Integer> getEffectiveFetchSize(Statement statement) {
+	private <T> Flux<T> doQuery(Statement<?> statement, RowMapper<T> rowMapper) {
 
-		if (statement.getFetchSize() > 0) {
-			return Mono.just(statement.getFetchSize());
+		if (PreparedStatementDelegate.canPrepare(isUsePreparedStatements(), statement, log)) {
+
+			ReactivePreparedStatementHandler statementHandler = createPreparedStatementHandler(statement);
+			return getReactiveCqlOperations().query(statementHandler, statementHandler, rowMapper);
+		}
+
+		return getReactiveCqlOperations().query(statement, rowMapper);
+	}
+
+	private <T> Mono<T> doExecute(Statement<?> statement, Function<ReactiveResultSet, T> mappingFunction) {
+
+		if (PreparedStatementDelegate.canPrepare(isUsePreparedStatements(), statement, log)) {
+
+			ReactivePreparedStatementHandler statementHandler = createPreparedStatementHandler(statement);
+			return getReactiveCqlOperations()
+					.query(statementHandler, statementHandler, rs -> Mono.just(mappingFunction.apply(rs))).next();
+		}
+
+		return getReactiveCqlOperations().queryForResultSet(statement).map(mappingFunction);
+	}
+
+	private <T> Mono<T> doExecuteAndFlatMap(Statement<?> statement,
+			Function<ReactiveResultSet, Mono<T>> mappingFunction) {
+
+		if (PreparedStatementDelegate.canPrepare(isUsePreparedStatements(), statement, log)) {
+
+			ReactivePreparedStatementHandler statementHandler = createPreparedStatementHandler(statement);
+			return getReactiveCqlOperations().query(statementHandler, statementHandler, mappingFunction::apply).next();
+		}
+
+		return getReactiveCqlOperations().queryForResultSet(statement).flatMap(mappingFunction);
+	}
+
+	private int getConfiguredPageSize(DriverContext context) {
+		return context.getConfig().getDefaultProfile().getInt(DefaultDriverOption.REQUEST_PAGE_SIZE, 5000);
+	}
+
+	private Mono<Integer> getEffectiveFetchSize(Statement<?> statement) {
+
+		if (statement.getPageSize() > 0) {
+			return Mono.just(statement.getPageSize());
 		}
 
 		if (getReactiveCqlOperations() instanceof CassandraAccessor) {
 			CassandraAccessor accessor = (CassandraAccessor) getReactiveCqlOperations();
-			if (accessor.getFetchSize() != -1) {
-				return Mono.just(accessor.getFetchSize());
+			if (accessor.getPageSize() != -1) {
+				return Mono.just(accessor.getPageSize());
 			}
 		}
 
-		return getReactiveCqlOperations().execute((ReactiveSessionCallback<Integer>) session -> Mono
-				.just(session.getCluster().getConfiguration().getQueryOptions().getFetchSize())).single();
+		class GetConfiguredPageSize implements ReactiveSessionCallback<Integer>, CqlProvider {
+			@Override
+			public Publisher<Integer> doInSession(ReactiveSession session) {
+				return Mono.just(getConfiguredPageSize(session.getContext()));
+			}
+
+			@Override
+			public String getCql() {
+				return QueryExtractorDelegate.getCql(statement);
+			}
+		}
+
+		return getReactiveCqlOperations().execute(new GetConfiguredPageSize()).single();
 	}
 
 	@SuppressWarnings("unchecked")
-	private <T> Function<Row, T> getMapper(Class<?> entityType, Class<T> targetType, CqlIdentifier tableName) {
+	private <T> Function<Row, T> getMapper(EntityProjection<T, ?> projection, CqlIdentifier tableName) {
 
-		Class<?> typeToRead = resolveTypeToRead(entityType, targetType);
+		Class<T> targetType = projection.getMappedType().getType();
 
 		return row -> {
 
-			maybeEmitEvent(new AfterLoadEvent<>(row, targetType, tableName));
+			maybeEmitEvent(() -> new AfterLoadEvent<>(row, targetType, tableName));
 
-			Object source = getConverter().read(typeToRead, row);
+			T result = getConverter().project(projection, row);
 
-			T result = (T) (targetType.isInterface() ? getProjectionFactory().createProjection(targetType, source) : source);
-
-			maybeEmitEvent(new AfterConvertEvent<>(row, result, tableName));
+			if (result != null) {
+				maybeEmitEvent(() -> new AfterConvertEvent<>(row, result, tableName));
+			}
 
 			return result;
 		};
 	}
 
-	private Class<?> resolveTypeToRead(Class<?> entityType, Class<?> targetType) {
-		return targetType.isInterface() || targetType.isAssignableFrom(entityType) ? entityType : targetType;
+	static Mono<WriteResult> toWriteResult(ReactiveResultSet resultSet) {
+		return resultSet.rows().collectList()
+				.map(rows -> new WriteResult(resultSet.getAllExecutionInfo(), resultSet.wasApplied(), rows));
 	}
 
-	private static MappingCassandraConverter newConverter() {
+	private static MappingCassandraConverter newConverter(ReactiveSession session) {
 
 		MappingCassandraConverter converter = new MappingCassandraConverter();
+		converter.setUserTypeResolver(new SimpleUserTypeResolver(session::getMetadata,
+				session.getKeyspace().orElse(CqlIdentifier.fromCql("system"))));
+		converter.setCodecRegistry(session.getContext().getCodecRegistry());
 
 		converter.afterPropertiesSet();
 
 		return converter;
 	}
 
-	protected <E extends CassandraMappingEvent<T>, T> void maybeEmitEvent(E event) {
-
-		if (this.eventPublisher != null) {
-			this.eventPublisher.publishEvent(event);
-		}
+	protected <E extends CassandraMappingEvent<T>, T> void maybeEmitEvent(Supplier<E> event) {
+		this.eventDelegate.publishEvent(event);
 	}
 
 	protected <T> Mono<T> maybeCallBeforeConvert(T object, CqlIdentifier tableName) {
@@ -895,7 +930,7 @@ public class ReactiveCassandraTemplate
 		return Mono.just(object);
 	}
 
-	protected <T> Mono<T> maybeCallBeforeSave(T object, CqlIdentifier tableName, Statement statement) {
+	protected <T> Mono<T> maybeCallBeforeSave(T object, CqlIdentifier tableName, Statement<?> statement) {
 
 		if (null != entityCallbacks) {
 			return entityCallbacks.callback(ReactiveBeforeSaveCallback.class, object, tableName, statement);
@@ -904,30 +939,49 @@ public class ReactiveCassandraTemplate
 		return Mono.just(object);
 	}
 
-	@Value
-	static class StatementCallback implements ReactiveSessionCallback<WriteResult>, CqlProvider {
+	/**
+	 * General callback interface used to create and bind prepared CQL statements.
+	 * <p>
+	 * This interface prepares the CQL statement and sets values on a {@link PreparedStatement} as union-type comprised
+	 * from {@link ReactivePreparedStatementCreator}, {@link PreparedStatementBinder}, and {@link CqlProvider}.
+	 *
+	 * @since 3.3.3
+	 */
+	public interface ReactivePreparedStatementHandler
+			extends ReactivePreparedStatementCreator, PreparedStatementBinder, CqlProvider {
 
-		@lombok.NonNull Statement statement;
+	}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.cql.ReactiveSessionCallback#doInSession(org.springframework.data.cassandra.ReactiveSession)
-		 */
-		@Override
-		public Publisher<WriteResult> doInSession(ReactiveSession session) throws DriverException, DataAccessException {
-			return session.execute(this.statement).flatMap(StatementCallback::toWriteResult);
+	/**
+	 * Utility class to prepare a {@link SimpleStatement} and bind values associated with the statement to a
+	 * {@link BoundStatement}.
+	 *
+	 * @since 3.2
+	 */
+	public static class PreparedStatementHandler implements ReactivePreparedStatementHandler {
+
+		private final SimpleStatement statement;
+
+		public PreparedStatementHandler(Statement<?> statement) {
+			this.statement = PreparedStatementDelegate.getStatementForPrepare(statement);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.cql.CqlProvider#getCql()
-		 */
+		@Override
+		public Mono<PreparedStatement> createPreparedStatement(ReactiveSession session) throws DriverException {
+
+			// Note that prepared statement settings like the keyspace are gone because using the prepare method with a
+			// statement object causes cache pollution
+			return session.prepare(statement.getQuery());
+		}
+
+		@Override
+		public BoundStatement bindValues(PreparedStatement ps) throws DriverException {
+			return PreparedStatementDelegate.bind(statement, ps);
+		}
+
 		@Override
 		public String getCql() {
-			return this.statement.toString();
-		}
-
-		private static Mono<WriteResult> toWriteResult(ReactiveResultSet resultSet) {
-			return resultSet.rows().collectList()
-					.map(rows -> new WriteResult(resultSet.getAllExecutionInfo(), resultSet.wasApplied(), rows));
+			return statement.getQuery();
 		}
 	}
 }

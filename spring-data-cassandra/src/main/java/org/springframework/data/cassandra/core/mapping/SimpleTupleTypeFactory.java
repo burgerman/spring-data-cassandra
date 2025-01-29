@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,42 +15,36 @@
  */
 package org.springframework.data.cassandra.core.mapping;
 
+import java.util.Arrays;
 import java.util.List;
 
-import org.springframework.util.Assert;
-
-import com.datastax.driver.core.Cluster;
-import com.datastax.driver.core.DataType;
-import com.datastax.driver.core.TupleType;
+import com.datastax.oss.driver.api.core.type.DataType;
+import com.datastax.oss.driver.api.core.type.TupleType;
+import com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry;
+import com.datastax.oss.driver.internal.core.type.DefaultTupleType;
 
 /**
- * Default {@link TupleTypeFactory} implementation using Cluster {@link com.datastax.driver.core.Metadata} to create
+ * {@link CodecRegistry}-based {@link TupleTypeFactory} using {@link DefaultTupleType} to create tuple types.
  * {@link TupleType tuple types}.
  *
  * @author Mark Paluch
- * @since 2.1
+ * @since 3.0
  */
-public class SimpleTupleTypeFactory implements TupleTypeFactory {
 
-	private final Cluster cluster;
+public enum SimpleTupleTypeFactory implements TupleTypeFactory {
 
 	/**
-	 * Creates a new {@link SimpleTupleTypeFactory} given {@link Cluster}.
-	 *
-	 * @param cluster must not be {@literal null}.
+	 * Default {@link SimpleTupleTypeFactory} using newest protocol versions and the default {@link CodecRegistry}.
 	 */
-	public SimpleTupleTypeFactory(Cluster cluster) {
+	DEFAULT;
 
-		Assert.notNull(cluster, "Cluster must not be null");
-
-		this.cluster = cluster;
+	@Override
+	public TupleType create(DataType... types) {
+		return create(Arrays.asList(types));
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.TupleTypeFactory#create(java.util.List)
-	 */
 	@Override
 	public TupleType create(List<DataType> types) {
-		return this.cluster.getMetadata().newTupleType(types);
+		return new DefaultTupleType(types);
 	}
 }

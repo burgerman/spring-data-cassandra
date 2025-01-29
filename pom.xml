@@ -6,12 +6,12 @@
 	<parent>
 		<groupId>org.springframework.data.build</groupId>
 		<artifactId>spring-data-parent</artifactId>
-		<version>2.2.0.BUILD-SNAPSHOT</version>
+		<version>3.5.0-SNAPSHOT</version>
 	</parent>
 
 	<groupId>org.springframework.data</groupId>
 	<artifactId>spring-data-cassandra-parent</artifactId>
-	<version>2.2.0.BUILD-SNAPSHOT</version>
+	<version>4.5.0-SNAPSHOT</version>
 	<packaging>pom</packaging>
 
 	<name>Spring Data for Apache Cassandra</name>
@@ -89,60 +89,27 @@
 		<build.cassandra.rpc_port>19160</build.cassandra.rpc_port>
 		<build.cassandra.ssl_storage_port>17001</build.cassandra.ssl_storage_port>
 		<build.cassandra.storage_port>17000</build.cassandra.storage_port>
-		<cassandra.version>3.11.4</cassandra.version>
-		<cassandra-driver.version>3.7.2</cassandra-driver.version>
+		<cassandra.version>3.11.12</cassandra.version>
+		<cassandra-driver.version>4.18.0</cassandra-driver.version>
 		<dist.id>spring-data-cassandra</dist.id>
 		<el.version>1.0</el.version>
+		<!-- NOTE: com.carrotsearch:hppc dependency version set to same version as Apache Cassandra 3.11.5 -->
+		<hppc.version>0.5.4</hppc.version>
 		<multithreadedtc.version>1.01</multithreadedtc.version>
 		<project.type>multi</project.type>
-		<springdata.commons>2.2.0.BUILD-SNAPSHOT</springdata.commons>
+		<springdata.commons>3.5.0-SNAPSHOT</springdata.commons>
 	</properties>
-
-	<repositories>
-		<repository>
-			<id>spring-libs-snapshot</id>
-			<url>https://repo.spring.io/libs-snapshot</url>
-		</repository>
-	</repositories>
-
-	<pluginRepositories>
-		<pluginRepository>
-			<id>spring-plugins-release</id>
-			<url>https://repo.spring.io/plugins-release</url>
-		</pluginRepository>
-	</pluginRepositories>
 
 	<dependencyManagement>
 		<dependencies>
 
 			<!-- Cassandra Driver -->
 			<dependency>
-				<groupId>com.datastax.cassandra</groupId>
-				<artifactId>cassandra-driver-core</artifactId>
+				<groupId>org.apache.cassandra</groupId>
+				<artifactId>java-driver-bom</artifactId>
 				<version>${cassandra-driver.version}</version>
-			</dependency>
-
-			<!-- CDI -->
-			<dependency>
-				<groupId>javax.enterprise</groupId>
-				<artifactId>cdi-api</artifactId>
-				<version>${cdi}</version>
-				<scope>provided</scope>
-				<optional>true</optional>
-			</dependency>
-
-			<dependency>
-				<groupId>joda-time</groupId>
-				<artifactId>joda-time</artifactId>
-				<version>${jodatime}</version>
-				<optional>true</optional>
-			</dependency>
-
-			<dependency>
-				<groupId>org.threeten</groupId>
-				<artifactId>threetenbp</artifactId>
-				<version>${threetenbp}</version>
-				<optional>true</optional>
+				<scope>import</scope>
+				<type>pom</type>
 			</dependency>
 
 			<!-- Test Dependencies -->
@@ -157,8 +124,21 @@
 						<artifactId>logback-core</artifactId>
 					</exclusion>
 					<exclusion>
-						<artifactId>guava</artifactId>
-						<groupId>com.google.guava</groupId>
+						<groupId>io.netty</groupId>
+						<artifactId>netty-all</artifactId>
+					</exclusion>
+				</exclusions>
+			</dependency>
+
+			<dependency>
+				<groupId>org.apache.cassandra</groupId>
+				<artifactId>cassandra-thrift</artifactId>
+				<version>${cassandra.version}</version>
+				<scope>test</scope>
+				<exclusions>
+					<exclusion>
+						<groupId>ch.qos.logback</groupId>
+						<artifactId>logback-core</artifactId>
 					</exclusion>
 					<exclusion>
 						<groupId>io.netty</groupId>
@@ -168,9 +148,37 @@
 			</dependency>
 
 			<dependency>
+				<groupId>org.assertj</groupId>
+				<artifactId>assertj-core</artifactId>
+				<version>${assertj}</version>
+				<scope>test</scope>
+				<exclusions>
+					<exclusion>
+						<groupId>net.bytebuddy</groupId>
+						<artifactId>byte-buddy</artifactId>
+					</exclusion>
+				</exclusions>
+			</dependency>
+
+			<dependency>
+				<groupId>org.testcontainers</groupId>
+				<artifactId>testcontainers-bom</artifactId>
+				<version>${testcontainers}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+
+			<dependency>
 				<groupId>org.xerial.snappy</groupId>
 				<artifactId>snappy-java</artifactId>
-				<version>1.1.4</version>
+				<version>1.1.10.5</version>
+				<scope>test</scope>
+			</dependency>
+
+			<dependency>
+				<groupId>com.carrotsearch</groupId>
+				<artifactId>hppc</artifactId>
+				<version>${hppc.version}</version>
 				<scope>test</scope>
 			</dependency>
 
@@ -181,12 +189,6 @@
 				<scope>test</scope>
 			</dependency>
 
-			<dependency>
-				<groupId>org.assertj</groupId>
-				<artifactId>assertj-core</artifactId>
-				<version>${assertj}</version>
-				<scope>test</scope>
-			</dependency>
 		</dependencies>
 	</dependencyManagement>
 
@@ -234,7 +236,9 @@
 						<exclude>**/test/performance/**/*</exclude>
 					</excludes>
 					<systemPropertyVariables>
-						<java.util.logging.config.file>src/test/resources/logging.properties</java.util.logging.config.file>
+						<java.util.logging.config.file>
+							src/test/resources/logging.properties
+						</java.util.logging.config.file>
 					</systemPropertyVariables>
 				</configuration>
 			</plugin>
@@ -242,8 +246,8 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-failsafe-plugin</artifactId>
 				<configuration>
+					<argLine>-Xms1g -Xmx1500m -Xss256k -Dcassandra.version=${cassandra.version}</argLine>
 					<forkCount>1</forkCount>
-					<argLine>-Xms1g -Xmx1500m -Xss256k</argLine>
 					<reuseForks>true</reuseForks>
 					<useFile>false</useFile>
 					<includes>
@@ -256,7 +260,9 @@
 						<exclude>**/test/performance/**/*</exclude>
 					</excludes>
 					<systemPropertyVariables>
-						<java.util.logging.config.file>src/test/resources/logging.properties</java.util.logging.config.file>
+						<java.util.logging.config.file>
+							src/test/resources/logging.properties
+						</java.util.logging.config.file>
 					</systemPropertyVariables>
 				</configuration>
 				<executions>
@@ -282,10 +288,20 @@
 		<testResources>
 			<testResource>
 				<directory>src/test/resources</directory>
+				<filtering>false</filtering>
+				<includes>
+					<include>**/*.xml</include>
+				</includes>
+			</testResource>
+			<testResource>
+				<directory>src/test/resources</directory>
 				<filtering>true</filtering>
 				<includes>
 					<include>**/*</include>
 				</includes>
+				<excludes>
+					<exclude>**/*.xml</exclude>
+				</excludes>
 			</testResource>
 		</testResources>
 	</build>
@@ -319,10 +335,12 @@
 								<phase>generate-test-resources</phase>
 								<configuration>
 									<portNames>
-										<portName>build.cassandra.native_transport_port</portName>
+										<portName>build.cassandra.native_transport_port
+										</portName>
 										<portName>build.cassandra.rpc_port</portName>
 										<portName>build.cassandra.storage_port</portName>
-										<portName>build.cassandra.ssl_storage_port</portName>
+										<portName>build.cassandra.ssl_storage_port
+										</portName>
 									</portNames>
 								</configuration>
 							</execution>
@@ -333,15 +351,46 @@
 		</profile>
 		<profile>
 			<id>external-cassandra</id>
-
 			<properties>
 				<build.cassandra.mode>external</build.cassandra.mode>
 				<build.cassandra.native_transport_port>9042</build.cassandra.native_transport_port>
 				<build.cassandra.rpc_port>9160</build.cassandra.rpc_port>
-				<build.cassandra.storage_port>7000</build.cassandra.storage_port>
 				<build.cassandra.ssl_storage_port>7001</build.cassandra.ssl_storage_port>
+				<build.cassandra.storage_port>7000</build.cassandra.storage_port>
+			</properties>
+		</profile>
+		<profile>
+			<id>testcontainers-cassandra</id>
+
+			<activation>
+				<activeByDefault>true</activeByDefault>
+			</activation>
+
+			<properties>
+				<build.cassandra.mode>testcontainers</build.cassandra.mode>
+				<build.cassandra.native_transport_port>0</build.cassandra.native_transport_port>
+				<build.cassandra.rpc_port>0</build.cassandra.rpc_port>
+				<build.cassandra.ssl_storage_port>0</build.cassandra.ssl_storage_port>
+				<build.cassandra.storage_port>0</build.cassandra.storage_port>
 			</properties>
 		</profile>
 	</profiles>
+
+	<repositories>
+		<repository>
+			<id>spring-snapshot</id>
+			<url>https://repo.spring.io/snapshot</url>
+			<snapshots>
+				<enabled>true</enabled>
+			</snapshots>
+			<releases>
+				<enabled>false</enabled>
+			</releases>
+		</repository>
+		<repository>
+			<id>spring-milestone</id>
+			<url>https://repo.spring.io/milestone</url>
+		</repository>
+	</repositories>
 
 </project>

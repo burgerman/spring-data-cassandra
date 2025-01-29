@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,8 +28,10 @@ import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+
 /**
- * Update object representing representing a set of update operations. {@link Update} objects can be created in a fluent
+ * Update object representing a set of update operations. {@link Update} objects can be created in a fluent
  * style. Each construction operation creates a new immutable {@link Update} object.
  *
  * <pre class="code">
@@ -37,6 +39,7 @@ import org.springframework.util.StringUtils;
  * </pre>
  *
  * @author Mark Paluch
+ * @author Chema Vinacua
  * @since 2.0
  */
 public class Update {
@@ -44,10 +47,6 @@ public class Update {
 	private static final Update EMPTY = new Update(Collections.emptyMap());
 
 	private final Map<ColumnName, AssignmentOp> updateOperations;
-
-	private Update(Map<ColumnName, AssignmentOp> updateOperations) {
-		this.updateOperations = updateOperations;
-	}
 
 	/**
 	 * Create an empty {@link Update} object.
@@ -67,7 +66,7 @@ public class Update {
 
 		Assert.notNull(assignmentOps, "Update operations must not be null");
 
-		Map<ColumnName, AssignmentOp> updateOperations = assignmentOps instanceof Collection<?>
+		Map<ColumnName, AssignmentOp> updateOperations = assignmentOps instanceof Collection
 				? new LinkedHashMap<>(((Collection<?>) assignmentOps).size())
 				: new LinkedHashMap<>();
 
@@ -81,8 +80,12 @@ public class Update {
 	 *
 	 * @return a new {@link Update}.
 	 */
-	public static Update update(String columnName, Object value) {
+	public static Update update(String columnName, @Nullable Object value) {
 		return empty().set(columnName, value);
+	}
+
+	private Update(Map<ColumnName, AssignmentOp> updateOperations) {
+		this.updateOperations = updateOperations;
 	}
 
 	/**
@@ -115,6 +118,17 @@ public class Update {
 	 */
 	public AddToBuilder addTo(String columnName) {
 		return new DefaultAddToBuilder(ColumnName.from(columnName));
+	}
+
+	/**
+	 * Create a new {@link RemoveFromBuilder} to remove items from a collection for {@code columnName} in a fluent style.
+	 *
+	 * @param columnName must not be {@literal null}.
+	 * @return a new {@link RemoveFromBuilder} to build an remove-from assignment.
+	 * @since 3.1.4
+	 */
+	public RemoveFromBuilder removeFrom(String columnName) {
+		return new DefaultRemoveFromBuilder(ColumnName.from(columnName));
 	}
 
 	/**
@@ -184,6 +198,12 @@ public class Update {
 	 */
 	public Update decrement(String columnName, Number delta) {
 
+		if (delta instanceof Integer || delta instanceof Long) {
+
+			long deltaValue = delta.longValue() > 0 ? -Math.abs(delta.longValue()) : delta.longValue();
+			return add(new IncrOp(ColumnName.from(columnName), deltaValue));
+		}
+
 		double deltaValue = delta.doubleValue();
 
 		deltaValue = deltaValue > 0 ? -Math.abs(deltaValue) : deltaValue;
@@ -208,9 +228,6 @@ public class Update {
 		return new Update(map);
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#toString()
-	 */
 	@Override
 	public String toString() {
 		return StringUtils.collectionToDelimitedString(updateOperations.values(), ", ");
@@ -309,17 +326,11 @@ public class Update {
 			this.columnName = columnName;
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.Update.AddToBuilder#prepend(java.lang.Object)
-		 */
 		@Override
 		public Update prepend(Object value) {
-			return prependAll(Collections.singleton(value));
+			return prependAll(Collections.singletonList(value));
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.Update.AddToBuilder#prependAll(java.lang.Object[])
-		 */
 		@Override
 		public Update prependAll(Object... values) {
 
@@ -328,9 +339,6 @@ public class Update {
 			return prependAll(Arrays.asList(values));
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.Update.AddToBuilder#prependAll(java.lang.Iterable)
-		 */
 		@Override
 		public Update prependAll(Iterable<? extends Object> values) {
 
@@ -339,17 +347,11 @@ public class Update {
 			return add(new AddToOp(columnName, values, Mode.PREPEND));
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.Update.AddToBuilder#append(java.lang.Object)
-		 */
 		@Override
 		public Update append(Object value) {
-			return appendAll(Collections.singleton(value));
+			return appendAll(Collections.singletonList(value));
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.Update.AddToBuilder#appendAll(java.lang.Object[])
-		 */
 		@Override
 		public Update appendAll(Object... values) {
 
@@ -358,9 +360,6 @@ public class Update {
 			return appendAll(Arrays.asList(values));
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.Update.AddToBuilder#appendAll(java.lang.Iterable)
-		 */
 		@Override
 		public Update appendAll(Iterable<? extends Object> values) {
 
@@ -369,9 +368,6 @@ public class Update {
 			return add(new AddToOp(columnName, values, Mode.APPEND));
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.Update.AddToBuilder#entry(java.lang.Object, java.lang.Object)
-		 */
 		@Override
 		public Update entry(Object key, Object value) {
 
@@ -381,15 +377,80 @@ public class Update {
 			return addAll(Collections.singletonMap(key, value));
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.Update.AddToBuilder#addAll(java.util.Map)
-		 */
 		@Override
-		public Update addAll(Map<? extends Object, ? extends Object> map) {
+		public Update addAll(Map<?, ?> map) {
 
 			Assert.notNull(map, "Map must not be null");
 
 			return add(new AddToMapOp(columnName, map));
+		}
+	}
+
+	/**
+	 * Builder to remove a single element/multiple elements from a collection associated with a {@link ColumnName}.
+	 *
+	 * @author Mark Paluch
+	 * @since 3.1.4
+	 */
+	@SuppressWarnings("unused")
+	public interface RemoveFromBuilder {
+
+		/**
+		 * Remove all entries matching {@code value} from a set, list or map (map key).
+		 *
+		 * @param value must not be {@literal null}.
+		 * @return a new {@link Update} object containing the merge result of the existing assignments and the current
+		 *         assignment.
+		 */
+		Update value(Object value);
+
+		/**
+		 * Remove all entries matching {@code values} from a set, list or map (map key).
+		 *
+		 * @param values must not be {@literal null}.
+		 * @return a new {@link Update} object containing the merge result of the existing assignments and the current
+		 *         assignment.
+		 */
+		default Update values(Object... values) {
+
+			Assert.notNull(values, "Values must not be null");
+
+			return values(Arrays.asList(values));
+		}
+
+		/**
+		 * Remove all entries matching {@code values} from a set, list or map (map key).
+		 *
+		 * @param values must not be {@literal null}.
+		 * @return a new {@link Update} object containing the merge result of the existing assignments and the current
+		 *         assignment.
+		 */
+		Update values(Iterable<? extends Object> values);
+
+	}
+
+	/**
+	 * Default {@link RemoveFromBuilder} implementation.
+	 */
+	private class DefaultRemoveFromBuilder implements RemoveFromBuilder {
+
+		private final ColumnName columnName;
+
+		DefaultRemoveFromBuilder(ColumnName columnName) {
+			this.columnName = columnName;
+		}
+
+		@Override
+		public Update value(Object value) {
+			return add(new RemoveOp(columnName, value));
+		}
+
+		@Override
+		public Update values(Iterable<?> values) {
+
+			Assert.notNull(values, "Values must not be null");
+
+			return add(new RemoveOp(columnName, values));
 		}
 	}
 
@@ -402,7 +463,7 @@ public class Update {
 
 		/**
 		 * Create a {@link SetValueBuilder} to set a value at a numeric {@code index}. Used for
-		 * {@link com.datastax.driver.core.DataType.Name#LIST} type columns.
+		 * {@link com.datastax.oss.driver.api.core.type.ListType} type columns.
 		 *
 		 * @param index positional index.
 		 * @return a {@link SetValueBuilder} to set a value at {@code index}
@@ -411,7 +472,7 @@ public class Update {
 
 		/**
 		 * Create a {@link SetValueBuilder} to set a value at {@code index}. Used for
-		 * {@link com.datastax.driver.core.DataType.Name#MAP} type columns.
+		 * {@link com.datastax.oss.driver.api.core.type.MapType} type columns.
 		 *
 		 * @param key must not be {@literal null}.
 		 * @return a {@link SetValueBuilder} to set a value at {@code index}
@@ -446,17 +507,11 @@ public class Update {
 			this.columnName = columnName;
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.Update.SetBuilder#atIndex(int)
-		 */
 		@Override
 		public SetValueBuilder atIndex(int index) {
 			return value -> add(new SetAtIndexOp(this.columnName, index, value));
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.Update.SetBuilder#atKey(java.lang.Object)
-		 */
 		@Override
 		public SetValueBuilder atKey(Object key) {
 			return value -> add(new SetAtKeyOp(this.columnName, key, value));
@@ -479,6 +534,13 @@ public class Update {
 		 */
 		public ColumnName getColumnName() {
 			return this.columnName;
+		}
+
+		/**
+		 * @return the {@link ColumnName}.
+		 */
+		public CqlIdentifier toCqlIdentifier() {
+			return this.columnName.getCqlIdentifier().orElseGet(() -> CqlIdentifier.fromCql(this.columnName.toCql()));
 		}
 	}
 
@@ -507,9 +569,6 @@ public class Update {
 			return this.mode;
 		}
 
-		/* (non-Javadoc)
-		 * @see java.lang.Object#toString()
-		 */
 		@Override
 		public String toString() {
 
@@ -540,9 +599,6 @@ public class Update {
 			return value;
 		}
 
-		/* (non-Javadoc)
-		 * @see java.lang.Object#toString()
-		 */
 		@Override
 		public String toString() {
 			return String.format("%s = %s + %s", getColumnName(), getColumnName(), serializeToCqlSafely(value));
@@ -566,9 +622,6 @@ public class Update {
 			return value;
 		}
 
-		/* (non-Javadoc)
-		 * @see java.lang.Object#toString()
-		 */
 		@Override
 		public String toString() {
 			return String.format("%s = %s", getColumnName(), serializeToCqlSafely(value));
@@ -595,9 +648,6 @@ public class Update {
 			return index;
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.Update.SetOp#toString()
-		 */
 		@Override
 		public String toString() {
 			return String.format("%s[%d] = %s", getColumnName(), index, serializeToCqlSafely(getValue()));
@@ -631,9 +681,6 @@ public class Update {
 			return value;
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.query.Update.SetOp#toString()
-		 */
 		@Override
 		public String toString() {
 			return String.format("%s[%s] = %s", getColumnName(), serializeToCqlSafely(key), serializeToCqlSafely(getValue()));
@@ -656,13 +703,10 @@ public class Update {
 			return value;
 		}
 
-		/* (non-Javadoc)
-		 * @see java.lang.Object#toString()
-		 */
 		@Override
 		public String toString() {
 			return String.format("%s = %s %s %d", getColumnName(), getColumnName(), value.doubleValue() > 0 ? "+" : "-",
-					Math.abs(value.intValue()));
+					Math.abs(value.longValue()));
 		}
 	}
 
@@ -686,12 +730,10 @@ public class Update {
 			return value;
 		}
 
-		/* (non-Javadoc)
-		 * @see java.lang.Object#toString()
-		 */
 		@Override
 		public String toString() {
 			return String.format("%s = %s - %s", getColumnName(), getColumnName(), serializeToCqlSafely(getValue()));
 		}
 	}
+
 }

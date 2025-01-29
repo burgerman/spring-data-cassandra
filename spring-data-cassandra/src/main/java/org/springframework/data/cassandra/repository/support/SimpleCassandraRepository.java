@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,10 +35,6 @@ import org.springframework.data.domain.Slice;
 import org.springframework.data.mapping.context.AbstractMappingContext;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.querybuilder.Insert;
-import com.datastax.driver.core.querybuilder.QueryBuilder;
-import com.datastax.driver.core.querybuilder.Select;
-
 /**
  * Repository base implementation for Cassandra.
  *
@@ -46,6 +42,7 @@ import com.datastax.driver.core.querybuilder.Select;
  * @author Matthew T. Adams
  * @author Mark Paluch
  * @author John Blum
+ * @author Jens Schauder
  * @see org.springframework.data.cassandra.repository.CassandraRepository
  */
 public class SimpleCassandraRepository<T, ID> implements CassandraRepository<T, ID> {
@@ -75,9 +72,10 @@ public class SimpleCassandraRepository<T, ID> implements CassandraRepository<T, 
 		this.mappingContext = operations.getConverter().getMappingContext();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.CrudRepository#save(S)
-	 */
+	// -------------------------------------------------------------------------
+	// Methods from CrudRepository
+	// -------------------------------------------------------------------------
+
 	@Override
 	public <S extends T> S save(S entity) {
 
@@ -95,9 +93,6 @@ public class SimpleCassandraRepository<T, ID> implements CassandraRepository<T, 
 		return this.operations.insert(entity, INSERT_NULLS).getEntity();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.CrudRepository#saveAll(java.lang.Iterable)
-	 */
 	@Override
 	public <S extends T> List<S> saveAll(Iterable<S> entities) {
 
@@ -112,21 +107,105 @@ public class SimpleCassandraRepository<T, ID> implements CassandraRepository<T, 
 		return result;
 	}
 
-	/**
-	 * Create a {@link Insert} statement containing all properties including these with {@literal null} values.
-	 *
-	 * @param entity the entity, must not be {@literal null}.
-	 * @return the constructed {@link Insert} statement.
-	 * @deprecated since 2.1, use {@link InsertOptions#isInsertNulls()} with
-	 *             {@link CassandraOperations#insert(Object, InsertOptions)}.
-	 */
-	protected <S extends T> Insert createInsert(S entity) {
-		return InsertUtil.createInsert(this.operations.getConverter(), entity);
+	@Override
+	public Optional<T> findById(ID id) {
+
+		Assert.notNull(id, "The given id must not be null");
+
+		return Optional.ofNullable(doFindOne(id));
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.TypedIdCassandraRepository#insert(java.lang.Object)
-	 */
+	private T doFindOne(ID id) {
+		return this.operations.selectOneById(id, this.entityInformation.getJavaType());
+	}
+
+	@Override
+	public boolean existsById(ID id) {
+
+		Assert.notNull(id, "The given id must not be null");
+
+		return this.operations.exists(id, this.entityInformation.getJavaType());
+	}
+
+	@Override
+	public List<T> findAll() {
+		return this.operations.select(Query.empty(), this.entityInformation.getJavaType());
+	}
+
+	@Override
+	public List<T> findAllById(Iterable<ID> ids) {
+
+		Assert.notNull(ids, "The given Iterable of id's must not be null");
+
+		if (!ids.iterator().hasNext()) {
+			return Collections.emptyList();
+		}
+
+		return this.operations.select(createIdsInQuery(ids), this.entityInformation.getJavaType());
+	}
+
+	@Override
+	public long count() {
+		return this.operations.count(this.entityInformation.getJavaType());
+	}
+
+	@Override
+	public void deleteById(ID id) {
+
+		Assert.notNull(id, "The given id must not be null");
+
+		this.operations.deleteById(id, this.entityInformation.getJavaType());
+	}
+
+	@Override
+	public void delete(T entity) {
+
+		Assert.notNull(entity, "The given entity must not be null");
+
+		deleteById(this.entityInformation.getRequiredId(entity));
+	}
+
+	@Override
+	public void deleteAllById(Iterable<? extends ID> ids) {
+
+		Assert.notNull(ids, "The given Iterable of ids must not be null");
+
+		if (FindByIdQuery.hasCompositeKeys(ids, this.mappingContext)) {
+
+			for (ID id : ids) {
+				deleteById(id);
+			}
+			return;
+		}
+
+		this.operations.delete(createIdsInQuery(ids), this.entityInformation.getJavaType());
+	}
+
+	@Override
+	public void deleteAll(Iterable<? extends T> entities) {
+
+		Assert.notNull(entities, "The given Iterable of entities must not be null");
+
+		entities.forEach(this.operations::delete);
+	}
+
+	@Override
+	public void deleteAll() {
+		this.operations.truncate(this.entityInformation.getJavaType());
+	}
+
+	// -------------------------------------------------------------------------
+	// Methods from CassandraRepository
+	// -------------------------------------------------------------------------
+
+	@Override
+	public Slice<T> findAll(Pageable pageable) {
+
+		Assert.notNull(pageable, "Pageable must not be null");
+
+		return this.operations.slice(Query.empty().pageRequest(pageable), this.entityInformation.getJavaType());
+	}
+
 	@Override
 	public <S extends T> S insert(S entity) {
 
@@ -135,9 +214,6 @@ public class SimpleCassandraRepository<T, ID> implements CassandraRepository<T, 
 		return this.operations.insert(entity);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.TypedIdCassandraRepository#insert(java.lang.Iterable)
-	 */
 	@Override
 	public <S extends T> List<S> insert(Iterable<S> entities) {
 
@@ -152,123 +228,17 @@ public class SimpleCassandraRepository<T, ID> implements CassandraRepository<T, 
 		return result;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.CrudRepository#findById(java.lang.Object)
-	 */
-	@Override
-	public Optional<T> findById(ID id) {
-
-		Assert.notNull(id, "The given id must not be null");
-
-		return Optional.ofNullable(doFindOne(id));
-	}
-
-	private T doFindOne(ID id) {
-		return this.operations.selectOneById(id, this.entityInformation.getJavaType());
-	}
-
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.CrudRepository#existsById(java.lang.Object)
-	 */
-	@Override
-	public boolean existsById(ID id) {
-
-		Assert.notNull(id, "The given id must not be null");
-
-		return this.operations.exists(id, this.entityInformation.getJavaType());
-	}
-
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.CrudRepository#count()
-	 */
-	@Override
-	public long count() {
-		return this.operations.count(this.entityInformation.getJavaType());
-	}
-
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.CrudRepository#findAll()
-	 */
-	@Override
-	public List<T> findAll() {
-
-		Select select = QueryBuilder.select().all().from(this.entityInformation.getTableName().toCql());
-
-		return this.operations.select(select, this.entityInformation.getJavaType());
-	}
-
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.CrudRepository#findAll(java.lang.Iterable)
-	 */
-	@Override
-	public List<T> findAllById(Iterable<ID> ids) {
-
-		Assert.notNull(ids, "The given Iterable of id's must not be null");
+	private Query createIdsInQuery(Iterable<? extends ID> ids) {
 
 		FindByIdQuery mapIdQuery = FindByIdQuery.forIds(ids);
 		List<Object> idCollection = mapIdQuery.getIdCollection();
 		String idField = mapIdQuery.getIdProperty();
 
-		if (idCollection.isEmpty()) {
-			return Collections.emptyList();
-		}
-
 		if (idField == null) {
 			idField = this.entityInformation.getIdAttribute();
 		}
 
-		return this.operations.select(Query.query(where(idField).in(idCollection)), this.entityInformation.getJavaType());
+		return Query.query(where(idField).in(idCollection));
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.repository.CassandraRepository#findAll(org.springframework.data.domain.Pageable)
-	 */
-	@Override
-	public Slice<T> findAll(Pageable pageable) {
-
-		Assert.notNull(pageable, "Pageable must not be null");
-
-		return this.operations.slice(Query.empty().pageRequest(pageable), this.entityInformation.getJavaType());
-	}
-
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.CrudRepository#deleteById(java.lang.Object)
-	 */
-	@Override
-	public void deleteById(ID id) {
-
-		Assert.notNull(id, "The given id must not be null");
-
-		this.operations.deleteById(id, this.entityInformation.getJavaType());
-	}
-
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.CrudRepository#delete(java.lang.Object)
-	 */
-	@Override
-	public void delete(T entity) {
-
-		Assert.notNull(entity, "The given entity must not be null");
-
-		deleteById(this.entityInformation.getRequiredId(entity));
-	}
-
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.CrudRepository#deleteAll(java.lang.Iterable)
-	 */
-	@Override
-	public void deleteAll(Iterable<? extends T> entities) {
-
-		Assert.notNull(entities, "The given Iterable of entities must not be null");
-
-		entities.forEach(this.operations::delete);
-	}
-
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.CrudRepository#deleteAll()
-	 */
-	@Override
-	public void deleteAll() {
-		this.operations.truncate(this.entityInformation.getJavaType());
-	}
 }

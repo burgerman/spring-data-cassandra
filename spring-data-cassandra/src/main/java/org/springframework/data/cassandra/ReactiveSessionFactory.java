@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,14 @@
  */
 package org.springframework.data.cassandra;
 
+import reactor.core.publisher.Mono;
+
 /**
  * Strategy interface to produce {@link ReactiveSession} instances.
  * <p>
- * Spring provides a {@link DefaultReactiveSessionFactory} implementation that just returns the same
- * {@link ReactiveSession} instance. Implementations are free to return the same session or route calls to different
- * sessions.
+ * Spring provides a {@link org.springframework.data.cassandra.core.cql.session.DefaultReactiveSessionFactory}
+ * implementation that just returns the same {@link ReactiveSession} instance. Implementations are free to return the
+ * same session or route calls to different sessions. DefaultSessionFactory
  *
  * @author Mark Paluch
  * @see 2.0
@@ -32,9 +34,10 @@ package org.springframework.data.cassandra;
 public interface ReactiveSessionFactory {
 
 	/**
-	 * Return a {@link ReactiveSession} to be used directly or inside a callback inside {@link ReactiveCqlTemplate}.
+	 * Return a {@link ReactiveSession} to be used directly or inside a callback inside
+	 * {@link org.springframework.data.cassandra.core.cql.ReactiveCqlTemplate}.
 	 *
 	 * @return a {@link ReactiveSession}.
 	 */
-	ReactiveSession getSession();
+	Mono<ReactiveSession> getSession();
 }

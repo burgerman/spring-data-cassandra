@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,26 +15,14 @@
  */
 package org.springframework.data.cassandra.core.convert;
 
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-
 import org.springframework.data.cassandra.core.mapping.CassandraType;
 import org.springframework.data.cassandra.core.mapping.PrimaryKey;
 import org.springframework.data.cassandra.core.mapping.Table;
-
-import com.datastax.driver.core.DataType.Name;
 
 /**
  * @author Mark Paluch
  */
 @Table
-@Data
-@NoArgsConstructor
-@RequiredArgsConstructor
-public class TimeEntity {
+public record TimeEntity(@PrimaryKey String id, @CassandraType(type = CassandraType.Name.TIME) long time) {
 
-	@PrimaryKey @NonNull private String id;
-	@CassandraType(type = Name.TIME) private long time;
 }

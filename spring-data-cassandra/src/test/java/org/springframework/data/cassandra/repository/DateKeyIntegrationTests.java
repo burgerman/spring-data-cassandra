@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,11 @@ package org.springframework.data.cassandra.repository;
 
 import static org.assertj.core.api.Assertions.*;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
 import java.util.Collections;
 import java.util.Date;
 import java.util.Set;
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.ComponentScan.Filter;
 import org.springframework.context.annotation.Configuration;
@@ -38,17 +33,15 @@ import org.springframework.data.cassandra.core.mapping.Table;
 import org.springframework.data.cassandra.repository.config.EnableCassandraRepositories;
 import org.springframework.data.cassandra.repository.support.AbstractSpringDataEmbeddedCassandraIntegrationTest;
 import org.springframework.data.cassandra.repository.support.IntegrationTestConfig;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
 /**
  * Integration tests for {@link Date} usage in repositories.
  *
  * @author Matthew T. Adams
  */
-@RunWith(SpringJUnit4ClassRunner.class)
-@ContextConfiguration
-public class DateKeyIntegrationTests extends AbstractSpringDataEmbeddedCassandraIntegrationTest {
+@SpringJUnitConfig
+class DateKeyIntegrationTests extends AbstractSpringDataEmbeddedCassandraIntegrationTest {
 
 	@Configuration
 	@EnableCassandraRepositories(basePackageClasses = DateThingRepo.class, considerNestedRepositories = true,
@@ -69,7 +62,7 @@ public class DateKeyIntegrationTests extends AbstractSpringDataEmbeddedCassandra
 	@Autowired DateThingRepo repo;
 
 	@Test
-	public void testQueryWithDate() {
+	void testQueryWithDate() {
 
 		Date date = new Date();
 		DateThing saved = new DateThing(date);
@@ -83,12 +76,23 @@ public class DateKeyIntegrationTests extends AbstractSpringDataEmbeddedCassandra
 	 * @author Matthew T. Adams
 	 */
 	@Table
-	@Data
-	@AllArgsConstructor
-	@NoArgsConstructor
 	static class DateThing {
 
 		@PrimaryKeyColumn(ordinal = 0, type = PrimaryKeyType.PARTITIONED) private Date date;
+
+		public DateThing(Date date) {
+			this.date = date;
+		}
+
+		public DateThing() {}
+
+		public Date getDate() {
+			return this.date;
+		}
+
+		public void setDate(Date date) {
+			this.date = date;
+		}
 	}
 
 	/**

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,26 +22,26 @@ import static org.springframework.data.cassandra.core.query.Query.*;
 import java.util.List;
 import java.util.concurrent.Future;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.data.cassandra.core.AsyncCassandraTemplate;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.query.Query;
 import org.springframework.data.cassandra.domain.User;
 
-import com.datastax.driver.core.Statement;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
 
 /**
  * Integration test for mapping events via {@link AsyncCassandraTemplate}.
  *
  * @author Mark Paluch
  */
-public class AsyncCassandraTemplateEventIntegrationTests extends EventListenerIntegrationTestSupport {
+class AsyncCassandraTemplateEventIntegrationTests extends EventListenerIntegrationTestSupport {
 
-	AsyncCassandraTemplate template;
+	private AsyncCassandraTemplate template;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		template = new AsyncCassandraTemplate(session);
 		template.setApplicationEventPublisher(getApplicationEventPublisher());
@@ -50,32 +50,32 @@ public class AsyncCassandraTemplateEventIntegrationTests extends EventListenerIn
 	}
 
 	@Test // DATACASS-106
-	public void selectWithCallbackShouldEmitEvents() {
+	void selectWithCallbackShouldEmitEvents() {
 
 		getUninterruptibly(template.select("SELECT * FROM users;", it -> {}, User.class));
 
 		assertThat(getListener().getAfterLoad()).extracting(CassandraMappingEvent::getTableName)
-				.contains(CqlIdentifier.of("users"));
+				.contains(CqlIdentifier.fromCql("users"));
 		assertThat(getListener().getAfterConvert()).extracting(CassandraMappingEvent::getSource).containsOnly(firstUser);
 	}
 
 	@Test // DATACASS-106
-	public void selectByQueryWithCallbackShouldEmitEvents() {
+	void selectByQueryWithCallbackShouldEmitEvents() {
 
 		getUninterruptibly(template.select(query(where("id").is(firstUser.getId())), it -> {}, User.class));
 
 		assertThat(getListener().getAfterLoad()).extracting(CassandraMappingEvent::getTableName)
-				.contains(CqlIdentifier.of("users"));
+				.contains(CqlIdentifier.fromCql("users"));
 		assertThat(getListener().getAfterConvert()).extracting(CassandraMappingEvent::getSource).containsOnly(firstUser);
 	}
 
 	@Test // DATACASS-106
-	public void sliceShouldEmitEvents() {
+	void sliceShouldEmitEvents() {
 
 		getUninterruptibly(template.slice(Query.empty(), User.class));
 
 		assertThat(getListener().getAfterLoad()).extracting(CassandraMappingEvent::getTableName)
-				.contains(CqlIdentifier.of("users"));
+				.contains(CqlIdentifier.fromCql("users"));
 		assertThat(getListener().getAfterConvert()).extracting(CassandraMappingEvent::getSource).containsOnly(firstUser);
 	}
 
@@ -125,7 +125,7 @@ public class AsyncCassandraTemplateEventIntegrationTests extends EventListenerIn
 			}
 
 			@Override
-			public <T> List<T> select(Statement statement, Class<T> entityClass) {
+			public <T> List<T> select(SimpleStatement statement, Class<T> entityClass) {
 				return getUninterruptibly(template.select(statement, entityClass));
 			}
 		};

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,50 +18,48 @@ package org.springframework.data.cassandra.config;
 import static org.assertj.core.api.Assertions.*;
 
 import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
-import org.springframework.data.cassandra.core.cql.CqlOperations;
+import org.springframework.data.cassandra.core.CassandraOperations;
 import org.springframework.data.cassandra.support.KeyspaceTestUtils;
-import org.springframework.data.cassandra.test.util.AbstractEmbeddedCassandraIntegrationTest;
-import org.springframework.data.cassandra.test.util.KeyspaceRule;
+import org.springframework.data.cassandra.test.util.IntegrationTestsSupport;
+import org.springframework.data.cassandra.test.util.TestKeyspaceName;
 
-import com.datastax.driver.core.Session;
+import com.datastax.oss.driver.api.core.CqlSession;
 
 /**
  * @author Matthews T. Adams
  * @author Oliver Gierke
  * @author Mark Paluch
  */
-public class MinimalXmlConfigIntegrationTests extends AbstractEmbeddedCassandraIntegrationTest {
+@TestKeyspaceName(MinimalXmlConfigIntegrationTests.KEYSPACE)
+class MinimalXmlConfigIntegrationTests extends IntegrationTestsSupport {
 
-	public static final String KEYSPACE = "minimalxmlconfigtest";
+	static final String KEYSPACE = "minimalxmlconfigtest";
 
-	private Session session;
+	private CqlSession session;
 	private ConfigurableApplicationContext context;
 
-	@Rule public final KeyspaceRule keyspaceRule = new KeyspaceRule(cassandraEnvironment, KEYSPACE);
-
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		this.context = new ClassPathXmlApplicationContext("MinimalXmlConfigIntegrationTests-context.xml", getClass());
-		this.session = context.getBean(Session.class);
+		this.session = context.getBean(CqlSession.class);
 	}
 
 	@After
-	public void tearDown() {
+	void tearDown() {
 		context.close();
 	}
 
 	@Test
-	public void test() {
+	void test() {
 
 		KeyspaceTestUtils.assertKeyspaceExists(KEYSPACE, session);
 
-		CqlOperations cqlOperations = context.getBean(CqlOperations.class);
-		assertThat(cqlOperations.describeRing()).isNotEmpty();
+		CassandraOperations cassandraOperations = context.getBean(CassandraOperations.class);
+		assertThat(cassandraOperations.getCqlOperations().describeRing()).isNotEmpty();
 	}
 }

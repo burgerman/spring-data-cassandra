@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,15 @@
  */
 package org.springframework.data.cassandra.repository.config;
 
-import static org.mockito.Mockito.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.AnnotationBeanNameGenerator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan.Filter;
 import org.springframework.context.annotation.Configuration;
@@ -32,21 +35,21 @@ import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
 import org.springframework.data.cassandra.core.mapping.UserTypeResolver;
 import org.springframework.data.cassandra.domain.Person;
 import org.springframework.data.cassandra.repository.ReactiveCassandraRepository;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
 /**
  * Unit tests for {@link ReactiveCassandraRepositoriesRegistrar}.
  *
  * @author Mark Paluch
+ * @author Christoph Strobl
  */
-@RunWith(SpringJUnit4ClassRunner.class)
-@ContextConfiguration
+@SpringJUnitConfig
 public class ReactiveCassandraRepositoriesRegistrarUnitTests {
 
 	@Configuration
 	@EnableReactiveCassandraRepositories(basePackages = "org.springframework.data.cassandra.repository.config",
 			considerNestedRepositories = true,
+			nameGenerator = MyBeanNameGenerator.class,
 			includeFilters = @Filter(pattern = ".*ReactivePersonRepository", type = FilterType.REGEX))
 	static class Config {
 
@@ -64,8 +67,18 @@ public class ReactiveCassandraRepositoriesRegistrarUnitTests {
 	@Autowired ApplicationContext context;
 	@Autowired ReactivePersonRepository personRepository;
 
-	@Test // DATACASS-335
-	public void testConfiguration() {}
+	@Test // DATACASS-335, GH-1509
+	void testConfiguration() {
+		assertThat(context.containsBean("reactiveCassandraRepositoriesRegistrarUnitTests.ReactivePersonREPO")).isTrue();
+	}
 
 	interface ReactivePersonRepository extends ReactiveCassandraRepository<Person, String> {}
+
+	static class MyBeanNameGenerator extends AnnotationBeanNameGenerator {
+
+		@Override
+		public String generateBeanName(BeanDefinition definition, BeanDefinitionRegistry registry) {
+			return super.generateBeanName(definition, registry).replaceAll("Repository", "REPO");
+		}
+	}
 }

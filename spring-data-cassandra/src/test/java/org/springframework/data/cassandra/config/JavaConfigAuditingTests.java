@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 the original author or authors.
+ * Copyright 2019-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,31 +17,26 @@ package org.springframework.data.cassandra.config;
 
 import static org.mockito.Mockito.*;
 
-import org.junit.runner.RunWith;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringRunner;
+import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
-import com.datastax.driver.core.Cluster;
-import com.datastax.driver.core.Session;
+import com.datastax.oss.driver.api.core.CqlSession;
 
 /**
  * Unit tests for auditing enabled using Java config.
  *
  * @author Mark Paluch
  */
-@RunWith(SpringRunner.class)
-@ContextConfiguration
-public class JavaConfigAuditingTests extends AbstractAuditingTests {
+@SpringJUnitConfig
+class JavaConfigAuditingTests extends AbstractAuditingTests {
 
 	@Autowired ApplicationContext context;
 
 	@Override
-	protected ApplicationContext getApplicationContext() {
+	public ApplicationContext getApplicationContext() {
 		return context;
 	}
 
@@ -55,23 +50,13 @@ public class JavaConfigAuditingTests extends AbstractAuditingTests {
 		}
 
 		@Bean
-		public CassandraSessionFactoryBean session() {
+		public CqlSessionFactoryBean cassandraSession() {
 
-			CassandraSessionFactoryBean sessionFactoryBean = mock(CassandraSessionFactoryBean.class);
-			Session session = mock(Session.class);
+			CqlSessionFactoryBean sessionFactoryBean = mock(CqlSessionFactoryBean.class);
+			CqlSession session = mock(CqlSession.class);
 			when(sessionFactoryBean.getObject()).thenReturn(session);
 
 			return sessionFactoryBean;
-		}
-
-		@Bean
-		public CassandraClusterFactoryBean cluster() {
-
-			CassandraClusterFactoryBean cassandraClusterFactoryBean = mock(CassandraClusterFactoryBean.class);
-			Cluster cluster = mock(Cluster.class);
-			when(cassandraClusterFactoryBean.getObject()).thenReturn(cluster);
-
-			return cassandraClusterFactoryBean;
 		}
 	}
 }

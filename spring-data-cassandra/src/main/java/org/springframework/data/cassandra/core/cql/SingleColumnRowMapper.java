@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,13 +20,14 @@ import org.springframework.lang.Nullable;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.NumberUtils;
 
-import com.datastax.driver.core.ColumnDefinitions;
-import com.datastax.driver.core.Row;
-import com.datastax.driver.core.exceptions.DriverException;
+import com.datastax.oss.driver.api.core.DriverException;
+import com.datastax.oss.driver.api.core.cql.ColumnDefinition;
+import com.datastax.oss.driver.api.core.cql.ColumnDefinitions;
+import com.datastax.oss.driver.api.core.cql.Row;
 
 /**
  * {@link RowMapper} implementation that converts a single column into a single result value per row. Expects to operate
- * on a {@link com.datastax.driver.core.Row} that just contains a single column.
+ * on a {@link com.datastax.oss.driver.api.core.cql.Row} that just contains a single column.
  * <p>
  * The type of the result value for each row can be specified. The value for the single column will be extracted from a
  * {@link Row} and converted into the specified target type.
@@ -102,9 +103,12 @@ public class SingleColumnRowMapper<T> implements RowMapper<T> {
 			try {
 				return (T) convertValueToRequiredType(result, this.requiredType);
 			} catch (IllegalArgumentException ex) {
+
+				ColumnDefinition columnDefinition = definitions.get(0);
+
 				throw new TypeMismatchDataAccessException(
 						String.format("Type mismatch affecting row number %d and column type '%s': %s", rowNum,
-								definitions.getType(0), ex.getMessage()));
+								columnDefinition.getType(), ex.getMessage()));
 			}
 		}
 

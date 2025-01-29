@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,15 +48,15 @@ public class CreateIndexCqlGenerator extends IndexNameCqlGenerator<CreateIndexSp
 				.append(spec().getIfNotExists() ? " IF NOT EXISTS" : "");
 
 		if (spec().getName() != null) {
-			cql.append(" ").append(spec().getName());
+			cql.append(" ").append(CqlIdentifierUtil.renderName(spec().getKeyspace(), spec().getName()));
 		}
 
-		cql.append(" ON ").append(spec().getTableName()).append(" (");
+		cql.append(" ON ").append(CqlIdentifierUtil.renderName(spec().getKeyspace(), spec().getTableName())).append(" (");
 
 		if (spec().getColumnFunction() != ColumnFunction.NONE) {
-			cql.append(spec().getColumnFunction().name()).append("(").append(spec().getColumnName()).append(")");
+			cql.append(spec().getColumnFunction().name()).append("(").append(spec().getColumnName().asCql(true)).append(")");
 		} else {
-			cql.append(spec().getColumnName());
+			cql.append(spec().getColumnName().asCql(true));
 		}
 
 		cql.append(")");

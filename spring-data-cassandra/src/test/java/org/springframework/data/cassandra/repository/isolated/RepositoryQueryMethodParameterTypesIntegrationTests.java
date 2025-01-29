@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,14 +28,14 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.data.cassandra.CassandraInvalidQueryException;
 import org.springframework.data.cassandra.config.SchemaAction;
+import org.springframework.data.cassandra.core.CassandraAdminTemplate;
 import org.springframework.data.cassandra.core.convert.CassandraCustomConversions;
 import org.springframework.data.cassandra.core.convert.MappingCassandraConverter;
 import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
@@ -47,22 +47,17 @@ import org.springframework.data.cassandra.repository.support.AbstractSpringDataE
 import org.springframework.data.cassandra.repository.support.IntegrationTestConfig;
 import org.springframework.data.convert.CustomConversions;
 import org.springframework.data.repository.CrudRepository;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
-import com.datastax.driver.core.DataType.Name;
-import com.datastax.driver.core.Session;
+import com.datastax.oss.driver.api.core.CqlSession;
 
 /**
  * Integration tests for various query method parameter types.
  *
  * @author Mark Paluch
  */
-@RunWith(SpringJUnit4ClassRunner.class)
-@ContextConfiguration
-@SuppressWarnings("Since15")
-public class RepositoryQueryMethodParameterTypesIntegrationTests
-		extends AbstractSpringDataEmbeddedCassandraIntegrationTest {
+@SpringJUnitConfig
+class RepositoryQueryMethodParameterTypesIntegrationTests extends AbstractSpringDataEmbeddedCassandraIntegrationTest {
 
 	@Configuration
 	@EnableCassandraRepositories(basePackageClasses = RepositoryQueryMethodParameterTypesIntegrationTests.class,
@@ -78,38 +73,44 @@ public class RepositoryQueryMethodParameterTypesIntegrationTests
 		public SchemaAction getSchemaAction() {
 			return SchemaAction.RECREATE_DROP_UNUSED;
 		}
+
+		@Override
+		public CassandraAdminTemplate cassandraTemplate() {
+			CassandraAdminTemplate template = super.cassandraTemplate();
+			template.setUsePreparedStatements(false);
+			return template;
+		}
 	}
 
 	@Autowired AllPossibleTypesRepository allPossibleTypesRepository;
-	@Autowired Session session;
+	@Autowired CqlSession session;
 	@Autowired CassandraMappingContext mappingContext;
 	@Autowired MappingCassandraConverter converter;
 
-	@Before
-	public void setUp() throws Exception {
+	@BeforeEach
+	void setUp() throws Exception {
 		allPossibleTypesRepository.deleteAll();
 	}
 
 	@Test // DATACASS-296
-	public void shouldFindByLocalDate() {
+	void shouldFindByLocalDate() {
 
-		session.execute("CREATE INDEX IF NOT EXISTS allpossibletypes_localdate ON allpossibletypes ( localdate )");
+		session.execute("CREATE INDEX IF NOT EXISTS allpossibletypes_localdate ON allpossibletypes ( date )");
 
 		AllPossibleTypes allPossibleTypes = new AllPossibleTypes();
 
 		allPossibleTypes.setId("id");
-		allPossibleTypes.setLocalDate(LocalDate.now());
+		allPossibleTypes.setDate(LocalDate.now());
 
 		allPossibleTypesRepository.save(allPossibleTypes);
 
-		List<AllPossibleTypes> result = allPossibleTypesRepository.findWithCreatedDate(allPossibleTypes.getLocalDate());
+		List<AllPossibleTypes> result = allPossibleTypesRepository.findWithCreatedDate(allPossibleTypes.getDate());
 
-		assertThat(result).hasSize(1);
-		assertThat(result).contains(allPossibleTypes);
+		assertThat(result).hasSize(1).contains(allPossibleTypes);
 	}
 
 	@Test // DATACASS-296
-	public void shouldFindByAnnotatedDateParameter() {
+	void shouldFindByAnnotatedDateParameter() {
 
 		CustomConversions customConversions = new CassandraCustomConversions(
 				Collections.singletonList(new DateToLocalDateConverter()));
@@ -126,25 +127,25 @@ public class RepositoryQueryMethodParameterTypesIntegrationTests
 		Instant instant = localDate.atStartOfDay().toInstant(ZoneOffset.UTC);
 
 		allPossibleTypes.setId("id");
-		allPossibleTypes.setDate(com.datastax.driver.core.LocalDate.fromYearMonthDay(localDate.getYear(),
-				localDate.getMonthValue(), localDate.getDayOfMonth()));
+		allPossibleTypes.setDate(LocalDate.of(localDate.getYear(), localDate.getMonthValue(), localDate.getDayOfMonth()));
 
 		allPossibleTypesRepository.save(allPossibleTypes);
 
 		List<AllPossibleTypes> result = allPossibleTypesRepository.findWithAnnotatedDateParameter(Date.from(instant));
 
-		assertThat(result).hasSize(1);
-		assertThat(result).contains(allPossibleTypes);
+		assertThat(result).hasSize(1).contains(allPossibleTypes);
 	}
 
-	@Test(expected = CassandraInvalidQueryException.class) // DATACASS-296, DATACASS-304
-	public void shouldThrowExceptionUsingWrongMethodParameter() {
+	@Test // DATACASS-296, DATACASS-304
+	void shouldThrowExceptionUsingWrongMethodParameter() {
 		session.execute("CREATE INDEX IF NOT EXISTS allpossibletypes_date ON allpossibletypes ( date )");
-		allPossibleTypesRepository.findWithDateParameter(Date.from(Instant.ofEpochSecond(44234123421L)));
+
+		assertThatExceptionOfType(CassandraInvalidQueryException.class).isThrownBy(
+				() -> allPossibleTypesRepository.findWithDateParameter(Date.from(Instant.ofEpochSecond(44234123421L))));
 	}
 
 	@Test // DATACASS-296
-	public void shouldFindByZoneId() {
+	void shouldFindByZoneId() {
 
 		ZoneId zoneId = ZoneId.of("Europe/Paris");
 		session.execute("CREATE INDEX IF NOT EXISTS allpossibletypes_zoneid ON allpossibletypes ( zoneid )");
@@ -158,12 +159,11 @@ public class RepositoryQueryMethodParameterTypesIntegrationTests
 
 		List<AllPossibleTypes> result = allPossibleTypesRepository.findWithZoneId(zoneId);
 
-		assertThat(result).hasSize(1);
-		assertThat(result).contains(allPossibleTypes);
+		assertThat(result).hasSize(1).contains(allPossibleTypes);
 	}
 
 	@Test // DATACASS-296
-	public void shouldFindByOptionalOfZoneId() {
+	void shouldFindByOptionalOfZoneId() {
 
 		ZoneId zoneId = ZoneId.of("Europe/Paris");
 		session.execute("CREATE INDEX IF NOT EXISTS allpossibletypes_zoneid ON allpossibletypes ( zoneid )");
@@ -177,20 +177,20 @@ public class RepositoryQueryMethodParameterTypesIntegrationTests
 
 		List<AllPossibleTypes> result = allPossibleTypesRepository.findWithZoneId(Optional.of(zoneId));
 
-		assertThat(result).hasSize(1);
-		assertThat(result).contains(allPossibleTypes);
+		assertThat(result).hasSize(1).contains(allPossibleTypes);
 	}
 
 	private interface AllPossibleTypesRepository extends CrudRepository<AllPossibleTypes, String> {
 
-		@Query("select * from allpossibletypes where localdate = ?0")
+		@Query("select * from allpossibletypes where date = ?0")
 		List<AllPossibleTypes> findWithCreatedDate(java.time.LocalDate createdDate);
 
 		@Query("select * from allpossibletypes where zoneid = ?0")
 		List<AllPossibleTypes> findWithZoneId(ZoneId zoneId);
 
 		@Query("select * from allpossibletypes where date = ?0")
-		List<AllPossibleTypes> findWithAnnotatedDateParameter(@CassandraType(type = Name.DATE) Date timestamp);
+		List<AllPossibleTypes> findWithAnnotatedDateParameter(
+				@CassandraType(type = CassandraType.Name.DATE) Date timestamp);
 
 		@Query("select * from allpossibletypes where date = ?0")
 		List<AllPossibleTypes> findWithDateParameter(Date timestamp);
@@ -199,15 +199,14 @@ public class RepositoryQueryMethodParameterTypesIntegrationTests
 		List<AllPossibleTypes> findWithZoneId(Optional<ZoneId> zoneId);
 	}
 
-	private static class DateToLocalDateConverter implements Converter<Date, com.datastax.driver.core.LocalDate> {
+	private static class DateToLocalDateConverter implements Converter<Date, LocalDate> {
 
 		@Override
-		public com.datastax.driver.core.LocalDate convert(Date source) {
+		public LocalDate convert(Date source) {
 
 			LocalDate localDate = LocalDateTime.ofInstant(source.toInstant(), ZoneOffset.UTC.normalized()).toLocalDate();
 
-			return com.datastax.driver.core.LocalDate.fromYearMonthDay(localDate.getYear(), localDate.getMonthValue(),
-					localDate.getDayOfMonth());
+			return LocalDate.of(localDate.getYear(), localDate.getMonthValue(), localDate.getDayOfMonth());
 		}
 	}
 }

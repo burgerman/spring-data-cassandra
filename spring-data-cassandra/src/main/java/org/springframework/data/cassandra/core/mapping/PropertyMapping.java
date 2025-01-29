@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,10 @@
  */
 package org.springframework.data.cassandra.core.mapping;
 
-import lombok.EqualsAndHashCode;
-
 import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
+import org.springframework.util.ObjectUtils;
 
 /**
  * Mapping between a persistent entity's property and its column.
@@ -27,11 +26,16 @@ import org.springframework.util.Assert;
  * @author Matthew T. Adams
  * @author John Blum
  */
-@EqualsAndHashCode
 public class PropertyMapping {
 
 	private @Nullable String columnName;
 
+	/**
+	 * @deprecated since 3.0. The column name gets converted into {@link com.datastax.oss.driver.api.core.CqlIdentifier}
+	 *             hence it no longer requires an indication whether the name should be quoted.
+	 * @see com.datastax.oss.driver.api.core.CqlIdentifier#fromInternal(String)
+	 */
+	@Deprecated
 	private @Nullable String forceQuote;
 
 	private String propertyName;
@@ -70,10 +74,12 @@ public class PropertyMapping {
 	}
 
 	@Nullable
+	@Deprecated
 	public String getForceQuote() {
 		return this.forceQuote;
 	}
 
+	@Deprecated
 	public void setForceQuote(String forceQuote) {
 		this.forceQuote = forceQuote;
 	}
@@ -82,9 +88,38 @@ public class PropertyMapping {
 		return this.propertyName;
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#toString()
-	 */
+	@Override
+	public boolean equals(@Nullable Object o) {
+
+		if (this == o) {
+			return true;
+		}
+
+		if (!(o instanceof PropertyMapping)) {
+			return false;
+		}
+
+		PropertyMapping that = (PropertyMapping) o;
+
+		if (!ObjectUtils.nullSafeEquals(columnName, that.columnName)) {
+			return false;
+		}
+
+		if (!ObjectUtils.nullSafeEquals(forceQuote, that.forceQuote)) {
+			return false;
+		}
+
+		return ObjectUtils.nullSafeEquals(propertyName, that.propertyName);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = ObjectUtils.nullSafeHashCode(columnName);
+		result = 31 * result + ObjectUtils.nullSafeHashCode(forceQuote);
+		result = 31 * result + ObjectUtils.nullSafeHashCode(propertyName);
+		return result;
+	}
+
 	@Override
 	public String toString() {
 		return String.format("{ @type = %1$s, propertyName = %2$s, columnName = %3$s, forceQuote = %4$s }",

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,9 @@
 package org.springframework.data.cassandra.core.mapping;
 
 import java.util.Comparator;
-import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
 
 import org.springframework.data.mapping.MappingException;
-import org.springframework.data.util.Lazy;
 import org.springframework.data.util.TypeInformation;
-import org.springframework.util.Assert;
-
-import com.datastax.driver.core.DataType;
-import com.datastax.driver.core.TupleType;
 
 /**
  * Cassandra Tuple-specific {@link org.springframework.data.mapping.PersistentEntity} for a mapped tuples. Mapped tuples
@@ -39,33 +31,16 @@ import com.datastax.driver.core.TupleType;
  */
 public class BasicCassandraPersistentTupleEntity<T> extends BasicCassandraPersistentEntity<T> {
 
-	private final Lazy<TupleType> tupleType;
-
 	/**
-	 * Creates a new {@link BasicCassandraPersistentTupleEntity} given {@link TypeInformation} and
-	 * {@link TupleTypeFactory}.
+	 * Creates a new {@link BasicCassandraPersistentTupleEntity} given {@link TypeInformation}.
 	 *
 	 * @param information must not be {@literal null}.
-	 * @param tupleTypeFactory must not be {@literal null}.
 	 */
-	public BasicCassandraPersistentTupleEntity(TypeInformation<T> information, TupleTypeFactory tupleTypeFactory) {
+	public BasicCassandraPersistentTupleEntity(TypeInformation<T> information) {
 
 		super(information, CassandraPersistentTupleMetadataVerifier.INSTANCE, TuplePropertyComparator.INSTANCE);
-
-		Assert.notNull(tupleTypeFactory, "TupleTypeFactory must not be null");
-
-		this.tupleType = Lazy.of(() -> tupleTypeFactory.create(getTupleFieldDataTypes()));
 	}
 
-	private List<DataType> getTupleFieldDataTypes() {
-
-		return StreamSupport.stream(spliterator(), false).sorted(TuplePropertyComparator.INSTANCE)
-				.map(CassandraPersistentProperty::getDataType).collect(Collectors.toList());
-	}
-
-	/* (non-Javadoc)
-	 * @see org.springframework.data.mapping.model.BasicPersistentEntity#verify()
-	 */
 	@Override
 	public void verify() throws MappingException {
 
@@ -74,20 +49,9 @@ public class BasicCassandraPersistentTupleEntity<T> extends BasicCassandraPersis
 		CassandraPersistentTupleMetadataVerifier.INSTANCE.verify(this);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.BasicCassandraPersistentEntity#isTupleType()
-	 */
 	@Override
 	public boolean isTupleType() {
 		return true;
-	}
-
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.BasicCassandraPersistentEntity#getTupleType()
-	 */
-	@Override
-	public TupleType getTupleType() {
-		return this.tupleType.get();
 	}
 
 	/**
@@ -100,9 +64,6 @@ public class BasicCassandraPersistentTupleEntity<T> extends BasicCassandraPersis
 
 		INSTANCE;
 
-		/* (non-Javadoc)
-		 * @see java.util.Comparator#compare(java.lang.Object, java.lang.Object)
-		 */
 		@Override
 		public int compare(CassandraPersistentProperty propertyOne, CassandraPersistentProperty propertyTwo) {
 			return Integer.compare(propertyOne.getRequiredOrdinal(), propertyTwo.getRequiredOrdinal());

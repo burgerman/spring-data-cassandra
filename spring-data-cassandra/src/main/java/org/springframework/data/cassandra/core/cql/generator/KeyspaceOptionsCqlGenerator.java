@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import org.springframework.data.cassandra.core.cql.keyspace.Option;
  * Base class that contains behavior common to CQL generation for table operations.
  *
  * @author Matthew T. Adams
- * @param T The subtype of this class for which this is a CQL generator.
+ * @param <T> the subtype of this class for which this is a CQL generator.
  */
 public abstract class KeyspaceOptionsCqlGenerator<T extends KeyspaceOptionsSpecification<T>>
 		extends KeyspaceNameCqlGenerator<KeyspaceOptionsSpecification<T>> {

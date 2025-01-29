@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,42 +17,29 @@ package org.springframework.data.cassandra.core.mapping;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.data.cassandra.core.mapping.CassandraType.*;
 
 import java.io.Serializable;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
-import org.junit.Before;
-import org.junit.Test;
-
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.cassandra.core.convert.CassandraCustomConversions;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.cql.Ordering;
 import org.springframework.data.cassandra.core.cql.PrimaryKeyType;
-import org.springframework.data.cassandra.core.cql.keyspace.ColumnSpecification;
 import org.springframework.data.cassandra.core.cql.keyspace.CreateIndexSpecification;
-import org.springframework.data.cassandra.core.cql.keyspace.CreateIndexSpecification.ColumnFunction;
-import org.springframework.data.cassandra.core.cql.keyspace.CreateTableSpecification;
-import org.springframework.data.cassandra.domain.AllPossibleTypes;
-import org.springframework.data.cassandra.support.UserTypeBuilder;
-import org.springframework.data.convert.WritingConverter;
 import org.springframework.data.mapping.MappingException;
-import org.springframework.data.util.ClassTypeInformation;
+import org.springframework.data.util.TypeInformation;
 
-import com.datastax.driver.core.CodecRegistry;
-import com.datastax.driver.core.DataType;
-import com.datastax.driver.core.DataType.Name;
-import com.datastax.driver.core.ProtocolVersion;
-import com.datastax.driver.core.TableMetadata;
-import com.datastax.driver.core.TupleType;
-import com.datastax.driver.core.TupleValue;
-import com.datastax.driver.core.UDTValue;
-import com.datastax.driver.core.UserType;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.data.UdtValue;
+import com.datastax.oss.driver.api.core.metadata.schema.TableMetadata;
+import com.datastax.oss.driver.api.core.type.UserDefinedType;
 
 /**
  * Unit tests for {@link CassandraMappingContext}.
@@ -62,37 +49,37 @@ import com.datastax.driver.core.UserType;
  */
 public class CassandraMappingContextUnitTests {
 
-	CassandraMappingContext mappingContext = new CassandraMappingContext();
+	private CassandraMappingContext mappingContext = new CassandraMappingContext();
 
-	@Before
-	public void before() {
+	@BeforeEach
+	void before() {
 		this.mappingContext.setUserTypeResolver(typeName -> null);
 	}
 
 	@Test
-	public void testGetRequiredPersistentEntityOfTransientType() {
+	void testGetRequiredPersistentEntityOfTransientType() {
 		this.mappingContext.getRequiredPersistentEntity(Transient.class);
 	}
 
 	private static class Transient {}
 
 	@Test // DATACASS-282, DATACASS-455
-	public void testGetExistingPersistentEntityHappyPath() {
+	void testGetExistingPersistentEntityHappyPath() {
 
 		TableMetadata tableMetadata = mock(TableMetadata.class);
 
-		when(tableMetadata.getName()).thenReturn(X.class.getSimpleName().toLowerCase());
+		when(tableMetadata.getName()).thenReturn(CqlIdentifier.fromCql(X.class.getSimpleName().toLowerCase()));
 
 		mappingContext.getRequiredPersistentEntity(X.class);
 
 		assertThat(mappingContext.getUserDefinedTypeEntities()).isEmpty();
 		assertThat(mappingContext.getTableEntities()).hasSize(1);
 		assertThat(mappingContext.getPersistentEntities()).hasSize(1);
-		assertThat(mappingContext.usesTable(CqlIdentifier.of(tableMetadata.getName()))).isTrue();
+		assertThat(mappingContext.usesTable(tableMetadata.getName())).isTrue();
 	}
 
 	@Test // DATACASS-248
-	public void primaryKeyOnPropertyShouldWork() {
+	void primaryKeyOnPropertyShouldWork() {
 
 		CassandraPersistentEntity<?> persistentEntity = mappingContext
 				.getRequiredPersistentEntity(PrimaryKeyOnProperty.class);
@@ -101,14 +88,14 @@ public class CassandraMappingContextUnitTests {
 
 		assertThat(idProperty).satisfies(actual -> {
 
-			assertThat(actual.getColumnName().toCql()).isEqualTo("foo");
+			assertThat(actual.getColumnName()).hasToString("foo");
 		});
 	}
 
 	@Table
 	private static class PrimaryKeyOnProperty {
 
-		String key;
+		private String key;
 
 		@PrimaryKey(value = "foo")
 		public String getKey() {
@@ -121,7 +108,7 @@ public class CassandraMappingContextUnitTests {
 	}
 
 	@Test // DATACASS-248
-	public void primaryKeyColumnsOnPropertyShouldWork() {
+	void primaryKeyColumnsOnPropertyShouldWork() {
 
 		CassandraPersistentEntity<?> persistentEntity = mappingContext
 				.getRequiredPersistentEntity(PrimaryKeyColumnsOnProperty.class);
@@ -133,20 +120,20 @@ public class CassandraMappingContextUnitTests {
 		assertThat(firstname.isCompositePrimaryKey()).isFalse();
 		assertThat(firstname.isPrimaryKeyColumn()).isTrue();
 		assertThat(firstname.isPartitionKeyColumn()).isTrue();
-		assertThat(firstname.getColumnName().toCql()).isEqualTo("firstname");
+		assertThat(firstname.getColumnName().toString()).isEqualTo("firstname");
 
 		CassandraPersistentProperty lastname = persistentEntity.getRequiredPersistentProperty("lastname");
 
 		assertThat(lastname.isPrimaryKeyColumn()).isTrue();
 		assertThat(lastname.isClusterKeyColumn()).isTrue();
-		assertThat(lastname.getColumnName().toCql()).isEqualTo("mylastname");
+		assertThat(lastname.getColumnName().toString()).isEqualTo("mylastname");
 	}
 
 	@Table
 	private static class PrimaryKeyColumnsOnProperty {
 
-		String firstname;
-		String lastname;
+		private String firstname;
+		private String lastname;
 
 		@PrimaryKeyColumn(ordinal = 1, type = PrimaryKeyType.PARTITIONED)
 		public String getFirstname() {
@@ -168,7 +155,7 @@ public class CassandraMappingContextUnitTests {
 	}
 
 	@Test // DATACASS-248
-	public void primaryKeyClassWithPrimaryKeyColumnsOnPropertyShouldWork() {
+	void primaryKeyClassWithPrimaryKeyColumnsOnPropertyShouldWork() {
 
 		CassandraPersistentEntity<?> persistentEntity = mappingContext
 				.getRequiredPersistentEntity(PrimaryKeyOnPropertyWithPrimaryKeyClass.class);
@@ -186,89 +173,20 @@ public class CassandraMappingContextUnitTests {
 		assertThat(firstname.isPrimaryKeyColumn()).isTrue();
 		assertThat(firstname.isPartitionKeyColumn()).isTrue();
 		assertThat(firstname.isClusterKeyColumn()).isFalse();
-		assertThat(firstname.getColumnName().toCql()).isEqualTo("firstname");
+		assertThat(firstname.getColumnName().toString()).isEqualTo("firstname");
 
 		CassandraPersistentProperty lastname = primaryKeyClass.getRequiredPersistentProperty("lastname");
 
 		assertThat(lastname.isPrimaryKeyColumn()).isTrue();
 		assertThat(lastname.isPartitionKeyColumn()).isFalse();
 		assertThat(lastname.isClusterKeyColumn()).isTrue();
-		assertThat(lastname.getColumnName().toCql()).isEqualTo("mylastname");
-	}
-
-	@Test // DATACASS-340
-	public void createdTableSpecificationShouldConsiderClusterColumnOrdering() {
-
-		CassandraPersistentEntity<?> persistentEntity = mappingContext
-				.getRequiredPersistentEntity(EntityWithOrderedClusteredColumns.class);
-
-		CreateTableSpecification tableSpecification = mappingContext.getCreateTableSpecificationFor(persistentEntity);
-
-		assertThat(tableSpecification.getPartitionKeyColumns()).hasSize(1);
-		assertThat(tableSpecification.getClusteredKeyColumns()).hasSize(3);
-
-		ColumnSpecification breed = tableSpecification.getClusteredKeyColumns().get(0);
-		assertThat(breed.getName().toCql()).isEqualTo("breed");
-		assertThat(breed.getOrdering()).isEqualTo(Ordering.ASCENDING);
-
-		ColumnSpecification color = tableSpecification.getClusteredKeyColumns().get(1);
-		assertThat(color.getName().toCql()).isEqualTo("color");
-		assertThat(color.getOrdering()).isEqualTo(Ordering.DESCENDING);
-
-		ColumnSpecification kind = tableSpecification.getClusteredKeyColumns().get(2);
-		assertThat(kind.getName().toCql()).isEqualTo("kind");
-		assertThat(kind.getOrdering()).isEqualTo(Ordering.ASCENDING);
-	}
-
-	@Test // DATACASS-340
-	public void createdTableSpecificationShouldConsiderPrimaryKeyClassClusterColumnOrdering() {
-
-		CassandraPersistentEntity<?> persistentEntity = mappingContext
-				.getRequiredPersistentEntity(EntityWithPrimaryKeyWithOrderedClusteredColumns.class);
-
-		CreateTableSpecification tableSpecification = mappingContext.getCreateTableSpecificationFor(persistentEntity);
-
-		assertThat(tableSpecification.getPartitionKeyColumns()).hasSize(1);
-		assertThat(tableSpecification.getClusteredKeyColumns()).hasSize(3);
-
-		ColumnSpecification breed = tableSpecification.getClusteredKeyColumns().get(0);
-		assertThat(breed.getName().toCql()).isEqualTo("breed");
-		assertThat(breed.getOrdering()).isEqualTo(Ordering.ASCENDING);
-
-		ColumnSpecification color = tableSpecification.getClusteredKeyColumns().get(1);
-		assertThat(color.getName().toCql()).isEqualTo("color");
-		assertThat(color.getOrdering()).isEqualTo(Ordering.DESCENDING);
-
-		ColumnSpecification kind = tableSpecification.getClusteredKeyColumns().get(2);
-		assertThat(kind.getName().toCql()).isEqualTo("kind");
-		assertThat(kind.getOrdering()).isEqualTo(Ordering.ASCENDING);
-	}
-
-	@Test // DATACASS-487
-	public void shouldCreateTableForMappedAndConvertedColumn() {
-
-		UserType mappedudt = UserTypeBuilder.forName("mappedudt").withField("foo", DataType.ascii()).build();
-
-		this.mappingContext.setUserTypeResolver(typeName -> mappedudt);
-		this.mappingContext.setCustomConversions(
-				new CassandraCustomConversions(Collections.singletonList(HumanToStringConverter.INSTANCE)));
-
-		CassandraPersistentEntity<?> persistentEntity = this.mappingContext
-				.getRequiredPersistentEntity(WithMapOfMixedTypes.class);
-
-		CreateTableSpecification tableSpecification = this.mappingContext.getCreateTableSpecificationFor(persistentEntity);
-
-		assertThat(tableSpecification.getColumns()).hasSize(2);
-
-		ColumnSpecification column = tableSpecification.getColumns().get(1);
-
-		assertThat(column.getType().toString()).isEqualTo("map<frozen<mappedudt>, list<text>>");
+		assertThat(lastname.getColumnName().toString()).isEqualTo("mylastname");
 	}
 
 	@Table
 	private static class PrimaryKeyOnPropertyWithPrimaryKeyClass {
 
-		CompositePrimaryKeyClassWithProperties key;
+		private CompositePrimaryKeyClassWithProperties key;
 
 		@PrimaryKey
 		public CompositePrimaryKeyClassWithProperties getKey() {
@@ -283,8 +201,8 @@ public class CassandraMappingContextUnitTests {
 	@PrimaryKeyClass
 	private static class CompositePrimaryKeyClassWithProperties implements Serializable {
 
-		String firstname;
-		String lastname;
+		private String firstname;
+		private String lastname;
 
 		@PrimaryKeyColumn(ordinal = 1, type = PrimaryKeyType.PARTITIONED)
 		public String getFirstname() {
@@ -306,7 +224,7 @@ public class CassandraMappingContextUnitTests {
 	}
 
 	@Table
-	static class EntityWithOrderedClusteredColumns {
+	private static class EntityWithOrderedClusteredColumns {
 
 		@PrimaryKeyColumn(ordinal = 0, type = PrimaryKeyType.PARTITIONED) String species;
 		@PrimaryKeyColumn(ordinal = 1, type = PrimaryKeyType.CLUSTERED, ordering = Ordering.ASCENDING) String breed;
@@ -329,91 +247,14 @@ public class CassandraMappingContextUnitTests {
 		@PrimaryKey PrimaryKeyWithOrderedClusteredColumns key;
 	}
 
-	@Test // DATACASS-213
-	public void createIndexShouldConsiderAnnotatedProperties() {
-
-		List<CreateIndexSpecification> specifications = mappingContext
-				.getCreateIndexSpecificationsFor(mappingContext.getRequiredPersistentEntity(IndexedType.class));
-
-		CreateIndexSpecification firstname = getSpecificationFor("first_name", specifications);
-
-		assertThat(firstname.getColumnName()).isEqualTo(CqlIdentifier.of("first_name"));
-		assertThat(firstname.getTableName()).isEqualTo(CqlIdentifier.of("indexedtype"));
-		assertThat(firstname.getName()).isEqualTo(CqlIdentifier.of("my_index"));
-		assertThat(firstname.getColumnFunction()).isEqualTo(ColumnFunction.NONE);
-
-		CreateIndexSpecification phoneNumbers = getSpecificationFor("phoneNumbers", specifications);
-
-		assertThat(phoneNumbers.getColumnName()).isEqualTo(CqlIdentifier.of("phoneNumbers"));
-		assertThat(phoneNumbers.getTableName()).isEqualTo(CqlIdentifier.of("indexedtype"));
-		assertThat(phoneNumbers.getName()).isNull();
-		assertThat(phoneNumbers.getColumnFunction()).isEqualTo(ColumnFunction.NONE);
-	}
-
-	@Test // DATACASS-213
-	public void createIndexForClusteredPrimaryKeyShouldConsiderAnnotatedAccessors() {
-
-		List<CreateIndexSpecification> specifications = mappingContext
-				.getCreateIndexSpecificationsFor(mappingContext.getRequiredPersistentEntity(CompositeKeyEntity.class));
-
-		CreateIndexSpecification entries = getSpecificationFor("last_name", specifications);
-
-		assertThat(entries.getColumnName()).isEqualTo(CqlIdentifier.of("last_name"));
-		assertThat(entries.getTableName()).isEqualTo(CqlIdentifier.of("compositekeyentity"));
-		assertThat(entries.getName()).isEqualTo(CqlIdentifier.of("my_index"));
-		assertThat(entries.getColumnFunction()).isEqualTo(ColumnFunction.NONE);
-	}
-
-	@Test // DATACASS-284, DATACASS-651
-	public void shouldRejectUntypedTuples() {
-
-		assertThatThrownBy(() -> this.mappingContext
-				.getCreateTableSpecificationFor(this.mappingContext.getRequiredPersistentEntity(UntypedTupleEntity.class)))
-						.isInstanceOf(MappingException.class);
-
-		assertThatThrownBy(() -> this.mappingContext
-				.getCreateTableSpecificationFor(this.mappingContext.getRequiredPersistentEntity(UntypedTupleMapEntity.class)))
-						.isInstanceOf(MappingException.class);
-	}
-
-	@Test // DATACASS-284
-	public void shouldCreateTableForTypedTupleType() {
-
-		CreateTableSpecification tableSpecification = this.mappingContext
-				.getCreateTableSpecificationFor(this.mappingContext.getRequiredPersistentEntity(TypedTupleEntity.class));
-
-		assertThat(tableSpecification.getColumns()).hasSize(2);
-
-		ColumnSpecification column = tableSpecification.getColumns().get(1);
-
-		assertThat(column.getType()).isInstanceOf(TupleType.class);
-		assertThat(column.getType()).isEqualTo(TupleType.of(ProtocolVersion.NEWEST_SUPPORTED,
-				CodecRegistry.DEFAULT_INSTANCE, DataType.varchar(), DataType.bigint()));
-	}
-
-	@Test // DATACASS-651
-	public void shouldCreateTableForEntityWithMapOfTuples() {
-
-		CreateTableSpecification tableSpecification = this.mappingContext
-				.getCreateTableSpecificationFor(this.mappingContext.getRequiredPersistentEntity(EntityWithMapOfTuples.class));
-
-		assertThat(tableSpecification.getColumns()).hasSize(2);
-
-		ColumnSpecification column = tableSpecification.getColumns().get(1);
-
-		assertThat(column.getType()).isInstanceOf(DataType.CollectionType.class);
-		assertThat(column.getType()).isEqualTo(DataType.map(DataType.text(),
-				TupleType.of(ProtocolVersion.NEWEST_SUPPORTED, CodecRegistry.DEFAULT_INSTANCE, DataType.text())));
-	}
-
-	private static CreateIndexSpecification getSpecificationFor(String column,
+	static CreateIndexSpecification getSpecificationFor(String column,
 			List<CreateIndexSpecification> specifications) {
 
-		return specifications.stream().filter(it -> it.getColumnName().equals(CqlIdentifier.of(column))).findFirst()
+		return specifications.stream().filter(it -> it.getColumnName().equals(CqlIdentifier.fromCql(column))).findFirst()
 				.orElseThrow(() -> new NoSuchElementException(column));
 	}
 
-	static class IndexedType {
+	private static class IndexedType {
 
 		@PrimaryKeyColumn("first_name") @Indexed("my_index") String firstname;
 
@@ -427,74 +268,34 @@ public class CassandraMappingContextUnitTests {
 		@PrimaryKeyColumn("last_name") @Indexed("my_index") String lastname;
 	}
 
-	static class CompositeKeyEntity {
+	private static class CompositeKeyEntity {
 
 		@PrimaryKey CompositeKeyWithIndex key;
 	}
 
-	static class InvalidMapIndex {
+	private static class InvalidMapIndex {
 
 		@Indexed Map<@Indexed String, String> mixed;
 	}
 
 	@Test // DATACASS-296
-	public void shouldCreatePersistentEntityIfNoConversionRegistered() {
+	void shouldCreatePersistentEntityIfNoConversionRegistered() {
 
 		mappingContext.setCustomConversions(new CassandraCustomConversions(Collections.emptyList()));
-		assertThat(mappingContext.shouldCreatePersistentEntityFor(ClassTypeInformation.from(Human.class))).isTrue();
+		assertThat(mappingContext.shouldCreatePersistentEntityFor(TypeInformation.of(Human.class))).isTrue();
 	}
 
 	@Test // DATACASS-296
-	public void shouldNotCreateEntitiesForCustomConvertedTypes() {
+	void shouldNotCreateEntitiesForCustomConvertedTypes() {
 
 		mappingContext.setCustomConversions(
 				new CassandraCustomConversions(Collections.singletonList(HumanToStringConverter.INSTANCE)));
 
-		assertThat(mappingContext.shouldCreatePersistentEntityFor(ClassTypeInformation.from(Human.class))).isFalse();
-	}
-
-	@Test // DATACASS-349
-	public void propertyTypeShouldConsiderRegisteredConverterForPropertyType() {
-
-		mappingContext.setCustomConversions(
-				new CassandraCustomConversions(Collections.singletonList(StringMapToStringConverter.INSTANCE)));
-
-		CassandraPersistentEntity<?> persistentEntity = mappingContext
-				.getRequiredPersistentEntity(TypeWithCustomConvertedMap.class);
-
-		assertThat(mappingContext.getDataType(persistentEntity.getRequiredPersistentProperty("stringMap")))
-				.isEqualTo(DataType.varchar());
-
-		assertThat(mappingContext.getDataType(persistentEntity.getRequiredPersistentProperty("blobMap")))
-				.isEqualTo(DataType.ascii());
-	}
-
-	@Test // DATACASS-349
-	public void propertyTypeShouldConsiderRegisteredConverterForCollectionComponentType() {
-
-		mappingContext.setCustomConversions(
-				new CassandraCustomConversions(Collections.singletonList(HumanToStringConverter.INSTANCE)));
-
-		CassandraPersistentEntity<?> persistentEntity = mappingContext
-				.getRequiredPersistentEntity(TypeWithListOfHumans.class);
-
-		assertThat(mappingContext.getDataType(persistentEntity.getRequiredPersistentProperty("humans")))
-				.isEqualTo(DataType.list(DataType.varchar()));
-	}
-
-	@Test // DATACASS-302
-	public void propertyTypeShouldMapToTime() {
-
-		CassandraPersistentEntity<?> persistentEntity = mappingContext.getRequiredPersistentEntity(AllPossibleTypes.class);
-
-		assertThat(mappingContext.getDataType(persistentEntity.getRequiredPersistentProperty("localTime")))
-				.isEqualTo(DataType.time());
-		assertThat(mappingContext.getDataType(persistentEntity.getRequiredPersistentProperty("jodaLocalTime")))
-				.isEqualTo(DataType.time());
+		assertThat(mappingContext.shouldCreatePersistentEntityFor(TypeInformation.of(Human.class))).isFalse();
 	}
 
 	@Test // DATACASS-172, DATACASS-455
-	public void shouldRegisterUdtTypes() {
+	void shouldRegisterUdtTypes() {
 
 		CassandraPersistentEntity<?> persistentEntity = mappingContext.getRequiredPersistentEntity(MappedUdt.class);
 
@@ -506,7 +307,7 @@ public class CassandraMappingContextUnitTests {
 	}
 
 	@Test // DATACASS-523
-	public void shouldCreateMappedTupleType() {
+	void shouldCreateMappedTupleType() {
 
 		CassandraPersistentEntity<?> persistentEntity = this.mappingContext.getRequiredPersistentEntity(MappedTuple.class);
 
@@ -518,7 +319,7 @@ public class CassandraMappingContextUnitTests {
 	}
 
 	@Test // DATACASS-172
-	public void getNonPrimaryKeyEntitiesShouldNotContainUdt() {
+	void getNonPrimaryKeyEntitiesShouldNotContainUdt() {
 
 		BasicCassandraPersistentEntity<?> existingPersistentEntity = mappingContext
 				.getRequiredPersistentEntity(MappedUdt.class);
@@ -527,7 +328,7 @@ public class CassandraMappingContextUnitTests {
 	}
 
 	@Test // DATACASS-172, DATACASS-359
-	public void getPersistentEntitiesShouldContainUdt() {
+	void getPersistentEntitiesShouldContainUdt() {
 
 		BasicCassandraPersistentEntity<?> existingPersistentEntity = mappingContext
 				.getRequiredPersistentEntity(MappedUdt.class);
@@ -538,80 +339,41 @@ public class CassandraMappingContextUnitTests {
 	}
 
 	@Test // DATACASS-172, DATACASS-455
-	public void usesTypeShouldNotReportTypeUsage() {
-		assertThat(mappingContext.usesUserType(CqlIdentifier.of("mappedudt"))).isFalse();
+	void usesTypeShouldNotReportTypeUsage() {
+		assertThat(mappingContext.usesUserType(CqlIdentifier.fromCql("mappedudt"))).isFalse();
 	}
 
 	@Test // DATACASS-172, DATACASS-455
-	public void usesTypeShouldReportTypeUsageInMappedUdt() {
+	void usesTypeShouldReportTypeUsageInMappedUdt() {
 
-		UserType myTypeMock = mock(UserType.class, "mappedudt");
+		UserDefinedType myTypeMock = mock(UserDefinedType.class, "mappedudt");
 
 		mappingContext.setUserTypeResolver(typeName -> myTypeMock);
 
 		mappingContext.getRequiredPersistentEntity(WithUdt.class);
 
-		assertThat(mappingContext.usesUserType(CqlIdentifier.of("mappedudt"))).isTrue();
+		assertThat(mappingContext.usesUserType(CqlIdentifier.fromCql("mappedudt"))).isTrue();
 	}
 
 	@Test // DATACASS-172, DATACASS-455
-	public void usesTypeShouldReportTypeUsageInColumn() {
+	void usesTypeShouldReportTypeUsageInColumn() {
 
-		UserType myTypeMock = mock(UserType.class, "mappedudt");
+		UserDefinedType myTypeMock = mock(UserDefinedType.class, "mappedudt");
 
 		mappingContext.setUserTypeResolver(typeName -> myTypeMock);
 
 		mappingContext.getRequiredPersistentEntity(MappedUdt.class);
 
-		assertThat(mappingContext.usesUserType(CqlIdentifier.of("mappedudt"))).isTrue();
-	}
-
-	@Test // DATACASS-506
-	public void shouldCreatedUserTypeSpecificationsWithAnnotatedTypeName() {
-
-		assertThat(
-				mappingContext.getCreateUserTypeSpecificationFor(mappingContext.getRequiredPersistentEntity(WithUdt.class)))
-						.isNotNull();
-		assertThat(
-				mappingContext.getCreateUserTypeSpecificationFor(mappingContext.getRequiredPersistentEntity(Nested.class)))
-						.isNotNull();
-	}
-
-	@Test // DATACASS-172
-	public void createTableForComplexPrimaryKeyShouldFail() {
-
-		try {
-			mappingContext.getCreateTableSpecificationFor(
-					mappingContext.getRequiredPersistentEntity(EntityWithComplexPrimaryKeyColumn.class));
-			fail("Missing MappingException");
-		} catch (MappingException e) {
-			assertThat(e).hasMessageContaining("Unknown type [class java.lang.Object] for property [complexObject]");
-		}
-
-		try {
-			mappingContext
-					.getCreateTableSpecificationFor(mappingContext.getRequiredPersistentEntity(EntityWithComplexId.class));
-			fail("Missing MappingException");
-		} catch (MappingException e) {
-			assertThat(e).hasMessageContaining("Unknown type [class java.lang.Object] for property [complexObject]");
-		}
-
-		try {
-			mappingContext.getCreateTableSpecificationFor(
-					mappingContext.getRequiredPersistentEntity(EntityWithPrimaryKeyClassWithComplexId.class));
-			fail("Missing MappingException");
-		} catch (MappingException e) {
-			assertThat(e).hasMessageContaining("Unknown type [class java.lang.Object] for property [complexObject]");
-		}
+		assertThat(mappingContext.usesUserType(CqlIdentifier.fromCql("mappedudt"))).isTrue();
 	}
 
 	@Test // DATACASS-282, DATACASS-455
-	public void shouldNotRetainInvalidEntitiesInCache() {
+	void shouldNotRetainInvalidEntitiesInCache() {
 
 		TableMetadata tableMetadata = mock(TableMetadata.class);
 
 		when(tableMetadata.getName())
-				.thenReturn(InvalidEntityWithIdAndPrimaryKeyColumn.class.getSimpleName().toLowerCase());
+				.thenReturn(CqlIdentifier.fromCql(InvalidEntityWithIdAndPrimaryKeyColumn.class.getSimpleName().toLowerCase()));
 
 		try {
 			mappingContext.getPersistentEntity(InvalidEntityWithIdAndPrimaryKeyColumn.class);
@@ -623,7 +385,16 @@ public class CassandraMappingContextUnitTests {
 		assertThat(mappingContext.getUserDefinedTypeEntities()).isEmpty();
 		assertThat(mappingContext.getTableEntities()).isEmpty();
 		assertThat(mappingContext.getPersistentEntities()).isEmpty();
-		assertThat(mappingContext.usesTable(CqlIdentifier.of(tableMetadata.getName()))).isFalse();
+		assertThat(mappingContext.usesTable(tableMetadata.getName())).isFalse();
+	}
+
+	@Test // DATACASS-747
+	void shouldQuoteFieldName() {
+
+		BasicCassandraPersistentEntity<?> entity = mappingContext.getRequiredPersistentEntity(UnsupportedFieldNames.class);
+
+		CassandraPersistentProperty property = entity.getRequiredPersistentProperty("_ent1");
+		assertThat(property.getColumnName()).isEqualTo(CqlIdentifier.fromCql("\"_ent1\""));
 	}
 
 	@Table
@@ -632,24 +403,9 @@ public class CassandraMappingContextUnitTests {
 		@PrimaryKeyColumn String bar;
 	}
 
-	@Table
-	static class EntityWithComplexPrimaryKeyColumn {
-		@PrimaryKeyColumn(ordinal = 0, type = PrimaryKeyType.PARTITIONED) Object complexObject;
-	}
-
-	@Table
-	static class EntityWithComplexId {
-		@Id Object complexObject;
-	}
-
 	@PrimaryKeyClass
-	static class PrimaryKeyClassWithComplexId {
+	private static class PrimaryKeyClassWithComplexId {
 		@PrimaryKeyColumn(ordinal = 0, type = PrimaryKeyType.PARTITIONED) Object complexObject;
-	}
-
-	@Table
-	static class EntityWithPrimaryKeyClassWithComplexId {
-		@Id PrimaryKeyClassWithComplexId primaryKeyClassWithComplexId;
 	}
 
 	private static class Human {}
@@ -669,20 +425,14 @@ public class CassandraMappingContextUnitTests {
 		@Element(0) String name;
 	}
 
-	@UserDefinedType
+	@org.springframework.data.cassandra.core.mapping.UserDefinedType
 	private static class MappedUdt {}
 
 	@Table
 	private static class WithUdt {
 		@Id String id;
-		@CassandraType(type = DataType.Name.UDT, userTypeName = "mappedudt") UDTValue udtValue;
-		@CassandraType(type = DataType.Name.UDT, userTypeName = "NestedType") Nested nested;
-	}
-
-	@Table
-	private static class WithMapOfMixedTypes {
-		@Id String id;
-		Map<MappedUdt, List<Human>> people;
+		@CassandraType(type = Name.UDT, userTypeName = "mappedudt") UdtValue udtValue;
+		@CassandraType(type = Name.UDT, userTypeName = "NestedType") Nested nested;
 	}
 
 	enum HumanToStringConverter implements Converter<Human, String> {
@@ -695,62 +445,19 @@ public class CassandraMappingContextUnitTests {
 		}
 	}
 
-	@Table
-	private static class TypeWithCustomConvertedMap {
-		@Id String id;
-		Map<String, Collection<String>> stringMap;
-		@CassandraType(type = Name.ASCII) Map<String, Collection<String>> blobMap;
-	}
-
-	@Table
-	private static class TypeWithListOfHumans {
-		@Id String id;
-		List<Human> humans;
-	}
-
-	@WritingConverter
-	enum StringMapToStringConverter implements Converter<Map<String, Collection<String>>, String> {
-
-		INSTANCE;
-
-		@Override
-		public String convert(Map<String, Collection<String>> source) {
-			return "serialized";
-		}
-	}
-
-	@UserDefinedType(value = "NestedType")
-	public static class Nested {
+	@org.springframework.data.cassandra.core.mapping.UserDefinedType(value = "NestedType")
+	static class Nested {
 		String s1;
 		@CassandraType(type = Name.UDT, userTypeName = "AnotherNestedType") AnotherNested anotherNested;
 	}
 
-	@UserDefinedType(value = "AnotherNestedType")
-	public static class AnotherNested {
+	@org.springframework.data.cassandra.core.mapping.UserDefinedType(value = "AnotherNestedType")
+	static class AnotherNested {
 		String str;
 	}
 
-	@Table
-	static class TypedTupleEntity {
-		@Id String id;
-		@CassandraType(type = Name.TUPLE, typeArguments = { Name.VARCHAR, Name.BIGINT }) TupleValue typed;
-	}
-
-	@Table
-	static class EntityWithMapOfTuples {
-		@Id String id;
-		Map<String, MappedTuple> map;
-	}
-
-	@Table
-	static class UntypedTupleEntity {
-		@Id String id;
-		TupleValue untyped;
-	}
-
-	@Table
-	static class UntypedTupleMapEntity {
-		@Id String id;
-		Map<String, TupleValue> untyped;
+	private class UnsupportedFieldNames {
+		String _ent1;
+		String _ent2;
 	}
 }

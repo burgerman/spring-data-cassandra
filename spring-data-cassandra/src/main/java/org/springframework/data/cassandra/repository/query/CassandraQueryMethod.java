@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,16 +29,17 @@ import org.springframework.data.cassandra.repository.Query.Idempotency;
 import org.springframework.data.mapping.context.MappingContext;
 import org.springframework.data.projection.ProjectionFactory;
 import org.springframework.data.repository.core.RepositoryMetadata;
+import org.springframework.data.repository.query.Parameters;
+import org.springframework.data.repository.query.ParametersSource;
 import org.springframework.data.repository.query.QueryMethod;
-import org.springframework.data.util.ClassTypeInformation;
 import org.springframework.data.util.TypeInformation;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.StringUtils;
 
-import com.datastax.driver.core.ConsistencyLevel;
-import com.datastax.driver.core.ResultSet;
+import com.datastax.oss.driver.api.core.ConsistencyLevel;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
 
 /**
  * Cassandra specific implementation of {@link QueryMethod}.
@@ -90,14 +91,10 @@ public class CassandraQueryMethod extends QueryMethod {
 	public void verify(Method method, RepositoryMetadata metadata) {
 
 		if (isPageQuery()) {
-			throw new InvalidDataAccessApiUsageException("Page queries are not supported. Use a Slice query.");
+			throw new InvalidDataAccessApiUsageException("Page queries are not supported; Use a Slice query");
 		}
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.repository.query.QueryMethod#getEntityInformation()
-	 */
 	@Override
 	@SuppressWarnings("unchecked")
 	public CassandraEntityMetadata<?> getEntityInformation() {
@@ -127,21 +124,14 @@ public class CassandraQueryMethod extends QueryMethod {
 		return this.entityMetadata;
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.repository.query.QueryMethod#getParameters()
-	 */
 	@Override
 	public CassandraParameters getParameters() {
 		return (CassandraParameters) super.getParameters();
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.query.QueryMethod#createParameters(java.lang.reflect.Method)
-	 */
 	@Override
-	protected CassandraParameters createParameters(Method method) {
-		return new CassandraParameters(method);
+	protected Parameters<?, ?> createParameters(ParametersSource parametersSource) {
+		return new CassandraParameters(parametersSource);
 	}
 
 	/**
@@ -163,7 +153,7 @@ public class CassandraQueryMethod extends QueryMethod {
 	}
 
 	/**
-	 * @return whether the method has an annotated {@link com.datastax.driver.core.ConsistencyLevel}.
+	 * @return whether the method has an annotated {@link ConsistencyLevel}.
 	 * @since 2.0
 	 */
 	public boolean hasConsistencyLevel() {
@@ -212,7 +202,7 @@ public class CassandraQueryMethod extends QueryMethod {
 	 * @return the return type for this {@link QueryMethod}.
 	 */
 	public TypeInformation<?> getReturnType() {
-		return ClassTypeInformation.fromReturnTypeOf(this.method);
+		return TypeInformation.fromReturnTypeOf(this.method);
 	}
 
 	/**

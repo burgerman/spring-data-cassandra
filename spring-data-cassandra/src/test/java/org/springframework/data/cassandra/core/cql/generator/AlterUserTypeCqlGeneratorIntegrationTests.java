@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,30 +17,32 @@ package org.springframework.data.cassandra.core.cql.generator;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.junit.Assume.*;
-import static org.springframework.data.cassandra.core.cql.generator.AlterUserTypeCqlGenerator.*;
+import static org.springframework.data.cassandra.core.cql.generator.CqlGenerator.*;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.data.cassandra.core.cql.keyspace.AlterUserTypeSpecification;
+import org.springframework.data.cassandra.core.cql.keyspace.SpecificationBuilder;
 import org.springframework.data.cassandra.support.CassandraVersion;
-import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTest;
+import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTests;
 import org.springframework.data.util.Version;
 
-import com.datastax.driver.core.DataType;
+import com.datastax.oss.driver.api.core.type.DataTypes;
 
 /**
  * Integration tests for {@link AlterUserTypeCqlGenerator}.
  *
  * @author Mark Paluch
  */
-public class AlterUserTypeCqlGeneratorIntegrationTests extends AbstractKeyspaceCreatingIntegrationTest {
+class AlterUserTypeCqlGeneratorIntegrationTests extends AbstractKeyspaceCreatingIntegrationTests {
 
-	static final Version CASSANDRA_3_10 = Version.parse("3.10");
+	private static final Version CASSANDRA_3_10 = Version.parse("3.10");
+	private static final Version CASSANDRA_3_0_10 = Version.parse("3.0.10");
 
-	Version cassandraVersion;
+	private Version cassandraVersion;
 
-	@Before
-	public void setUp() throws Exception {
+	@BeforeEach
+	void setUp() throws Exception {
 
 		cassandraVersion = CassandraVersion.get(session);
 
@@ -49,38 +51,38 @@ public class AlterUserTypeCqlGeneratorIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-172
-	public void alterTypeShouldAddField() {
+	void alterTypeShouldAddField() {
 
-		AlterUserTypeSpecification spec = AlterUserTypeSpecification.alterType("address")//
-				.add("street", DataType.varchar());
+		AlterUserTypeSpecification spec = SpecificationBuilder.alterType("address")//
+				.add("street", DataTypes.TEXT);
 
 		session.execute(toCql(spec));
 	}
 
 	@Test // DATACASS-172, DATACASS-429
-	public void alterTypeShouldAlterField() {
+	void alterTypeShouldAlterField() {
 
-		assumeTrue(cassandraVersion.isLessThan(CASSANDRA_3_10));
+		assumeTrue(cassandraVersion.isLessThan(CASSANDRA_3_10) && cassandraVersion.isLessThan(CASSANDRA_3_0_10));
 
-		AlterUserTypeSpecification spec = AlterUserTypeSpecification.alterType("address")//
-				.alter("zip", DataType.varchar());
+		AlterUserTypeSpecification spec = SpecificationBuilder.alterType("address")//
+				.alter("zip", DataTypes.TEXT);
 
 		session.execute(toCql(spec));
 	}
 
 	@Test // DATACASS-172
-	public void alterTypeShouldRenameField() {
+	void alterTypeShouldRenameField() {
 
-		AlterUserTypeSpecification spec = AlterUserTypeSpecification.alterType("address")//
+		AlterUserTypeSpecification spec = SpecificationBuilder.alterType("address")//
 				.rename("zip", "zap");
 
 		session.execute(toCql(spec));
 	}
 
 	@Test // DATACASS-172
-	public void alterTypeShouldRenameFields() {
+	void alterTypeShouldRenameFields() {
 
-		AlterUserTypeSpecification spec = AlterUserTypeSpecification.alterType("address")//
+		AlterUserTypeSpecification spec = SpecificationBuilder.alterType("address")//
 				.rename("zip", "zap") //
 				.rename("state", "county");
 
@@ -88,12 +90,12 @@ public class AlterUserTypeCqlGeneratorIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-172
-	public void generationFailsIfNameIsNotSet() {
-		assertThatIllegalArgumentException().isThrownBy(() -> toCql(AlterUserTypeSpecification.alterType(null)));
+	void generationFailsIfNameIsNotSet() {
+		assertThatNullPointerException().isThrownBy(() -> toCql(SpecificationBuilder.alterType(null)));
 	}
 
 	@Test // DATACASS-172
-	public void generationFailsWithoutFields() {
-		assertThatIllegalArgumentException().isThrownBy(() -> toCql(AlterUserTypeSpecification.alterType("hello")));
+	void generationFailsWithoutFields() {
+		assertThatIllegalArgumentException().isThrownBy(() -> toCql(SpecificationBuilder.alterType("hello")));
 	}
 }

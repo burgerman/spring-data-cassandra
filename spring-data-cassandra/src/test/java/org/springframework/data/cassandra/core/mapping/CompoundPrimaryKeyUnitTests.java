@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,11 +20,11 @@ import static org.assertj.core.api.Assertions.*;
 import java.lang.reflect.Field;
 import java.util.Date;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.data.cassandra.core.cql.PrimaryKeyType;
 import org.springframework.data.mapping.model.Property;
-import org.springframework.data.util.ClassTypeInformation;
+import org.springframework.data.util.TypeInformation;
 import org.springframework.util.ReflectionUtils;
 
 /**
@@ -34,7 +34,7 @@ import org.springframework.util.ReflectionUtils;
  * @author Matthew T. Adams
  * @author Mark Paluch
  */
-public class CompoundPrimaryKeyUnitTests {
+class CompoundPrimaryKeyUnitTests {
 
 	@PrimaryKeyClass
 	static class TimelineKey {
@@ -45,25 +45,25 @@ public class CompoundPrimaryKeyUnitTests {
 	}
 
 	@Table
-	static class Timeline {
+	private static class Timeline {
 		@PrimaryKey TimelineKey id;
 
 		@Column("message") String text;
 	}
 
-	CassandraPersistentEntity<TimelineKey> cpk;
-	CassandraPersistentEntity<Timeline> entity;
+	private CassandraPersistentEntity<TimelineKey> cpk;
+	private CassandraPersistentEntity<Timeline> entity;
 
-	@Before
-	public void setup() {
-		cpk = new BasicCassandraPersistentEntity<>(ClassTypeInformation.from(TimelineKey.class));
-		entity = new BasicCassandraPersistentEntity<>(ClassTypeInformation.from(Timeline.class));
+	@BeforeEach
+	void setup() {
+		cpk = new BasicCassandraPersistentEntity<>(TypeInformation.of(TimelineKey.class));
+		entity = new BasicCassandraPersistentEntity<>(TypeInformation.of(Timeline.class));
 	}
 
 	@Test // DATACASS-507
-	public void checkIdProperty() {
+	void checkIdProperty() {
 		Field id = ReflectionUtils.findField(Timeline.class, "id");
-		CassandraPersistentProperty property = getPropertyFor(Property.of(ClassTypeInformation.from(Timeline.class), id));
+		CassandraPersistentProperty property = getPropertyFor(Property.of(TypeInformation.of(Timeline.class), id));
 		assertThat(property.isIdProperty()).isTrue();
 		assertThat(property.isCompositePrimaryKey()).isTrue();
 	}

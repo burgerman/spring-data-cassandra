@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,25 +19,16 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import java.time.LocalDate;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
-
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.cassandra.core.convert.MappingCassandraConverter;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty;
-import org.springframework.data.cassandra.core.mapping.CassandraType;
-import org.springframework.data.cassandra.repository.query.ConvertingParameterAccessor.PotentiallyConvertingIterator;
-import org.springframework.data.util.ClassTypeInformation;
-import org.springframework.data.util.TypeInformation;
 
-import com.datastax.driver.core.CodecRegistry;
-import com.datastax.driver.core.DataType;
+import com.datastax.oss.driver.api.core.type.DataTypes;
 
 /**
  * Unit tests for {@link ConvertingParameterAccessor}.
@@ -45,93 +36,58 @@ import com.datastax.driver.core.DataType;
  * @author Mark Paluch
  */
 @SuppressWarnings("Since15")
-@RunWith(MockitoJUnitRunner.class)
-public class ConvertingParameterAccessorUnitTests {
+@ExtendWith(MockitoExtension.class)
+class ConvertingParameterAccessorUnitTests {
 
 	@Mock CassandraParameterAccessor mockParameterAccessor;
 	@Mock CassandraPersistentProperty mockProperty;
 
-	ConvertingParameterAccessor convertingParameterAccessor;
-	MappingCassandraConverter converter;
+	private ConvertingParameterAccessor convertingParameterAccessor;
+	private MappingCassandraConverter converter;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		this.converter = new MappingCassandraConverter();
 		this.converter.afterPropertiesSet();
-		this.convertingParameterAccessor = new ConvertingParameterAccessor(converter, mockParameterAccessor,
-				CodecRegistry.DEFAULT_INSTANCE);
+		this.convertingParameterAccessor = new ConvertingParameterAccessor(converter, mockParameterAccessor);
 	}
 
 	@Test // DATACASS-296
-	public void shouldReturnNullBindableValue() {
+	void shouldReturnNullBindableValue() {
 
-		ConvertingParameterAccessor accessor = new ConvertingParameterAccessor(converter, mockParameterAccessor,
-				CodecRegistry.DEFAULT_INSTANCE);
+		ConvertingParameterAccessor accessor = new ConvertingParameterAccessor(converter, mockParameterAccessor);
 
 		assertThat(accessor.getBindableValue(0)).isNull();
 	}
 
 	@Test // DATACASS-296
 	@SuppressWarnings({ "rawtypes", "unchecked" })
-	public void shouldReturnNativeBindableValue() {
+	void shouldReturnNativeBindableValue() {
 
 		when(mockParameterAccessor.getBindableValue(0)).thenReturn("hello");
 
-		ConvertingParameterAccessor accessor = new ConvertingParameterAccessor(converter, mockParameterAccessor,
-				CodecRegistry.DEFAULT_INSTANCE);
+		ConvertingParameterAccessor accessor = new ConvertingParameterAccessor(converter, mockParameterAccessor);
 
 		assertThat(accessor.getBindableValue(0)).isEqualTo((Object) "hello");
 	}
 
 	@Test // DATACASS-296
-	public void shouldReturnConvertedBindableValue() {
+	void shouldReturnConvertedBindableValue() {
 
 		LocalDate localDate = LocalDate.of(2010, 7, 4);
 
 		when(mockParameterAccessor.getBindableValue(0)).thenReturn(localDate);
 
-		assertThat(convertingParameterAccessor.getBindableValue(0))
-				.isEqualTo(com.datastax.driver.core.LocalDate.fromYearMonthDay(2010, 7, 4));
+		assertThat(convertingParameterAccessor.getBindableValue(0)).isEqualTo(LocalDate.of(2010, 7, 4));
 	}
 
 	@Test // DATACASS-296, DATACASS-7
-	public void shouldReturnDataTypeProvidedByDelegate() {
+	void shouldReturnDataTypeProvidedByDelegate() {
 
-		when(mockParameterAccessor.getDataType(0)).thenReturn(DataType.varchar());
+		when(mockParameterAccessor.getDataType(0)).thenReturn(DataTypes.TEXT);
 
-		assertThat(convertingParameterAccessor.getDataType(0)).isEqualTo(DataType.varchar());
+		assertThat(convertingParameterAccessor.getDataType(0)).isEqualTo(DataTypes.TEXT);
 	}
 
-	@Test // DATACASS-296, DATACASS-7
-	@SuppressWarnings({ "rawtypes", "unchecked" })
-	public void shouldConvertCollections() {
-
-		LocalDate localDate = LocalDate.of(2010, 7, 4);
-
-		when(mockParameterAccessor.iterator())
-				.thenReturn((Iterator) Collections.singletonList(Collections.singletonList(localDate)).iterator());
-		when(mockProperty.getTypeInformation()).thenReturn((TypeInformation) ClassTypeInformation.LIST);
-
-		PotentiallyConvertingIterator iterator = (PotentiallyConvertingIterator) convertingParameterAccessor.iterator();
-		Object converted = iterator.nextConverted(mockProperty);
-
-		assertThat(converted).isInstanceOf(List.class);
-
-		List<?> list = (List<?>) converted;
-
-		assertThat(list.get(0)).isInstanceOf(com.datastax.driver.core.LocalDate.class);
-	}
-
-	@Test // DATACASS-7, DATACASS-506
-	@SuppressWarnings({ "rawtypes", "unchecked" })
-	public void shouldProvideTypeBasedOnPropertyType() {
-
-		when(mockProperty.getDataType()).thenReturn(DataType.varchar());
-		when(mockProperty.isAnnotationPresent(CassandraType.class)).thenReturn(true);
-		when(mockProperty.getRequiredAnnotation(CassandraType.class)).thenReturn(mock(CassandraType.class));
-		when(mockParameterAccessor.getParameterType(0)).thenReturn((Class) String.class);
-
-		assertThat(convertingParameterAccessor.getDataType(0, mockProperty)).isEqualTo(DataType.varchar());
-	}
 }

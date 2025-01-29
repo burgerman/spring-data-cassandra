@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,30 +15,31 @@
  */
 package org.springframework.data.cassandra.repository.query;
 
-import lombok.RequiredArgsConstructor;
-
 import java.util.Optional;
 import java.util.function.Function;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.data.cassandra.core.StatementFactory;
+import org.springframework.data.cassandra.core.cql.QueryExtractorDelegate;
 import org.springframework.data.cassandra.core.cql.QueryOptions;
+import org.springframework.data.cassandra.core.cql.QueryOptions.QueryOptionsBuilder;
 import org.springframework.data.cassandra.core.cql.QueryOptionsUtil;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentProperty;
 import org.springframework.data.cassandra.core.query.Columns;
 import org.springframework.data.cassandra.core.query.Query;
 import org.springframework.data.cassandra.repository.Query.Idempotency;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.mapping.context.MappingContext;
+import org.springframework.data.mapping.model.ValueExpressionEvaluator;
 import org.springframework.data.repository.query.QueryCreationException;
 import org.springframework.data.repository.query.ResultProcessor;
 import org.springframework.data.repository.query.ReturnedType;
 import org.springframework.data.repository.query.parser.PartTree;
 
-import com.datastax.driver.core.RegularStatement;
-import com.datastax.driver.core.SimpleStatement;
-import com.datastax.driver.core.Statement;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
+import com.datastax.oss.driver.api.core.cql.Statement;
 
 /**
  * Creates {@link Statement}s for {@link CassandraQueryMethod query methods} based on {@link PartTree} and
@@ -47,16 +48,21 @@ import com.datastax.driver.core.Statement;
  * @author Mark Paluch
  * @since 2.0
  */
-@RequiredArgsConstructor
 class QueryStatementCreator {
 
-	private static final Logger LOG = LoggerFactory.getLogger(QueryStatementCreator.class);
+	private static final Log LOG = LogFactory.getLog(QueryStatementCreator.class);
 
 	private final CassandraQueryMethod queryMethod;
 
 	private final MappingContext<? extends CassandraPersistentEntity<?>, CassandraPersistentProperty> mappingContext;
 
-	private CassandraPersistentEntity<?> requirePersistentEntity() {
+	QueryStatementCreator(CassandraQueryMethod queryMethod,
+			MappingContext<? extends CassandraPersistentEntity<?>, CassandraPersistentProperty> mappingContext) {
+		this.queryMethod = queryMethod;
+		this.mappingContext = mappingContext;
+	}
+
+	private CassandraPersistentEntity<?> getPersistentEntity() {
 		return this.mappingContext.getRequiredPersistentEntity(this.queryMethod.getDomainClass());
 	}
 
@@ -68,10 +74,10 @@ class QueryStatementCreator {
 	 * @param parameterAccessor must not be {@literal null}.
 	 * @return the {@literal SELECT} {@link Statement}.
 	 */
-	Statement select(StatementFactory statementFactory, PartTree tree, CassandraParameterAccessor parameterAccessor,
+	SimpleStatement select(StatementFactory statementFactory, PartTree tree, CassandraParameterAccessor parameterAccessor,
 			ResultProcessor processor) {
 
-		Function<Query, Statement> function = query -> {
+		Function<Query, SimpleStatement> function = query -> {
 
 			ReturnedType returnedType = processor.withDynamicProjection(parameterAccessor).getReturnedType();
 
@@ -81,10 +87,10 @@ class QueryStatementCreator {
 				query = query.columns(columns);
 			}
 
-			RegularStatement statement = statementFactory.select(query, requirePersistentEntity());
+			SimpleStatement statement = statementFactory.select(query, getPersistentEntity()).build();
 
 			if (LOG.isDebugEnabled()) {
-				LOG.debug(String.format("Created query [%s].", statement));
+				LOG.debug(String.format("Created query [%s]", statement));
 			}
 
 			return statement;
@@ -102,14 +108,15 @@ class QueryStatementCreator {
 	 * @return the {@literal SELECT} {@link Statement}.
 	 * @since 2.1
 	 */
-	Statement count(StatementFactory statementFactory, PartTree tree, CassandraParameterAccessor parameterAccessor) {
+	SimpleStatement count(StatementFactory statementFactory, PartTree tree,
+			CassandraParameterAccessor parameterAccessor) {
 
-		Function<Query, Statement> function = query -> {
+		Function<Query, SimpleStatement> function = query -> {
 
-			RegularStatement statement = statementFactory.count(query, requirePersistentEntity());
+			SimpleStatement statement = statementFactory.count(query, getPersistentEntity()).build();
 
 			if (LOG.isDebugEnabled()) {
-				LOG.debug(String.format("Created query [%s].", statement));
+				LOG.debug(String.format("Created query [%s]", QueryExtractorDelegate.getCql(statement)));
 			}
 
 			return statement;
@@ -128,14 +135,15 @@ class QueryStatementCreator {
 	 * @return the {@literal DELETE} {@link Statement}.
 	 * @since 2.2
 	 */
-	Statement delete(StatementFactory statementFactory, PartTree tree, CassandraParameterAccessor parameterAccessor) {
+	SimpleStatement delete(StatementFactory statementFactory, PartTree tree,
+			CassandraParameterAccessor parameterAccessor) {
 
-		Function<Query, Statement> function = query -> {
+		Function<Query, SimpleStatement> function = query -> {
 
-			RegularStatement statement = statementFactory.delete(query, requirePersistentEntity());
+			SimpleStatement statement = statementFactory.delete(query, getPersistentEntity()).build();
 
 			if (LOG.isDebugEnabled()) {
-				LOG.debug(String.format("Created query [%s].", statement));
+				LOG.debug(String.format("Created query [%s]", QueryExtractorDelegate.getCql(statement)));
 			}
 
 			return statement;
@@ -154,14 +162,15 @@ class QueryStatementCreator {
 	 * @return the {@literal SELECT} {@link Statement}.
 	 * @since 2.1
 	 */
-	Statement exists(StatementFactory statementFactory, PartTree tree, CassandraParameterAccessor parameterAccessor) {
+	SimpleStatement exists(StatementFactory statementFactory, PartTree tree,
+			CassandraParameterAccessor parameterAccessor) {
 
-		Function<Query, Statement> function = query -> {
+		Function<Query, SimpleStatement> function = query -> {
 
-			RegularStatement statement = statementFactory.select(query.limit(1), requirePersistentEntity());
+			SimpleStatement statement = statementFactory.select(query.limit(1), getPersistentEntity()).build();
 
 			if (LOG.isDebugEnabled()) {
-				LOG.debug(String.format("Created query [%s].", statement));
+				LOG.debug(String.format("Created query [%s]", QueryExtractorDelegate.getCql(statement)));
 			}
 
 			return statement;
@@ -187,8 +196,16 @@ class QueryStatementCreator {
 
 		try {
 
-			if (tree.isLimiting()) {
-				query = query.limit(tree.getMaxResults());
+			Limit limit = parameterAccessor.getLimit();
+
+			if (!queryMethod.isScrollQuery()) {
+
+				if (limit.isLimited()) {
+					query = query.limit(limit);
+				}
+				if (tree.isLimiting()) {
+					query = query.limit(tree.getMaxResults());
+				}
 			}
 
 			if (allowsFiltering()) {
@@ -196,13 +213,22 @@ class QueryStatementCreator {
 			}
 
 			Optional<QueryOptions> queryOptions = Optional.ofNullable(parameterAccessor.getQueryOptions());
+			QueryOptionsBuilder optionsBuilder = queryOptions.orElseGet(QueryOptions::empty).mutate();
 
-			if (queryOptions.isPresent()) {
-				query = Optional.ofNullable(parameterAccessor.getQueryOptions()).map(query::queryOptions).orElse(query);
-			} else if (this.queryMethod.hasConsistencyLevel()) {
-				query = query.queryOptions(
-						QueryOptions.builder().consistencyLevel(this.queryMethod.getRequiredAnnotatedConsistencyLevel()).build());
+			if (queryMethod.isScrollQuery()) {
+
+				if (limit.isLimited()) {
+					optionsBuilder.pageSize(limit.max());
+				} else if (tree.isLimiting()) {
+					optionsBuilder.pageSize(tree.getMaxResults());
+				}
 			}
+
+			if (this.queryMethod.hasConsistencyLevel()) {
+				optionsBuilder.consistencyLevel(this.queryMethod.getRequiredAnnotatedConsistencyLevel());
+			}
+
+			query = query.queryOptions(optionsBuilder.build());
 
 			return function.apply(query);
 		} catch (RuntimeException cause) {
@@ -211,7 +237,6 @@ class QueryStatementCreator {
 	}
 
 	private boolean allowsFiltering() {
-
 		return this.queryMethod.getQueryAnnotation()
 				.map(org.springframework.data.cassandra.repository.Query::allowFiltering).orElse(false);
 	}
@@ -223,11 +248,12 @@ class QueryStatementCreator {
 	 * @param parameterAccessor must not be {@literal null}.
 	 * @return the {@link Statement}.
 	 */
-	SimpleStatement select(StringBasedQuery stringBasedQuery, CassandraParameterAccessor parameterAccessor) {
+	SimpleStatement select(StringBasedQuery stringBasedQuery, CassandraParameterAccessor parameterAccessor,
+			ValueExpressionEvaluator evaluator) {
 
 		try {
 
-			SimpleStatement boundQuery = stringBasedQuery.bindQuery(parameterAccessor, this.queryMethod);
+			SimpleStatement boundQuery = stringBasedQuery.bindQuery(parameterAccessor, evaluator);
 
 			Optional<QueryOptions> queryOptions = Optional.ofNullable(parameterAccessor.getQueryOptions());
 
@@ -237,16 +263,16 @@ class QueryStatementCreator {
 				queryToUse = Optional.ofNullable(parameterAccessor.getQueryOptions())
 						.map(it -> QueryOptionsUtil.addQueryOptions(boundQuery, it)).orElse(boundQuery);
 			} else if (this.queryMethod.hasConsistencyLevel()) {
-				queryToUse.setConsistencyLevel(this.queryMethod.getRequiredAnnotatedConsistencyLevel());
+				queryToUse = queryToUse.setConsistencyLevel(this.queryMethod.getRequiredAnnotatedConsistencyLevel());
 			}
 
 			Idempotency idempotency = this.queryMethod.getIdempotency();
 			if (idempotency != Idempotency.UNDEFINED) {
-				queryToUse.setIdempotent(idempotency == Idempotency.IDEMPOTENT);
+				queryToUse = queryToUse.setIdempotent(idempotency == Idempotency.IDEMPOTENT);
 			}
 
 			if (LOG.isDebugEnabled()) {
-				LOG.debug(String.format("Created query [%s].", queryToUse));
+				LOG.debug(String.format("Created query [%s]", QueryExtractorDelegate.getCql(queryToUse)));
 			}
 
 			return queryToUse;

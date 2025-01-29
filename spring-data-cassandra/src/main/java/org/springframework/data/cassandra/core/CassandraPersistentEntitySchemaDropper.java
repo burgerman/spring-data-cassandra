@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,18 +25,21 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity;
 import org.springframework.util.Assert;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 
-import com.datastax.driver.core.AbstractTableMetadata;
-import com.datastax.driver.core.DataType;
-import com.datastax.driver.core.TupleType;
-import com.datastax.driver.core.UserType;
-import com.datastax.driver.core.UserType.Field;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.metadata.schema.KeyspaceMetadata;
+import com.datastax.oss.driver.api.core.metadata.schema.RelationMetadata;
+import com.datastax.oss.driver.api.core.type.DataType;
+import com.datastax.oss.driver.api.core.type.ListType;
+import com.datastax.oss.driver.api.core.type.MapType;
+import com.datastax.oss.driver.api.core.type.SetType;
+import com.datastax.oss.driver.api.core.type.TupleType;
+import com.datastax.oss.driver.api.core.type.UserDefinedType;
 
 /**
  * Schema drop support for Cassandra based on {@link CassandraMappingContext} and {@link CassandraPersistentEntity}.
@@ -78,11 +81,17 @@ public class CassandraPersistentEntitySchemaDropper {
 	 */
 	public void dropTables(boolean dropUnused) {
 
+		KeyspaceMetadata keyspaceMetadata = this.cassandraAdminOperations.getKeyspaceMetadata();
+		Set<CqlIdentifier> canRecreate = this.mappingContext.getTableEntities().stream()
+				.filter(it -> isInKeyspace(it, keyspaceMetadata)).map(CassandraPersistentEntity::getTableName)
+				.collect(Collectors.toSet());
+
 		this.cassandraAdminOperations.getKeyspaceMetadata() //
 				.getTables() //
+				.values() //
 				.stream() //
-				.map(AbstractTableMetadata::getName) //
-				.map(CqlIdentifier::of).filter(table -> dropUnused || this.mappingContext.usesTable(table)) //
+				.map(RelationMetadata::getName) //
+				.filter(table -> canRecreate.contains(table) || (dropUnused && !mappingContext.usesTable(table))) //
 				.forEach(this.cassandraAdminOperations::dropTable);
 	}
 
@@ -95,15 +104,26 @@ public class CassandraPersistentEntitySchemaDropper {
 	 */
 	public void dropUserTypes(boolean dropUnused) {
 
+		KeyspaceMetadata keyspaceMetadata = this.cassandraAdminOperations.getKeyspaceMetadata();
 		Set<CqlIdentifier> canRecreate = this.mappingContext.getUserDefinedTypeEntities().stream()
-				.map(CassandraPersistentEntity::getTableName).collect(Collectors.toSet());
+				.filter(it -> isInKeyspace(it, keyspaceMetadata)).map(CassandraPersistentEntity::getTableName)
+				.collect(Collectors.toSet());
 
-		Collection<UserType> userTypes = this.cassandraAdminOperations.getKeyspaceMetadata().getUserTypes();
+		Collection<UserDefinedType> userTypes = keyspaceMetadata.getUserDefinedTypes().values();
 
 		getUserTypesToDrop(userTypes) //
 				.stream() //
 				.filter(it -> canRecreate.contains(it) || (dropUnused && !mappingContext.usesUserType(it))) //
 				.forEach(this.cassandraAdminOperations::dropUserType);
+	}
+
+	private static boolean isInKeyspace(CassandraPersistentEntity<?> entity, KeyspaceMetadata keyspaceMetadata) {
+
+		if (entity.hasKeyspace() && keyspaceMetadata.getName().equals(entity.getRequiredKeyspace())) {
+			return true;
+		}
+
+		return !entity.hasKeyspace();
 	}
 
 	/**
@@ -112,7 +132,7 @@ public class CassandraPersistentEntitySchemaDropper {
 	 *
 	 * @return {@link List} of {@link CqlIdentifier}.
 	 */
-	private List<CqlIdentifier> getUserTypesToDrop(Collection<UserType> knownUserTypes) {
+	private List<CqlIdentifier> getUserTypesToDrop(Collection<UserDefinedType> knownUserTypes) {
 
 		List<CqlIdentifier> toDrop = new ArrayList<>();
 
@@ -124,9 +144,7 @@ public class CassandraPersistentEntitySchemaDropper {
 		Set<CqlIdentifier> globalSeen = new LinkedHashSet<>();
 
 		knownUserTypes.forEach(userType -> {
-
-			CqlIdentifier typeName = CqlIdentifier.of(userType.getTypeName());
-			toDrop.addAll(dependencyGraph.getDropOrder(typeName, globalSeen::add));
+			toDrop.addAll(dependencyGraph.getDropOrder(userType.getName(), globalSeen::add));
 		});
 
 		return toDrop;
@@ -149,7 +167,7 @@ public class CassandraPersistentEntitySchemaDropper {
 		 *
 		 * @param userType must not be {@literal null.}
 		 */
-		void addUserType(UserType userType) {
+		void addUserType(UserDefinedType userType) {
 
 			Set<CqlIdentifier> seen = new LinkedHashSet<>();
 			visitTypes(userType, seen::add);
@@ -170,45 +188,68 @@ public class CassandraPersistentEntitySchemaDropper {
 		 * @param userType
 		 * @param typeFilter
 		 */
-		private void visitTypes(UserType userType, Predicate<CqlIdentifier> typeFilter) {
+		private void visitTypes(UserDefinedType userType, Predicate<CqlIdentifier> typeFilter) {
 
-			CqlIdentifier typeName = CqlIdentifier.of(userType.getTypeName());
+			CqlIdentifier typeName = userType.getName();
 
 			if (!typeFilter.test(typeName)) {
 				return;
 			}
 
-			for (Field field : userType) {
+			for (DataType fieldType : userType.getFieldTypes()) {
 
-				if (field.getType() instanceof UserType) {
+				if (fieldType instanceof UserDefinedType) {
 
-					addDependency((UserType) field.getType(), typeName, typeFilter);
+					addDependency((UserDefinedType) fieldType, typeName, typeFilter);
 
 					return;
 				}
 
-				doWithTypeArguments(field.getType(), it -> {
+				doWithTypeArguments(fieldType, it -> {
 
-					if (it instanceof UserType) {
-						addDependency((UserType) it, typeName, typeFilter);
+					if (it instanceof UserDefinedType) {
+						addDependency((UserDefinedType) it, typeName, typeFilter);
 					}
 				});
 			}
 		}
 
-		private void addDependency(UserType userType, CqlIdentifier requiredBy, Predicate<CqlIdentifier> typeFilter) {
+		private void addDependency(UserDefinedType userType, CqlIdentifier requiredBy,
+				Predicate<CqlIdentifier> typeFilter) {
 
-			dependencies.add(CqlIdentifier.of(userType.getTypeName()), requiredBy);
+			dependencies.add(userType.getName(), requiredBy);
 
 			visitTypes(userType, typeFilter);
 		}
 
 		private static void doWithTypeArguments(DataType type, Consumer<DataType> callback) {
 
-			type.getTypeArguments().forEach(nested -> {
-				callback.accept(nested);
-				doWithTypeArguments(nested, callback);
-			});
+			if (type instanceof MapType) {
+
+				MapType mapType = (MapType) type;
+
+				callback.accept(mapType.getKeyType());
+				doWithTypeArguments(mapType.getKeyType(), callback);
+
+				callback.accept(mapType.getValueType());
+				doWithTypeArguments(mapType.getValueType(), callback);
+			}
+
+			if (type instanceof ListType) {
+
+				ListType listType = (ListType) type;
+
+				callback.accept(listType.getElementType());
+				doWithTypeArguments(listType.getElementType(), callback);
+			}
+
+			if (type instanceof SetType) {
+
+				SetType setType = (SetType) type;
+
+				callback.accept(setType.getElementType());
+				doWithTypeArguments(setType.getElementType(), callback);
+			}
 
 			if (type instanceof TupleType) {
 

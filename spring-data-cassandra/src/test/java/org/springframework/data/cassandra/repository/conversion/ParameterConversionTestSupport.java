@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,28 +19,28 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
 
-import org.junit.Before;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
-import org.springframework.data.cassandra.config.CassandraSessionFactoryBean;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.data.cassandra.config.SchemaAction;
 import org.springframework.data.cassandra.core.CassandraAdminOperations;
 import org.springframework.data.cassandra.core.CassandraOperations;
 import org.springframework.data.cassandra.core.convert.CassandraCustomConversions;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import org.springframework.data.cassandra.core.cql.session.init.KeyspacePopulator;
+import org.springframework.data.cassandra.core.cql.session.init.ResourceKeyspacePopulator;
 import org.springframework.data.cassandra.core.mapping.SimpleUserTypeResolver;
 import org.springframework.data.cassandra.core.mapping.UserTypeResolver;
 import org.springframework.data.cassandra.repository.config.EnableCassandraRepositories;
 import org.springframework.data.cassandra.repository.support.AbstractSpringDataEmbeddedCassandraIntegrationTest;
 import org.springframework.data.cassandra.repository.support.IntegrationTestConfig;
-import org.springframework.data.convert.CustomConversions;
+import org.springframework.lang.Nullable;
 import org.springframework.util.StringUtils;
 
-import com.datastax.driver.core.Cluster;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.UDTValue;
-import com.datastax.driver.core.UserType;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.data.UdtValue;
+import com.datastax.oss.driver.api.core.type.UserDefinedType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
@@ -64,22 +64,17 @@ abstract class ParameterConversionTestSupport extends AbstractSpringDataEmbedded
 			return SchemaAction.RECREATE_DROP_UNUSED;
 		}
 
+		@Nullable
 		@Override
-		public CassandraSessionFactoryBean session() {
-
-			Cluster cluster = cluster().getObject();
-			Session session = cluster.connect(getKeyspaceName());
-			session.execute("CREATE TYPE IF NOT EXISTS phone (number text);");
-			session.close();
-
-			return super.session();
+		protected KeyspacePopulator keyspacePopulator() {
+			return new ResourceKeyspacePopulator(
+					new ByteArrayResource("CREATE TYPE IF NOT EXISTS phone (number text);".getBytes()));
 		}
 
 		@Override
-		public CustomConversions customConversions() {
-			return new CassandraCustomConversions(
-					Arrays.asList(AddressReadConverter.INSTANCE, AddressWriteConverter.INSTANCE, PhoneReadConverter.INSTANCE,
-							new PhoneWriteConverter(new SimpleUserTypeResolver(cluster().getObject(), getKeyspaceName()))));
+		public CassandraCustomConversions customConversions() {
+			return new CassandraCustomConversions(Arrays.asList(AddressReadConverter.INSTANCE, AddressWriteConverter.INSTANCE,
+					PhoneReadConverter.INSTANCE, new PhoneWriteConverter(new SimpleUserTypeResolver(getRequiredSession()))));
 		}
 	}
 
@@ -88,7 +83,7 @@ abstract class ParameterConversionTestSupport extends AbstractSpringDataEmbedded
 
 	Contact walter, flynn;
 
-	@Before
+	@BeforeEach
 	public void before() {
 
 		deleteAllEntities();
@@ -141,11 +136,11 @@ abstract class ParameterConversionTestSupport extends AbstractSpringDataEmbedded
 	/**
 	 * @author Mark Paluch
 	 */
-	private enum PhoneReadConverter implements Converter<UDTValue, Phone> {
+	private enum PhoneReadConverter implements Converter<UdtValue, Phone> {
 
 		INSTANCE;
 
-		public Phone convert(UDTValue source) {
+		public Phone convert(UdtValue source) {
 
 			Phone phone = new Phone();
 			phone.setNumber(source.getString("number"));
@@ -157,7 +152,7 @@ abstract class ParameterConversionTestSupport extends AbstractSpringDataEmbedded
 	/**
 	 * @author Mark Paluch
 	 */
-	private static class PhoneWriteConverter implements Converter<Phone, UDTValue> {
+	private static class PhoneWriteConverter implements Converter<Phone, UdtValue> {
 
 		private UserTypeResolver userTypeResolver;
 
@@ -165,10 +160,10 @@ abstract class ParameterConversionTestSupport extends AbstractSpringDataEmbedded
 			this.userTypeResolver = userTypeResolver;
 		}
 
-		public UDTValue convert(Phone source) {
+		public UdtValue convert(Phone source) {
 
-			UserType userType = userTypeResolver.resolveType(CqlIdentifier.of("phone"));
-			UDTValue udtValue = userType.newValue();
+			UserDefinedType userType = userTypeResolver.resolveType(CqlIdentifier.fromCql("phone"));
+			UdtValue udtValue = userType.newValue();
 			udtValue.setString("number", source.getNumber());
 
 			return udtValue;

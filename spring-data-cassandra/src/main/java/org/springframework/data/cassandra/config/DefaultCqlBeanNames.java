@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,15 @@ package org.springframework.data.cassandra.config;
  * @author Alex Shvid
  * @author David Webb
  * @author Matthew T. Adams
+ * @author Mark Paluch
  */
 public interface DefaultCqlBeanNames {
 
-	String CLUSTER = "cassandraCluster";
+	/**
+	 * @deprecated since 3.0. Cassandra driver 4 no longer provides a {@code Cluster} type.
+	 */
+	@Deprecated String CLUSTER = "cassandraCluster";
 	String SESSION = "cassandraSession";
+	String SESSION_FACTORY = "cassandraSessionFactory";
 	String TEMPLATE = "cqlTemplate";
 }

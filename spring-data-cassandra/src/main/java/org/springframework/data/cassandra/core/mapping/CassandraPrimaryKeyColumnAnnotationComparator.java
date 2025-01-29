@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,17 +38,12 @@ public enum CassandraPrimaryKeyColumnAnnotationComparator implements Comparator<
 	 */
 	INSTANCE;
 
-	/* (non-Javadoc)
-	 * @see java.util.Comparator#compare(java.lang.Object, java.lang.Object)
-	 */
 	@Override
 	public int compare(PrimaryKeyColumn left, PrimaryKeyColumn right) {
 
 		int comparison = left.type().compareTo(right.type());
 
 		comparison = (comparison != 0 ? comparison : Integer.compare(left.ordinal(), right.ordinal()));
-		comparison = (comparison != 0 ? comparison : left.name().compareTo(right.name()));
-		comparison = (comparison != 0 ? comparison : left.ordering().compareTo(right.ordering()));
 
 		return comparison;
 	}

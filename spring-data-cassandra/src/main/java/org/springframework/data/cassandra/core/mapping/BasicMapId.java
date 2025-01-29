@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import org.springframework.util.Assert;
 
 /**
  * Simple implementation of {@link MapId}.
- * <p/>
+ * <p>
  * <em>Note:</em> This could be extended in various cool ways, like one that takes a type and validates that the given
  * name corresponds to an actual field or bean property on that type. There could also be another one that uses a
  * {@link CassandraPersistentEntity} and {@link CassandraPersistentProperty} instead of a String name.
@@ -81,52 +81,34 @@ public class BasicMapId implements MapId {
 		return new BasicMapId(id);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.mapping.MapId#with(java.lang.String, java.io.Object)
-	 */
 	@Override
 	public BasicMapId with(String name, @Nullable Object value) {
 		put(name, value);
 		return this;
 	}
 
-	/* (non-Javadoc)
-	 * @see java.util.Map#clear()
-	 */
 	@Override
 	public void clear() {
 		map.clear();
 	}
 
-	/* (non-Javadoc)
-	 * @see java.util.Map#containsKey(java.lang.Object)
-	 */
 	@Override
 	public boolean containsKey(Object name) {
 		return map.containsKey(name);
 	}
 
-	/* (non-Javadoc)
-	 * @see java.util.Map#containsValue(java.lang.Object)
-	 */
 	@Override
 	public boolean containsValue(Object value) {
 		return map.containsValue(value);
 	}
 
-	/* (non-Javadoc)
-	 * @see java.util.Map#entrySet()
-	 */
 	@Override
 	public Set<java.util.Map.Entry<String, Object>> entrySet() {
 		return map.entrySet();
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#equals(java.lang.Object)
-	 */
 	@Override
-	public boolean equals(Object that) {
+	public boolean equals(@Nullable Object that) {
 		if (this == that) {
 			return true;
 		}
@@ -139,81 +121,51 @@ public class BasicMapId implements MapId {
 		return map.equals(that);
 	}
 
-	/* (non-Javadoc)
-	 * @see java.util.Map#get(java.lang.Object)
-	 */
 	@Override
 	public Object get(Object name) {
 		return map.get(name);
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#hashCode()
-	 */
 	@Override
 	public int hashCode() {
 		return map.hashCode();
 	}
 
-	/* (non-Javadoc)
-	 * @see java.util.Map#isEmpty()
-	 */
 	@Override
 	public boolean isEmpty() {
 		return map.isEmpty();
 	}
 
-	/* (non-Javadoc)
-	 * @see java.util.Map#keySet()
-	 */
 	@Override
 	public Set<String> keySet() {
 		return map.keySet();
 	}
 
-	/* (non-Javadoc)
-	 * @see java.util.Map#put(java.lang.Object, java.lang.Object)
-	 */
 	@Override
 	public Object put(String name, Object value) {
 		return map.put(name, value);
 	}
 
-	/* (non-Javadoc)
-	 * @see java.util.Map#putAll(java.util.Map)
-	 */
 	@Override
 	public void putAll(Map<? extends String, ? extends Object> source) {
 		map.putAll(source);
 	}
 
-	/* (non-Javadoc)
-	 * @see java.util.Map#remove(java.lang.Object)
-	 */
 	@Override
 	public Object remove(Object name) {
 		return map.remove(name);
 	}
 
-	/* (non-Javadoc)
-	 * @see java.util.Map#size()
-	 */
 	@Override
 	public int size() {
 		return map.size();
 	}
 
-	/* (non-Javadoc)
-	 * @see java.util.Map#values()
-	 */
 	@Override
 	public Collection<Object> values() {
 		return map.values();
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#toString()
-	 */
 	@Override
 	public String toString() {
 

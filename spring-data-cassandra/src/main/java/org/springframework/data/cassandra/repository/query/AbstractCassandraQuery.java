@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2019 the original author or authors.
+ * Copyright 2010-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,6 @@ package org.springframework.data.cassandra.repository.query;
 
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.data.cassandra.core.CassandraOperations;
-import org.springframework.data.cassandra.core.convert.CassandraConverter;
-import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
 import org.springframework.data.cassandra.repository.query.CassandraQueryExecution.CollectionExecution;
 import org.springframework.data.cassandra.repository.query.CassandraQueryExecution.ExistsExecution;
 import org.springframework.data.cassandra.repository.query.CassandraQueryExecution.ResultProcessingConverter;
@@ -27,14 +25,14 @@ import org.springframework.data.cassandra.repository.query.CassandraQueryExecuti
 import org.springframework.data.cassandra.repository.query.CassandraQueryExecution.SingleEntityExecution;
 import org.springframework.data.cassandra.repository.query.CassandraQueryExecution.SlicedExecution;
 import org.springframework.data.cassandra.repository.query.CassandraQueryExecution.StreamExecution;
+import org.springframework.data.cassandra.repository.query.CassandraQueryExecution.WindowExecution;
 import org.springframework.data.repository.query.ParameterAccessor;
 import org.springframework.data.repository.query.RepositoryQuery;
 import org.springframework.data.repository.query.ResultProcessor;
 import org.springframework.lang.Nullable;
-import org.springframework.util.Assert;
 
-import com.datastax.driver.core.CodecRegistry;
-import com.datastax.driver.core.Statement;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
+import com.datastax.oss.driver.api.core.cql.Statement;
 
 /**
  * Base class for {@link RepositoryQuery} implementations for Cassandra.
@@ -47,19 +45,6 @@ public abstract class AbstractCassandraQuery extends CassandraRepositoryQuerySup
 
 	private final CassandraOperations operations;
 
-	private final CodecRegistry codecRegistry;
-
-	private static CassandraConverter toConverter(CassandraOperations operations) {
-
-		Assert.notNull(operations, "CassandraOperations must not be null");
-
-		return operations.getConverter();
-	}
-
-	private static CassandraMappingContext toMappingContext(CassandraOperations operations) {
-		return toConverter(operations).getMappingContext();
-	}
-
 	/**
 	 * Create a new {@link AbstractCassandraQuery} from the given {@link CassandraQueryMethod} and
 	 * {@link CassandraOperations}.
@@ -69,10 +54,9 @@ public abstract class AbstractCassandraQuery extends CassandraRepositoryQuerySup
 	 */
 	public AbstractCassandraQuery(CassandraQueryMethod queryMethod, CassandraOperations operations) {
 
-		super(queryMethod, toMappingContext(operations));
+		super(queryMethod, operations.getConverter().getMappingContext());
 
 		this.operations = operations;
-		this.codecRegistry = operations.getConverter().getMappingContext().getCodecRegistry();
 	}
 
 	/**
@@ -85,22 +69,17 @@ public abstract class AbstractCassandraQuery extends CassandraRepositoryQuerySup
 		return this.operations;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.query.RepositoryQuery#execute(java.lang.Object[])
-	 */
 	@Nullable
 	@Override
 	public Object execute(Object[] parameters) {
 
-		CassandraParameterAccessor parameterAccessor = new ConvertingParameterAccessor(toConverter(getOperations()),
-				new CassandraParametersParameterAccessor(getQueryMethod(), parameters), codecRegistry);
-
+		CassandraParameterAccessor parameterAccessor = new CassandraParametersParameterAccessor(getQueryMethod(),
+				parameters);
 		ResultProcessor resultProcessor = getQueryMethod().getResultProcessor().withDynamicProjection(parameterAccessor);
-
-		Statement statement = createQuery(parameterAccessor);
+		Statement<?> statement = createQuery(parameterAccessor);
 
 		CassandraQueryExecution queryExecution = getExecution(parameterAccessor,
-				new ResultProcessingConverter(resultProcessor, toMappingContext(getOperations()), getEntityInstantiators()));
+				new ResultProcessingConverter(resultProcessor, getMappingContext(), getEntityInstantiators()));
 
 		Class<?> resultType = resolveResultType(resultProcessor);
 
@@ -112,7 +91,7 @@ public abstract class AbstractCassandraQuery extends CassandraRepositoryQuerySup
 		CassandraReturnedType returnedType = new CassandraReturnedType(resultProcessor.getReturnedType(),
 				getOperations().getConverter().getCustomConversions());
 
-		return returnedType.isProjecting() ? returnedType.getDomainType() : returnedType.getReturnedType();
+		return returnedType.getResultType();
 	}
 
 	/**
@@ -120,7 +99,7 @@ public abstract class AbstractCassandraQuery extends CassandraRepositoryQuerySup
 	 *
 	 * @param accessor must not be {@literal null}.
 	 */
-	protected abstract Statement createQuery(CassandraParameterAccessor accessor);
+	protected abstract SimpleStatement createQuery(CassandraParameterAccessor accessor);
 
 	/**
 	 * Returns the execution instance to use.
@@ -140,6 +119,8 @@ public abstract class AbstractCassandraQuery extends CassandraRepositoryQuerySup
 
 		if (getQueryMethod().isSliceQuery()) {
 			return new SlicedExecution(getOperations(), parameterAccessor.getPageable());
+		} else if (getQueryMethod().isScrollQuery()) {
+			return new WindowExecution(getOperations(), parameterAccessor.getScrollPosition(), parameterAccessor.getLimit());
 		} else if (getQueryMethod().isCollectionQuery()) {
 			return new CollectionExecution(getOperations());
 		} else if (getQueryMethod().isResultSetQuery()) {
@@ -151,7 +132,7 @@ public abstract class AbstractCassandraQuery extends CassandraRepositoryQuerySup
 		} else if (isExistsQuery()) {
 			return new ExistsExecution(getOperations());
 		} else if (isModifyingQuery()) {
-			return ((statement, type) -> getOperations().getCqlOperations().queryForResultSet(statement).wasApplied());
+			return ((statement, type) -> getOperations().execute(statement).wasApplied());
 		} else {
 			return new SingleEntityExecution(getOperations(), isLimiting());
 		}
@@ -188,4 +169,5 @@ public abstract class AbstractCassandraQuery extends CassandraRepositoryQuerySup
 	 * @since 2.2
 	 */
 	protected abstract boolean isModifyingQuery();
+
 }

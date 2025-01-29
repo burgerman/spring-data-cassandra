@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,13 @@ package org.springframework.data.cassandra.config;
 
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.data.cassandra.SessionFactory;
 import org.springframework.data.cassandra.core.cql.CqlTemplate;
+import org.springframework.data.cassandra.core.cql.session.DefaultSessionFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.Session;
+import com.datastax.oss.driver.api.core.CqlSession;
 
 /**
  * Factory for configuring a {@link CqlTemplate}.
@@ -33,54 +35,58 @@ public class CassandraCqlTemplateFactoryBean implements FactoryBean<CqlTemplate>
 
 	private @Nullable CqlTemplate template;
 
-	private @Nullable Session session;
+	private @Nullable SessionFactory sessionFactory;
 
-	/* (non-Javadoc)
-	 * @see org.springframework.beans.factory.FactoryBean#getObject()
-	 */
 	@Override
 	public CqlTemplate getObject() {
 		return template;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.beans.factory.FactoryBean#getObjectType()
-	 */
 	@Override
 	public Class<CqlTemplate> getObjectType() {
 		return CqlTemplate.class;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.beans.factory.FactoryBean#isSingleton()
-	 */
 	@Override
 	public boolean isSingleton() {
 		return true;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.beans.factory.InitializingBean#afterPropertiesSet()
-	 */
 	@Override
 	public void afterPropertiesSet() throws Exception {
 
-		Assert.notNull(session, "Session must not be null");
+		Assert.notNull(sessionFactory, "SessionFactory must not be null");
 
-		this.template = new CqlTemplate(session);
+		this.template = new CqlTemplate(sessionFactory);
 	}
 
 	/**
-	 * Sets the Cassandra {@link Session} to use. The {@link CqlTemplate} will use the logged keyspace of the underlying
-	 * {@link Session}. Don't change the keyspace using CQL but use multiple {@link Session} and {@link CqlTemplate}
-	 * beans.
+	 * Sets the Cassandra {@link CqlSession} to use. The {@link CqlTemplate} will use the logged keyspace of the
+	 * underlying {@link CqlSession}. Don't change the keyspace using CQL but use multiple {@link CqlSession} and
+	 * {@link CqlTemplate} beans.
 	 *
 	 * @param session must not be {@literal null}.
 	 */
-	public void setSession(Session session) {
+	public void setSession(CqlSession session) {
 
 		Assert.notNull(session, "Session must not be null");
 
-		this.session = session;
+		setSessionFactory(new DefaultSessionFactory(session));
+	}
+
+	/**
+	 * Sets the Cassandra {@link SessionFactory} to use. The {@link CqlTemplate} will use the logged keyspace of the
+	 * underlying {@link SessionFactory}. Don't change the keyspace using CQL but use an appropriate
+	 * {@link SessionFactory}.
+	 *
+	 * @param sessionFactory must not be {@literal null}.
+	 * @see SessionFactory
+	 * @see org.springframework.data.cassandra.core.cql.session.lookup.AbstractRoutingSessionFactory
+	 */
+	public void setSessionFactory(SessionFactory sessionFactory) {
+
+		Assert.notNull(sessionFactory, "SessionFactory must not be null");
+
+		this.sessionFactory = sessionFactory;
 	}
 }

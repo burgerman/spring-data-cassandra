@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,16 +18,18 @@ package org.springframework.data.cassandra.core.cql;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.dao.TypeMismatchDataAccessException;
 
-import com.datastax.driver.core.ColumnDefinitions;
-import com.datastax.driver.core.DataType;
-import com.datastax.driver.core.Row;
+import com.datastax.oss.driver.api.core.cql.ColumnDefinition;
+import com.datastax.oss.driver.api.core.cql.ColumnDefinitions;
+import com.datastax.oss.driver.api.core.cql.Row;
 
 /**
  * Unit tests for {@link SingleColumnRowMapper}.
@@ -35,21 +37,23 @@ import com.datastax.driver.core.Row;
  * @author Mark Paluch
  * @soundtrack Kos Vs Michael Buffer - Go For It All (Rubberboot Mix)
  */
-@RunWith(MockitoJUnitRunner.class)
-public class SingleColumnRowMapperUnitTests {
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+class SingleColumnRowMapperUnitTests {
 
-	@Mock private Row row;
-	@Mock private ColumnDefinitions columnDefinitions;
+	@Mock Row row;
+	@Mock ColumnDefinition columnDefinition;
+	@Mock ColumnDefinitions columnDefinitions;
 
 	private SingleColumnRowMapper rowMapper;
 
-	@Before
-	public void before() throws Exception {
+	@BeforeEach
+	void before() throws Exception {
 		when(row.getColumnDefinitions()).thenReturn(columnDefinitions);
 	}
 
 	@Test // DATACASS-335
-	public void getColumnValueWithType() {
+	void getColumnValueWithType() {
 
 		when(row.getDouble(2)).thenReturn(42d);
 
@@ -59,7 +63,7 @@ public class SingleColumnRowMapperUnitTests {
 	}
 
 	@Test // DATACASS-335
-	public void getColumnValue() {
+	void getColumnValue() {
 
 		when(row.getObject(2)).thenReturn(42d);
 
@@ -69,7 +73,7 @@ public class SingleColumnRowMapperUnitTests {
 	}
 
 	@Test // DATACASS-335
-	public void convertValueToRequiredTypeForNumber() {
+	void convertValueToRequiredTypeForNumber() {
 
 		rowMapper = new SingleColumnRowMapper<Number>();
 
@@ -79,7 +83,7 @@ public class SingleColumnRowMapperUnitTests {
 	}
 
 	@Test // DATACASS-335
-	public void convertValueToRequiredTypeForString() {
+	void convertValueToRequiredTypeForString() {
 
 		rowMapper = new SingleColumnRowMapper<Number>();
 
@@ -87,16 +91,16 @@ public class SingleColumnRowMapperUnitTests {
 		assertThat(rowMapper.convertValueToRequiredType("1234.2", Double.class)).isEqualTo(1234.2);
 	}
 
-	@Test(expected = IllegalArgumentException.class) // DATACASS-335
-	public void convertValueToRequiredTypeShouldFail() {
+	@Test // DATACASS-335
+	void convertValueToRequiredTypeShouldFail() {
 
 		rowMapper = new SingleColumnRowMapper<>();
 
-		rowMapper.convertValueToRequiredType("1234", Object.class);
+		assertThatIllegalArgumentException().isThrownBy(() -> rowMapper.convertValueToRequiredType("1234", Object.class));
 	}
 
 	@Test // DATACASS-335
-	public void mapRowSingleColumn() {
+	void mapRowSingleColumn() {
 
 		when(columnDefinitions.size()).thenReturn(1);
 		when(row.getInt(0)).thenReturn(42);
@@ -107,7 +111,7 @@ public class SingleColumnRowMapperUnitTests {
 	}
 
 	@Test // DATACASS-335
-	public void mapRowSingleColumnNullValue() {
+	void mapRowSingleColumnNullValue() {
 
 		when(columnDefinitions.size()).thenReturn(1);
 		when(row.getObject(0)).thenReturn(null);
@@ -117,23 +121,26 @@ public class SingleColumnRowMapperUnitTests {
 		assertThat(rowMapper.mapRow(row, 2)).isNull();
 	}
 
-	@Test(expected = TypeMismatchDataAccessException.class) // DATACASS-335
-	public void mapRowSingleColumnWrongType() {
+	@Test // DATACASS-335
+	void mapRowSingleColumnWrongType() {
 
 		when(columnDefinitions.size()).thenReturn(1);
-		when(columnDefinitions.getType(0)).thenReturn(DataType.blob());
+		when(columnDefinitions.get(0)).thenReturn(columnDefinition);
+
 		when(row.getObject(0)).thenReturn("hello");
 
 		rowMapper = SingleColumnRowMapper.newInstance(ColumnDefinitions.class);
-		rowMapper.mapRow(row, 2);
+
+		assertThatExceptionOfType(TypeMismatchDataAccessException.class).isThrownBy(() -> rowMapper.mapRow(row, 2));
 	}
 
-	@Test(expected = IncorrectResultSetColumnCountException.class) // DATACASS-335
-	public void tooManyColumns() {
+	@Test // DATACASS-335
+	void tooManyColumns() {
 
 		when(columnDefinitions.size()).thenReturn(2);
 
 		rowMapper = SingleColumnRowMapper.newInstance(ColumnDefinitions.class);
-		rowMapper.mapRow(row, 1);
+
+		assertThatExceptionOfType(IncorrectResultSetColumnCountException.class).isThrownBy(() -> rowMapper.mapRow(row, 1));
 	}
 }

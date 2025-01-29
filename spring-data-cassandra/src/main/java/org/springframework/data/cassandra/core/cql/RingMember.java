@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,14 @@
  */
 package org.springframework.data.cassandra.core.cql;
 
+import java.io.Serial;
 import java.io.Serializable;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.Host;
+import com.datastax.oss.driver.api.core.metadata.Node;
 
 /**
  * Domain object representing a Cassandra host.
@@ -29,7 +32,7 @@ import com.datastax.driver.core.Host;
  */
 public final class RingMember implements Serializable {
 
-	private static final long serialVersionUID = -2582309141903132916L;
+	@Serial private static final long serialVersionUID = -2582309141903132916L;
 
 	/*
 	 * Ring attributes
@@ -43,21 +46,22 @@ public final class RingMember implements Serializable {
 	private final String rack;
 
 	/**
-	 * Creates a new {@link RingMember} given {@link Host}.
+	 * Creates a new {@link RingMember} given {@link Node}.
 	 *
 	 * @param host
 	 * @return
 	 */
-	public static RingMember from(Host host) {
+	public static RingMember from(Node host) {
 		return new RingMember(host);
 	}
 
-	private RingMember(Host host) {
+	private RingMember(Node host) {
 
 		Assert.notNull(host, "Host must not be null");
 
-		this.hostName = host.getAddress().getHostName();
-		this.address = host.getAddress().getHostAddress();
+		this.hostName = host.getListenAddress().map(InetSocketAddress::getHostName).orElse("unknown");
+		this.address = host.getListenAddress().map(InetSocketAddress::getAddress).map(InetAddress::getHostAddress)
+				.orElse("unknown");
 		this.dc = host.getDatacenter();
 		this.rack = host.getRack();
 	}

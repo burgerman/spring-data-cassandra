@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,27 +15,24 @@
  */
 package org.springframework.data.cassandra.config;
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.cassandra.support.KeyspaceTestUtils;
-import org.springframework.data.cassandra.test.util.AbstractEmbeddedCassandraIntegrationTest;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.data.cassandra.test.util.IntegrationTestsSupport;
+import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
-import com.datastax.driver.core.Session;
+import com.datastax.oss.driver.api.core.CqlSession;
 
 /**
  * @author Matthew T. Adams
  */
-@RunWith(SpringJUnit4ClassRunner.class)
-@ContextConfiguration
-public class FullySpecifiedKeyspaceCreatingXmlConfigIntegrationTests extends AbstractEmbeddedCassandraIntegrationTest {
+@SpringJUnitConfig
+class FullySpecifiedKeyspaceCreatingXmlConfigIntegrationTests extends IntegrationTestsSupport {
 
-	@Autowired Session session;
+	@Autowired CqlSession session;
 
 	@Test
-	public void test() {
+	void test() {
 		KeyspaceTestUtils.assertKeyspaceExists("full1", session);
 		KeyspaceTestUtils.assertKeyspaceExists("full2", session);
 		KeyspaceTestUtils.assertKeyspaceExists("script1", session);

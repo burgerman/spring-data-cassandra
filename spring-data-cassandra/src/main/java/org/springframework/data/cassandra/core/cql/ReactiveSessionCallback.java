@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,8 @@ import org.reactivestreams.Publisher;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.cassandra.ReactiveSession;
 
-import com.datastax.driver.core.Statement;
-import com.datastax.driver.core.exceptions.DriverException;
+import com.datastax.oss.driver.api.core.DriverException;
+import com.datastax.oss.driver.api.core.cql.Statement;
 
 /**
  * Generic callback interface for code that operates on a CQL {@link ReactiveSession}. Allows to execute any number of

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import org.springframework.util.Assert;
  *
  * @author Fabio J. Mendes
  * @author Mark Paluch
+ * @author Frank Spitulski
  * @since 1.5
  * @see CreateUserTypeSpecification
  */
@@ -42,24 +43,21 @@ public class CreateUserTypeCqlGenerator extends UserTypeNameCqlGenerator<CreateU
 		return new CreateUserTypeCqlGenerator(specification).toCql();
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.generator.UserTypeNameCqlGenerator#toCql(java.lang.StringBuilder)
-	 */
 	@Override
 	public StringBuilder toCql(StringBuilder cql) {
 
 		Assert.notNull(getSpecification().getName(), "User type name must not be null");
 
 		Assert.isTrue(!getSpecification().getFields().isEmpty(),
-				String.format("User type [%s] does not contain fields", getSpecification().getName()));
+				() -> String.format("User type [%s] does not contain fields", getSpecification().getName().asCql(true)));
 
 		return columns(preambleCql(cql)).append(";");
 	}
 
 	private StringBuilder preambleCql(StringBuilder cql) {
 
-		return cql.append("CREATE TYPE ").append(spec().getIfNotExists() ? "IF NOT EXISTS " : "").append(spec().getName());
+		return cql.append("CREATE TYPE ").append(spec().getIfNotExists() ? "IF NOT EXISTS " : "")
+				.append(CqlIdentifierUtil.renderName(spec()));
 	}
 
 	private StringBuilder columns(StringBuilder cql) {

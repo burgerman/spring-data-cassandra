@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,12 @@
  */
 package org.springframework.data.cassandra.core.cql;
 
-import reactor.core.publisher.Mono;
-
 import org.reactivestreams.Publisher;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.cassandra.ReactiveResultSet;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.exceptions.DriverException;
+import com.datastax.oss.driver.api.core.DriverException;
 
 /**
  * Adapter implementation of the {@link ReactiveResultSetExtractor} interface that delegates to a {@link RowMapper}
@@ -55,21 +53,16 @@ public class ReactiveRowMapperResultSetExtractor<T> implements ReactiveResultSet
 		this.rowMapper = rowMapper;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.ReactiveResultSetExtractor#extractData(org.springframework.data.cassandra.core.cql.ReactiveResultSet)
-	 */
 	@Override
 	public Publisher<T> extractData(ReactiveResultSet resultSet) throws DriverException, DataAccessException {
 
-		return resultSet.rows().flatMap(row -> {
+		return resultSet.rows().handle((row, sink) -> {
 
 			T value = this.rowMapper.mapRow(row, 0);
 
-			if (value == null) {
-				return Mono.empty();
+			if (value != null) {
+				sink.next(value);
 			}
-
-			return Mono.just(value);
 		});
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,18 +15,15 @@
  */
 package org.springframework.data.cassandra.core;
 
-import lombok.AccessLevel;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.experimental.FieldDefaults;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import org.springframework.dao.IncorrectResultSizeDataAccessException;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.query.Query;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Implementation of {@link ReactiveSelectOperation}.
@@ -36,14 +33,14 @@ import org.springframework.util.Assert;
  * @see org.springframework.data.cassandra.core.query.Query
  * @since 2.1
  */
-@RequiredArgsConstructor
 class ReactiveSelectOperationSupport implements ReactiveSelectOperation {
 
-	private final @NonNull ReactiveCassandraTemplate template;
+	private final ReactiveCassandraTemplate template;
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.ReactiveSelectOperation#query(java.lang.Class)
-	 */
+	public ReactiveSelectOperationSupport(ReactiveCassandraTemplate template) {
+		this.template = template;
+	}
+
 	@Override
 	public <T> ReactiveSelect<T> query(Class<T> domainType) {
 
@@ -52,23 +49,27 @@ class ReactiveSelectOperationSupport implements ReactiveSelectOperation {
 		return new ReactiveSelectSupport<>(this.template, domainType, domainType, Query.empty(), null);
 	}
 
-	@RequiredArgsConstructor
-	@FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 	static class ReactiveSelectSupport<T> implements ReactiveSelect<T> {
 
-		@NonNull ReactiveCassandraTemplate template;
+		private final ReactiveCassandraTemplate template;
 
-		@NonNull Class<?> domainType;
+		private final Class<?> domainType;
 
-		@NonNull Class<T> returnType;
+		private final Class<T> returnType;
 
-		@NonNull Query query;
+		private final Query query;
 
-		@Nullable CqlIdentifier tableName;
+		private final @Nullable CqlIdentifier tableName;
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ReactiveSelectOperation.SelectWithTable#inTable(org.springframework.data.cassandra.core.cql.CqlIdentifier)
-		 */
+		public ReactiveSelectSupport(ReactiveCassandraTemplate template, Class<?> domainType, Class<T> returnType,
+				Query query, CqlIdentifier tableName) {
+			this.template = template;
+			this.domainType = domainType;
+			this.returnType = returnType;
+			this.query = query;
+			this.tableName = tableName;
+		}
+
 		@Override
 		public SelectWithProjection<T> inTable(CqlIdentifier tableName) {
 
@@ -77,9 +78,6 @@ class ReactiveSelectOperationSupport implements ReactiveSelectOperation {
 			return new ReactiveSelectSupport<>(this.template, this.domainType, this.returnType, this.query, tableName);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ReactiveSelectOperation.SelectWithProjection#as(java.lang.Class)
-		 */
 		@Override
 		public <R> SelectWithQuery<R> as(Class<R> returnType) {
 
@@ -88,9 +86,6 @@ class ReactiveSelectOperationSupport implements ReactiveSelectOperation {
 			return new ReactiveSelectSupport<>(this.template, this.domainType, returnType, this.query, this.tableName);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ReactiveSelectOperation.SelectWithQuery#matching(org.springframework.data.cassandra.core.query.Query)
-		 */
 		@Override
 		public TerminatingSelect<T> matching(Query query) {
 
@@ -99,57 +94,43 @@ class ReactiveSelectOperationSupport implements ReactiveSelectOperation {
 			return new ReactiveSelectSupport<>(this.template, this.domainType, this.returnType, query, this.tableName);
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ReactiveSelectOperation.TerminatingSelect#count()
-		 */
 		@Override
 		public Mono<Long> count() {
 			return this.template.doCount(this.query, this.domainType, getTableName());
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ReactiveSelectOperation.TerminatingSelect#exists()
-		 */
 		@Override
 		public Mono<Boolean> exists() {
 			return this.template.doExists(this.query, this.domainType, getTableName());
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ReactiveSelectOperation.TerminatingSelect#first()
-		 */
 		@Override
 		public Mono<T> first() {
 			return this.template.doSelect(this.query.limit(1), this.domainType, getTableName(), this.returnType).next();
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ReactiveSelectOperation.TerminatingSelect#one()
-		 */
 		@Override
 		public Mono<T> one() {
 
 			Flux<T> result = this.template.doSelect(this.query.limit(2), this.domainType, getTableName(), this.returnType);
 
 			return result.collectList() //
-					.flatMap(it -> {
+					.handle((objects, sink) -> {
 
-						if (it.isEmpty()) {
-							return Mono.empty();
+						if (objects.isEmpty()) {
+							return;
 						}
 
-						if (it.size() > 1) {
-							return Mono.error(new IncorrectResultSizeDataAccessException(
-									String.format("Query [%s] returned non unique result.", this.query), 1));
+						if (objects.size() == 1) {
+							sink.next(objects.get(0));
+							return;
 						}
 
-						return Mono.just(it.get(0));
+						sink.error(new IncorrectResultSizeDataAccessException(
+								String.format("Query [%s] returned non unique result", this.query), 1));
 					});
 		}
 
-		/* (non-Javadoc)
-		 * @see org.springframework.data.cassandra.core.ReactiveSelectOperation.TerminatingSelect#all()
-		 */
 		@Override
 		public Flux<T> all() {
 			return this.template.doSelect(this.query, this.domainType, getTableName(), this.returnType);

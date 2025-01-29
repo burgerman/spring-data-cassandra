@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import org.springframework.lang.Nullable;
 
-import com.datastax.driver.core.DataType;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.type.DataType;
 
 /**
  * Object to configure a {@code ALTER TABLE} specification.
@@ -37,15 +38,16 @@ import com.datastax.driver.core.DataType;
  * @see TableOptionsSpecification
  * @see org.springframework.data.cassandra.core.cql.generator.AlterTableCqlGenerator
  */
-public class AlterTableSpecification extends TableOptionsSpecification<AlterTableSpecification> {
+public class AlterTableSpecification extends TableOptionsSpecification<AlterTableSpecification>
+		implements CqlSpecification {
 
 	/**
 	 * The list of column changes.
 	 */
-	private List<ColumnChangeSpecification> changes = new ArrayList<>();
+	private final List<ColumnChangeSpecification> changes = new ArrayList<>();
 
-	private AlterTableSpecification(CqlIdentifier name) {
-		super(name);
+	private AlterTableSpecification(@Nullable CqlIdentifier keyspace, CqlIdentifier name) {
+		super(keyspace, name);
 	}
 
 	/**
@@ -56,7 +58,7 @@ public class AlterTableSpecification extends TableOptionsSpecification<AlterTabl
 	 * @return a new {@link AlterTableSpecification}.
 	 */
 	public static AlterTableSpecification alterTable(String tableName) {
-		return alterTable(CqlIdentifier.of(tableName));
+		return alterTable(CqlIdentifier.fromCql(tableName));
 	}
 
 	/**
@@ -67,7 +69,21 @@ public class AlterTableSpecification extends TableOptionsSpecification<AlterTabl
 	 * @return a new {@link AlterTableSpecification}.
 	 */
 	public static AlterTableSpecification alterTable(CqlIdentifier tableName) {
-		return new AlterTableSpecification(tableName);
+		return new AlterTableSpecification(null, tableName);
+	}
+
+	/**
+	 * Entry point into the {@link AlterTableSpecification}'s fluent API given {@code tableName} to alter a table.
+	 * Convenient if imported statically. Uses the default keyspace if {@code keyspace} is null; otherwise, of the
+	 * {@code keyspace} is not {@link null}, then the table name is prefixed with {@code keyspace}.
+	 *
+	 * @param keyspace can be {@literal null}.
+	 * @param tableName must not be {@literal null}.
+	 * @return a new {@link AlterTableSpecification}.
+	 * @since 4.4
+	 */
+	public static AlterTableSpecification alterTable(@Nullable CqlIdentifier keyspace, CqlIdentifier tableName) {
+		return new AlterTableSpecification(keyspace, tableName);
 	}
 
 	/**
@@ -78,7 +94,7 @@ public class AlterTableSpecification extends TableOptionsSpecification<AlterTabl
 	 * @return {@literal this} {@link AlterTableSpecification}.
 	 */
 	public AlterTableSpecification add(String column, DataType type) {
-		return add(CqlIdentifier.of(column), type);
+		return add(CqlIdentifier.fromCql(column), type);
 	}
 
 	/**
@@ -100,7 +116,7 @@ public class AlterTableSpecification extends TableOptionsSpecification<AlterTabl
 	 * @return {@literal this} {@link AlterTableSpecification}.
 	 */
 	public AlterTableSpecification drop(String column) {
-		return drop(CqlIdentifier.of(column));
+		return drop(CqlIdentifier.fromCql(column));
 	}
 
 	/*
@@ -122,7 +138,7 @@ public class AlterTableSpecification extends TableOptionsSpecification<AlterTabl
 	 * @return {@literal this} {@link AlterTableSpecification}.
 	 */
 	public AlterTableSpecification rename(String from, String to) {
-		return rename(CqlIdentifier.of(from), CqlIdentifier.of(to));
+		return rename(CqlIdentifier.fromCql(from), CqlIdentifier.fromCql(to));
 	}
 
 	/**
@@ -145,7 +161,7 @@ public class AlterTableSpecification extends TableOptionsSpecification<AlterTabl
 	 * @return {@literal this} {@link AlterTableSpecification}.
 	 */
 	public AlterTableSpecification alter(String column, DataType type) {
-		return alter(CqlIdentifier.of(column), type);
+		return alter(CqlIdentifier.fromCql(column), type);
 	}
 
 	/**

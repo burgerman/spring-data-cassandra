@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,8 @@ import java.util.Map;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.util.Assert;
 
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
+import com.datastax.oss.driver.api.core.cql.Row;
 
 /**
  * {@link Converter} from {@link ResultSet} to {@link Map}.
@@ -53,9 +53,6 @@ public class ResultSetToListConverter implements Converter<ResultSet, List<Map<S
 		this.rowConverter = rowConverter;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.core.convert.converter.Converter#convert(java.lang.Object)
-	 */
 	@Override
 	public List<Map<String, Object>> convert(ResultSet resultSet) {
 

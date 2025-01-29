@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,18 +40,19 @@ import org.springframework.data.cassandra.core.cql.PrimaryKeyType;
 @Documented
 @Retention(value = RetentionPolicy.RUNTIME)
 @Target(value = { ElementType.ANNOTATION_TYPE, ElementType.FIELD, ElementType.METHOD })
+@Column
 public @interface PrimaryKeyColumn {
 
 	/**
 	 * The name of the column in the table.
 	 */
-	@AliasFor(attribute = "name")
+	@AliasFor(annotation = Column.class, attribute = "value")
 	String value() default "";
 
 	/**
 	 * The name of the column in the table.
 	 */
-	@AliasFor(attribute = "value")
+	@AliasFor(annotation = Column.class, attribute = "value")
 	String name() default "";
 
 	/**
@@ -72,6 +73,12 @@ public @interface PrimaryKeyColumn {
 
 	/**
 	 * Whether to cause the column name to be force-quoted.
+	 *
+	 * @deprecated since 3.0. The column name gets converted into {@link com.datastax.oss.driver.api.core.CqlIdentifier}
+	 *             hence it no longer requires an indication whether the name should be quoted.
+	 * @see com.datastax.oss.driver.api.core.CqlIdentifier#fromInternal(String)
 	 */
+	@Deprecated
+	@AliasFor(annotation = Column.class, attribute = "forceQuote")
 	boolean forceQuote() default false;
 }

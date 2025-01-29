@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,11 @@
 package org.springframework.data.cassandra.core.cql.generator;
 
 import static org.assertj.core.api.Assertions.*;
-import static org.springframework.data.cassandra.core.cql.CqlIdentifier.*;
-import static org.springframework.data.cassandra.core.cql.generator.CreateTableCqlGenerator.*;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import org.junit.Test;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import org.junit.jupiter.api.Test;
 import org.springframework.data.cassandra.core.cql.Ordering;
 import org.springframework.data.cassandra.core.cql.keyspace.CreateTableSpecification;
 import org.springframework.data.cassandra.core.cql.keyspace.Option;
@@ -33,7 +30,9 @@ import org.springframework.data.cassandra.core.cql.keyspace.TableOption.Compacti
 import org.springframework.data.cassandra.core.cql.keyspace.TableOption.CompressionOption;
 import org.springframework.data.cassandra.core.cql.keyspace.TableOption.KeyCachingOption;
 
-import com.datastax.driver.core.DataType;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.type.DataType;
+import com.datastax.oss.driver.api.core.type.DataTypes;
 
 /**
  * Unit tests for {@link CreateTableCqlGenerator}.
@@ -41,86 +40,84 @@ import com.datastax.driver.core.DataType;
  * @author Matthew T. Adams
  * @author David Webb
  * @author Mark Paluch
+ * @author Aleksei Zotov
  */
-public class CreateTableCqlGeneratorUnitTests {
+class CreateTableCqlGeneratorUnitTests {
 
 	@Test
-	public void shouldGenerateCorrectCQL() {
+	void shouldGenerateCorrectCQL() {
 
-		CqlIdentifier name = of("mytable");
-		DataType partitionKeyType0 = DataType.text();
-		CqlIdentifier partitionKey0 = of("partitionKey0");
-		DataType columnType1 = DataType.text();
+		CqlIdentifier name = CqlIdentifier.fromCql("mytable");
+		DataType partitionKeyType0 = DataTypes.TEXT;
+		CqlIdentifier partitionKey0 = CqlIdentifier.fromCql("partitionKey0");
+		DataType columnType1 = DataTypes.TEXT;
 		String column1 = "column1";
 
 		CreateTableSpecification table = CreateTableSpecification.createTable(name)
 				.partitionKeyColumn(partitionKey0, partitionKeyType0).column(column1, columnType1);
 
-		String cql = toCql(table);
+		String cql = CqlGenerator.toCql(table);
 		assertPreamble(name, cql);
-		assertColumns(String.format("%s %s, %s %s", partitionKey0, partitionKeyType0, column1, columnType1), cql);
-		assertPrimaryKey(partitionKey0.toCql(), cql);
+		assertColumns("partitionkey0 text, column1 text", cql);
+		assertPrimaryKey(partitionKey0.toString(), cql);
 	}
 
 	@Test
-	public void shouldGenerateCompositePrimaryKey() {
+	void shouldGenerateCompositePrimaryKey() {
 
-		CqlIdentifier name = of("composite_partition_key_table");
-		DataType partKeyType0 = DataType.text();
-		CqlIdentifier partKey0 = of("partKey0");
-		DataType partKeyType1 = DataType.text();
-		CqlIdentifier partKey1 = of("partKey1");
-		CqlIdentifier column0 = of("column0");
-		DataType columnType0 = DataType.text();
+		CqlIdentifier name = CqlIdentifier.fromCql("composite_partition_key_table");
+		DataType partKeyType0 = DataTypes.TEXT;
+		CqlIdentifier partKey0 = CqlIdentifier.fromCql("partKey0");
+		DataType partKeyType1 = DataTypes.TEXT;
+		CqlIdentifier partKey1 = CqlIdentifier.fromCql("partKey1");
+		CqlIdentifier column0 = CqlIdentifier.fromCql("column0");
+		DataType columnType0 = DataTypes.TEXT;
 
 		CreateTableSpecification table = CreateTableSpecification.createTable(name)
 				.partitionKeyColumn(partKey0, partKeyType0).partitionKeyColumn(partKey1, partKeyType1)
 				.column(column0, columnType0);
 
-		String cql = toCql(table);
+		String cql = CqlGenerator.toCql(table);
 
 		assertPreamble(name, cql);
-		assertColumns(
-				String.format("%s %s, %s %s, %s %s", partKey0, partKeyType0, partKey1, partKeyType1, column0, columnType0),
-				cql);
+		assertColumns("partkey0 text, partkey1 text, column0 text", cql);
 		assertPrimaryKey(String.format("(%s, %s)", partKey0, partKey1), cql);
 	}
 
 	@Test
-	public void shouldGenerateTableOptions() {
+	void shouldGenerateTableOptions() {
 
-		CqlIdentifier name = of("mytable");
-		DataType partitionKeyType0 = DataType.text();
-		CqlIdentifier partitionKey0 = of("partitionKey0");
-		DataType partitionKeyType1 = DataType.timestamp();
-		CqlIdentifier partitionKey1 = of("create_timestamp");
-		DataType columnType1 = DataType.text();
-		CqlIdentifier column1 = of("column1");
+		CqlIdentifier name = CqlIdentifier.fromCql("mytable");
+		DataType partitionKeyType0 = DataTypes.TEXT;
+		CqlIdentifier partitionKey0 = CqlIdentifier.fromCql("partitionKey0");
+		DataType partitionKeyType1 = DataTypes.TIMESTAMP;
+		CqlIdentifier partitionKey1 = CqlIdentifier.fromCql("create_timestamp");
+		DataType columnType1 = DataTypes.TEXT;
+		CqlIdentifier column1 = CqlIdentifier.fromCql("column1");
 		Double readRepairChance = 0.5;
 
 		CreateTableSpecification table = CreateTableSpecification.createTable(name)
 				.partitionKeyColumn(partitionKey0, partitionKeyType0).partitionKeyColumn(partitionKey1, partitionKeyType1)
 				.column(column1, columnType1).with(TableOption.READ_REPAIR_CHANCE, readRepairChance);
 
-		String cql = toCql(table);
+		String cql = CqlGenerator.toCql(table);
 
 		assertPreamble(name, cql);
-		assertColumns(String.format("%s %s, %s %s, %s %s", partitionKey0, partitionKeyType0, partitionKey1,
-				partitionKeyType1, column1, columnType1), cql);
+		assertColumns("partitionkey0 text, create_timestamp timestamp, column1 text", cql);
 		assertPrimaryKey(String.format("(%s, %s)", partitionKey0, partitionKey1), cql);
 		assertDoubleOption(TableOption.READ_REPAIR_CHANCE.getName(), readRepairChance, cql);
 	}
 
 	@Test
-	public void shouldGenerateMultipleOptions() {
+	void shouldGenerateMultipleOptions() {
 
-		CqlIdentifier name = of("timeseries_table");
-		DataType partitionKeyType0 = DataType.timeuuid();
-		CqlIdentifier partitionKey0 = of("tid");
-		DataType partitionKeyType1 = DataType.timestamp();
-		CqlIdentifier partitionKey1 = of("create_timestamp");
-		DataType columnType1 = DataType.text();
-		CqlIdentifier column1 = of("data_point");
+		CqlIdentifier name = CqlIdentifier.fromCql("timeseries_table");
+		DataType partitionKeyType0 = DataTypes.TIMEUUID;
+		CqlIdentifier partitionKey0 = CqlIdentifier.fromCql("tid");
+		DataType partitionKeyType1 = DataTypes.TIMESTAMP;
+		CqlIdentifier partitionKey1 = CqlIdentifier.fromCql("create_timestamp");
+		DataType columnType1 = DataTypes.TEXT;
+		CqlIdentifier column1 = CqlIdentifier.fromCql("data_point");
 		Double readRepairChance = 0.5;
 		Double dcLocalReadRepairChance = 0.7;
 		Double bloomFilterFpChance = 0.001;
@@ -151,11 +148,10 @@ public class CreateTableCqlGeneratorUnitTests {
 				.with(TableOption.DCLOCAL_READ_REPAIR_CHANCE, dcLocalReadRepairChance)
 				.with(TableOption.GC_GRACE_SECONDS, gcGraceSeconds);
 
-		String cql = toCql(table);
+		String cql = CqlGenerator.toCql(table);
 
 		assertPreamble(name, cql);
-		assertColumns(String.format("%s %s, %s %s, %s %s", partitionKey0, partitionKeyType0, partitionKey1,
-				partitionKeyType1, column1, columnType1), cql);
+		assertColumns("tid timeuuid, create_timestamp timestamp, data_point text", cql);
 		assertPrimaryKey(String.format("(%s, %s)", partitionKey0, partitionKey1), cql);
 		assertNullOption(TableOption.COMPACT_STORAGE.getName(), cql);
 		assertDoubleOption(TableOption.READ_REPAIR_CHANCE.getName(), readRepairChance, cql);
@@ -166,36 +162,60 @@ public class CreateTableCqlGeneratorUnitTests {
 	}
 
 	@Test // DATACASS-518
-	public void createTableWithOrderedClustering() {
+	void createTableWithOrderedClustering() {
 
 		CreateTableSpecification table = CreateTableSpecification.createTable("person") //
-				.partitionKeyColumn("id", DataType.ascii()) //
-				.clusteredKeyColumn("date_of_birth", DataType.date(), Ordering.ASCENDING) //
-				.column("name", DataType.ascii());
+				.partitionKeyColumn("id", DataTypes.ASCII) //
+				.clusteredKeyColumn("date_of_birth", DataTypes.DATE, Ordering.ASCENDING) //
+				.column("name", DataTypes.ASCII);
 
-		assertThat(toCql(table)).isEqualTo("CREATE TABLE person (id ascii, date_of_birth date, name ascii, " //
+		assertThat(CqlGenerator.toCql(table)).isEqualTo("CREATE TABLE person (id ascii, date_of_birth date, name ascii, " //
 				+ "PRIMARY KEY (id, date_of_birth)) " //
 				+ "WITH CLUSTERING ORDER BY (date_of_birth ASC);");
 	}
 
 	@Test // DATACASS-518
-	public void createTableWithOrderedClusteringAndOptions() {
+	void createTableWithOrderedClusteringAndOptions() {
 
 		CreateTableSpecification table = CreateTableSpecification.createTable("person") //
-				.partitionKeyColumn("id", DataType.ascii()) //
-				.clusteredKeyColumn("date_of_birth", DataType.date(), Ordering.ASCENDING) //
-				.column("name", DataType.ascii()).with(TableOption.COMPACT_STORAGE);
+				.partitionKeyColumn("id", DataTypes.ASCII) //
+				.clusteredKeyColumn("date_of_birth", DataTypes.DATE, Ordering.ASCENDING) //
+				.column("name", DataTypes.ASCII).with(TableOption.COMPACT_STORAGE);
 
-		assertThat(toCql(table)).isEqualTo("CREATE TABLE person (id ascii, date_of_birth date, name ascii, " //
+		assertThat(CqlGenerator.toCql(table)).isEqualTo("CREATE TABLE person (id ascii, date_of_birth date, name ascii, " //
 				+ "PRIMARY KEY (id, date_of_birth)) " //
 				+ "WITH CLUSTERING ORDER BY (date_of_birth ASC) AND COMPACT STORAGE;");
+	}
+
+	@Test // GH-978
+	void createTableWithStaticColumns() {
+
+		CreateTableSpecification table = CreateTableSpecification.createTable("person")
+				.partitionKeyColumn("id", DataTypes.ASCII)
+				.clusteredKeyColumn("date_of_birth", DataTypes.DATE, Ordering.ASCENDING)
+				.column("name", DataTypes.ASCII)
+				.staticColumn("country", DataTypes.ASCII);
+
+		assertThat(CqlGenerator.toCql(table))
+				.isEqualTo("CREATE TABLE person (" + "id ascii, date_of_birth date, name ascii, country ascii STATIC, "
+						+ "PRIMARY KEY (id, date_of_birth)) " + "WITH CLUSTERING ORDER BY (date_of_birth ASC);");
+	}
+
+	@Test // GH-921
+	void shouldConsiderKeyspace() {
+
+		CreateTableSpecification table = CreateTableSpecification
+				.createTable(CqlIdentifier.fromCql("myks"), CqlIdentifier.fromCql("person"))
+				.partitionKeyColumn("id", DataTypes.ASCII);
+
+		assertThat(CqlGenerator.toCql(table)).isEqualTo("CREATE TABLE myks.person (" + "id ascii, " + "PRIMARY KEY (id));");
 	}
 
 	/**
 	 * Asserts that the preamble is first & correctly formatted in the given CQL string.
 	 */
 	private static void assertPreamble(CqlIdentifier tableName, String cql) {
-		assertThat(cql.startsWith("CREATE TABLE " + tableName + " ")).isTrue();
+		assertThat(cql).startsWith("CREATE TABLE " + tableName + " ");
 	}
 
 	/**
@@ -204,7 +224,7 @@ public class CreateTableCqlGeneratorUnitTests {
 	 * @param primaryKeyString IE, "foo", "foo, bar, baz", "(foo, bar), baz", etc
 	 */
 	private static void assertPrimaryKey(String primaryKeyString, String cql) {
-		assertThat(cql.contains(", PRIMARY KEY (" + primaryKeyString + "))")).isTrue();
+		assertThat(cql).contains(", PRIMARY KEY (" + primaryKeyString + "))");
 	}
 
 	/**
@@ -213,31 +233,31 @@ public class CreateTableCqlGeneratorUnitTests {
 	 * @param columnSpec IE, "foo text, bar blob"
 	 */
 	private static void assertColumns(String columnSpec, String cql) {
-		assertThat(cql.contains("(" + columnSpec + ",")).isTrue();
+		assertThat(cql).contains("(" + columnSpec + ",");
 	}
 
 	/**
 	 * Asserts that the read repair change is set properly
 	 */
 	private static void assertStringOption(String name, String value, String cql) {
-		assertThat(cql.contains(name + " = '" + value + "'")).isTrue();
+		assertThat(cql).contains(name + " = '" + value + "'");
 	}
 
 	/**
 	 * Asserts that the option is set
 	 */
 	private static void assertDoubleOption(String name, Double value, String cql) {
-		assertThat(cql.contains(name + " = " + value)).isTrue();
+		assertThat(cql).contains(name + " = " + value);
 	}
 
 	private static void assertLongOption(String name, Long value, String cql) {
-		assertThat(cql.contains(name + " = " + value)).isTrue();
+		assertThat(cql).contains(name + " = " + value);
 	}
 
 	/**
 	 * Asserts that the read repair change is set properly
 	 */
 	private static void assertNullOption(String name, String cql) {
-		assertThat(cql.contains(" " + name + " ")).isTrue();
+		assertThat(cql).contains(" " + name + " ");
 	}
 }

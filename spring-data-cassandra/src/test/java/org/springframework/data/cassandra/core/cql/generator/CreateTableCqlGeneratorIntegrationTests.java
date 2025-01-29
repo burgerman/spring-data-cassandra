@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,17 @@ package org.springframework.data.cassandra.core.cql.generator;
 
 import static org.assertj.core.api.Assertions.*;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
 import org.springframework.data.cassandra.core.cql.Ordering;
 import org.springframework.data.cassandra.core.cql.keyspace.CreateTableSpecification;
 import org.springframework.data.cassandra.core.cql.keyspace.TableOption;
-import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTest;
+import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTests;
 
-import com.datastax.driver.core.DataType;
-import com.datastax.driver.core.TableMetadata;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.metadata.schema.TableMetadata;
+import com.datastax.oss.driver.api.core.type.DataTypes;
 
 /**
  * Integration tests for {@link CreateTableCqlGenerator}.
@@ -34,54 +36,75 @@ import com.datastax.driver.core.TableMetadata;
  * @author Oliver Gierke
  * @author Mark Paluch
  */
-public class CreateTableCqlGeneratorIntegrationTests extends AbstractKeyspaceCreatingIntegrationTest {
+class CreateTableCqlGeneratorIntegrationTests extends AbstractKeyspaceCreatingIntegrationTests {
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		session.execute("DROP TABLE IF EXISTS person;");
 		session.execute("DROP TABLE IF EXISTS address;");
+
+		session.execute("DROP KEYSPACE IF EXISTS CqlGenerator_it;");
+		session.execute(
+				"CREATE KEYSPACE CqlGenerator_it WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};");
 	}
 
 	@Test // DATACASS-518
-	public void shouldGenerateSimpleTable() {
+	void shouldGenerateSimpleTable() {
 
 		CreateTableSpecification table = CreateTableSpecification.createTable("person") //
-				.partitionKeyColumn("id", DataType.ascii()) //
-				.clusteredKeyColumn("date_of_birth", DataType.date()) //
-				.column("name", DataType.ascii());
+				.partitionKeyColumn("id", DataTypes.ASCII) //
+				.clusteredKeyColumn("date_of_birth", DataTypes.DATE) //
+				.column("name", DataTypes.ASCII);
 
-		session.execute(CreateTableCqlGenerator.toCql(table));
+		session.execute(CqlGenerator.toCql(table));
 	}
 
 	@Test // DATACASS-518
-	public void shouldGenerateTableWithClusterKeyOrdering() {
+	void shouldGenerateTableWithClusterKeyOrdering() {
 
 		CreateTableSpecification table = CreateTableSpecification.createTable("person") //
-				.partitionKeyColumn("id", DataType.ascii()) //
-				.partitionKeyColumn("country", DataType.ascii()) //
-				.clusteredKeyColumn("date_of_birth", DataType.date(), Ordering.ASCENDING) //
-				.clusteredKeyColumn("age", DataType.smallint()) //
-				.column("name", DataType.ascii());
+				.partitionKeyColumn("id", DataTypes.ASCII) //
+				.partitionKeyColumn("country", DataTypes.ASCII) //
+				.clusteredKeyColumn("date_of_birth", DataTypes.DATE, Ordering.ASCENDING) //
+				.clusteredKeyColumn("age", DataTypes.SMALLINT) //
+				.column("name", DataTypes.ASCII);
 
-		session.execute(CreateTableCqlGenerator.toCql(table));
+		session.execute(CqlGenerator.toCql(table));
 
-		TableMetadata person = cluster.getMetadata().getKeyspace(getKeyspace()).getTable("person");
+		TableMetadata person = session.getMetadata().getKeyspace(getKeyspace()).flatMap(it -> it.getTable("person")).get();
 		assertThat(person.getPartitionKey()).hasSize(2);
 		assertThat(person.getClusteringColumns()).hasSize(2);
 	}
 
 	@Test // DATACASS-518
-	public void shouldGenerateTableWithClusterKeyAndOptions() {
+	void shouldGenerateTableWithClusterKeyAndOptions() {
 
 		CreateTableSpecification table = CreateTableSpecification.createTable("person") //
-				.partitionKeyColumn("id", DataType.ascii()) //
-				.clusteredKeyColumn("date_of_birth", DataType.date(), Ordering.ASCENDING) //
-				.column("name", DataType.ascii()).with(TableOption.COMPACT_STORAGE);
+				.partitionKeyColumn("id", DataTypes.ASCII) //
+				.clusteredKeyColumn("date_of_birth", DataTypes.DATE, Ordering.ASCENDING) //
+				.column("name", DataTypes.ASCII).with(TableOption.COMPACT_STORAGE);
 
-		session.execute(CreateTableCqlGenerator.toCql(table));
+		session.execute(CqlGenerator.toCql(table));
 
-		TableMetadata person = cluster.getMetadata().getKeyspace(getKeyspace()).getTable("person");
+		TableMetadata person = session.getMetadata().getKeyspace(getKeyspace()).flatMap(it -> it.getTable("person")).get();
+		assertThat(person.getPartitionKey()).hasSize(1);
+		assertThat(person.getClusteringColumns()).hasSize(1);
+	}
+
+	@Test // GH-921
+	void shouldGenerateTableInOtherKeyspace() {
+
+		CreateTableSpecification table = CreateTableSpecification
+				.createTable(CqlIdentifier.fromCql("CqlGenerator_it"), CqlIdentifier.fromCql("person")) //
+				.partitionKeyColumn("id", DataTypes.ASCII) //
+				.clusteredKeyColumn("date_of_birth", DataTypes.DATE, Ordering.ASCENDING) //
+				.column("name", DataTypes.ASCII).with(TableOption.COMPACT_STORAGE);
+
+		session.execute(CqlGenerator.toCql(table));
+
+		TableMetadata person = session.getMetadata().getKeyspace("CqlGenerator_it").flatMap(it -> it.getTable("person"))
+				.get();
 		assertThat(person.getPartitionKey()).hasSize(1);
 		assertThat(person.getClusteringColumns()).hasSize(1);
 	}

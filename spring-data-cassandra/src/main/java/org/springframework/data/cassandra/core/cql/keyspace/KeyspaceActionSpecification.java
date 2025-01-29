@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,34 +15,57 @@
  */
 package org.springframework.data.cassandra.core.cql.keyspace;
 
-import lombok.EqualsAndHashCode;
-
-import org.springframework.data.cassandra.core.cql.KeyspaceIdentifier;
+import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
+import org.springframework.util.ObjectUtils;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Base value object to support the construction of keyspace specifications.
  *
  * @author John McPeek
  * @author David Webb
- * @param <T> The subtype of the {@link KeyspaceActionSpecification}
  */
-@EqualsAndHashCode
 public abstract class KeyspaceActionSpecification {
 
 	/**
 	 * The name of the keyspace.
 	 */
-	private final KeyspaceIdentifier name;
+	private final CqlIdentifier name;
 
-	protected KeyspaceActionSpecification(KeyspaceIdentifier name) {
+	protected KeyspaceActionSpecification(CqlIdentifier name) {
 
-		Assert.notNull(name, "KeyspaceIdentifier must not be null");
+		Assert.notNull(name, "CqlIdentifier must not be null");
 
 		this.name = name;
 	}
 
-	public KeyspaceIdentifier getName() {
+	public CqlIdentifier getName() {
 		return name;
+	}
+
+	protected boolean canEqual(final Object other) {
+		return other instanceof KeyspaceActionSpecification;
+	}
+
+	@Override
+	public boolean equals(@Nullable Object o) {
+
+		if (this == o) {
+			return true;
+		}
+
+		if (!(o instanceof KeyspaceActionSpecification)) {
+			return false;
+		}
+
+		KeyspaceActionSpecification that = (KeyspaceActionSpecification) o;
+		return ObjectUtils.nullSafeEquals(name, that.name);
+	}
+
+	@Override
+	public int hashCode() {
+		return ObjectUtils.nullSafeHashCode(name);
 	}
 }

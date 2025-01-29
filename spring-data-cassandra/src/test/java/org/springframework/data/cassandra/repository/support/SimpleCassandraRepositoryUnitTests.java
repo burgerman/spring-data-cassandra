@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,23 +15,15 @@
  */
 package org.springframework.data.cassandra.repository.support;
 
-import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.eq;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 import java.io.Serializable;
 
-import lombok.Data;
-
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
-
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.cassandra.core.CassandraOperations;
@@ -48,47 +40,44 @@ import org.springframework.data.cassandra.core.query.Query;
 import org.springframework.data.cassandra.domain.Person;
 import org.springframework.data.domain.Sort.Direction;
 
-import com.datastax.driver.core.UserType;
-import com.datastax.driver.core.querybuilder.Insert;
+import com.datastax.oss.driver.api.core.type.UserDefinedType;
 
 /**
  * Unit tests for {@link SimpleCassandraRepository}.
  *
  * @author Mark Paluch
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
 @SuppressWarnings("unchecked")
-public class SimpleCassandraRepositoryUnitTests {
+class SimpleCassandraRepositoryUnitTests {
 
-	CassandraMappingContext mappingContext = new CassandraMappingContext();
+	private CassandraMappingContext mappingContext = new CassandraMappingContext();
 
-	MappingCassandraConverter converter = new MappingCassandraConverter(mappingContext);
+	private MappingCassandraConverter converter = new MappingCassandraConverter(mappingContext);
 
-	SimpleCassandraRepository<Object, ? extends Serializable> repository;
+	private SimpleCassandraRepository<Object, ? extends Serializable> repository;
 
 	@Mock CassandraOperations cassandraOperations;
 	@Mock CqlOperations cqlOperations;
-	@Mock UserType userType;
+	@Mock UserDefinedType userType;
 	@Mock UserTypeResolver userTypeResolver;
 	@Mock EntityWriteResult writeResult;
 
-	@Captor ArgumentCaptor<Insert> insertCaptor;
-
-	@Before
-	public void before() {
+	@BeforeEach
+	void before() {
 		mappingContext.setUserTypeResolver(userTypeResolver);
 		when(cassandraOperations.getConverter()).thenReturn(converter);
 	}
 
 	@Test // DATACASS-428, DATACASS-560, DATACASS-573
-	public void saveShouldInsertNewPrimaryKeyOnlyEntity() {
+	void saveShouldInsertNewPrimaryKeyOnlyEntity() {
 
 		CassandraPersistentEntity<?> entity = converter.getMappingContext().getRequiredPersistentEntity(SimplePerson.class);
 
 		repository = new SimpleCassandraRepository<Object, String>(new MappingCassandraEntityInformation(entity, converter),
 				cassandraOperations);
 
-		SimplePerson person = new SimplePerson();
+		SimplePerson person = new SimplePerson(null);
 
 		when(cassandraOperations.insert(eq(person), any())).thenReturn(writeResult);
 		when(writeResult.getEntity()).thenReturn(person);
@@ -99,7 +88,7 @@ public class SimpleCassandraRepositoryUnitTests {
 	}
 
 	@Test // DATACASS-576
-	public void shouldInsertNewVersionedEntity() {
+	void shouldInsertNewVersionedEntity() {
 
 		when(cassandraOperations.insert(any(), any(InsertOptions.class))).thenReturn(writeResult);
 
@@ -117,7 +106,7 @@ public class SimpleCassandraRepositoryUnitTests {
 	}
 
 	@Test // DATACASS-576
-	public void shouldUpdateExistingVersionedEntity() {
+	void shouldUpdateExistingVersionedEntity() {
 
 		CassandraPersistentEntity<?> entity = converter.getMappingContext()
 				.getRequiredPersistentEntity(VersionedPerson.class);
@@ -135,7 +124,7 @@ public class SimpleCassandraRepositoryUnitTests {
 	}
 
 	@Test // DATACASS-428, DATACASS-560, DATACASS-573
-	public void saveShouldUpdateNewEntity() {
+	void saveShouldUpdateNewEntity() {
 
 		CassandraPersistentEntity<?> entity = converter.getMappingContext().getRequiredPersistentEntity(Person.class);
 
@@ -153,7 +142,7 @@ public class SimpleCassandraRepositoryUnitTests {
 	}
 
 	@Test // DATACASS-428, DATACASS-560, DATACASS-573
-	public void saveShouldUpdateExistingEntity() {
+	void saveShouldUpdateExistingEntity() {
 
 		CassandraPersistentEntity<?> entity = converter.getMappingContext().getRequiredPersistentEntity(Person.class);
 
@@ -174,7 +163,7 @@ public class SimpleCassandraRepositoryUnitTests {
 	}
 
 	@Test // DATACASS-428
-	public void insertShouldInsertEntity() {
+	void insertShouldInsertEntity() {
 
 		CassandraPersistentEntity<?> entity = converter.getMappingContext().getRequiredPersistentEntity(Person.class);
 
@@ -189,7 +178,7 @@ public class SimpleCassandraRepositoryUnitTests {
 	}
 
 	@Test // DATACASS-56
-	public void shouldSelectWithPaging() {
+	void shouldSelectWithPaging() {
 
 		CassandraPageRequest pageRequest = CassandraPageRequest.first(10, Direction.ASC, "foo");
 
@@ -201,20 +190,33 @@ public class SimpleCassandraRepositoryUnitTests {
 		repository.findAll(pageRequest);
 
 		verify(cassandraOperations).slice(
-				Query.empty().sort(pageRequest.getSort()).queryOptions(QueryOptions.builder().fetchSize(10).build()),
+				Query.empty().sort(pageRequest.getSort()).queryOptions(QueryOptions.builder().pageSize(10).build()),
 				SimplePerson.class);
 	}
 
-	@Data
-	static class SimplePerson {
+	record SimplePerson(@Id String id) {
 
-		@Id String id;
 	}
 
-	@Data
 	static class VersionedPerson {
 
 		@Id String id;
 		@Version long version;
+
+		public String getId() {
+			return id;
+		}
+
+		public void setId(String id) {
+			this.id = id;
+		}
+
+		public long getVersion() {
+			return version;
+		}
+
+		public void setVersion(long version) {
+			this.version = version;
+		}
 	}
 }

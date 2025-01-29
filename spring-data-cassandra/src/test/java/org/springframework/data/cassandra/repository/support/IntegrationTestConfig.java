@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,17 +20,16 @@ import static org.springframework.data.cassandra.core.cql.keyspace.CreateKeyspac
 import java.util.Collections;
 import java.util.List;
 
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.cassandra.ReactiveSession;
 import org.springframework.data.cassandra.config.AbstractReactiveCassandraConfiguration;
+import org.springframework.data.cassandra.config.CqlSessionFactoryBean;
 import org.springframework.data.cassandra.config.SchemaAction;
 import org.springframework.data.cassandra.core.cql.keyspace.CreateKeyspaceSpecification;
 import org.springframework.data.cassandra.core.cql.keyspace.DropKeyspaceSpecification;
 import org.springframework.data.cassandra.support.CassandraConnectionProperties;
-import org.springframework.data.cassandra.support.IntegrationTestNettyOptions;
 import org.springframework.data.cassandra.support.RandomKeyspaceName;
-
-import com.datastax.driver.core.NettyOptions;
-import com.datastax.driver.core.QueryOptions;
 
 /**
  * Setup any spring configuration for unit tests
@@ -42,14 +41,39 @@ import com.datastax.driver.core.QueryOptions;
 @Configuration
 public class IntegrationTestConfig extends AbstractReactiveCassandraConfiguration {
 
-	public static final CassandraConnectionProperties PROPS = new CassandraConnectionProperties();
-	public static final int PORT = PROPS.getCassandraPort();
+	private static final CassandraConnectionProperties PROPS = new CassandraConnectionProperties();
+	private static final int PORT = PROPS.getCassandraPort();
 
-	public String keyspaceName = RandomKeyspaceName.create();
+	private String keyspaceName = RandomKeyspaceName.create();
 
 	@Override
 	protected int getPort() {
 		return PORT;
+	}
+
+	@Bean
+	@Override
+	public CqlSessionFactoryBean cassandraSession() {
+
+		SharedCqlSessionFactoryBean bean = new SharedCqlSessionFactoryBean();
+
+		bean.setContactPoints(getContactPoints());
+		bean.setPort(getPort());
+
+		bean.setKeyspaceCreations(getKeyspaceCreations());
+		bean.setKeyspaceDrops(getKeyspaceDrops());
+
+		bean.setKeyspaceName(getKeyspaceName());
+		bean.setKeyspaceStartupScripts(getStartupScripts());
+		bean.setKeyspaceShutdownScripts(getShutdownScripts());
+
+		return bean;
+	}
+
+	@Bean(destroyMethod = "")
+	@Override
+	public ReactiveSession reactiveCassandraSession() {
+		return super.reactiveCassandraSession();
 	}
 
 	@Override
@@ -60,19 +84,6 @@ public class IntegrationTestConfig extends AbstractReactiveCassandraConfiguratio
 	@Override
 	protected String getKeyspaceName() {
 		return keyspaceName;
-	}
-
-	@Override
-	protected NettyOptions getNettyOptions() {
-		return IntegrationTestNettyOptions.INSTANCE;
-	}
-
-	@Override
-	protected QueryOptions getQueryOptions() {
-
-		QueryOptions queryOptions = new QueryOptions();
-		queryOptions.setRefreshSchemaIntervalMillis(0);
-		return queryOptions;
 	}
 
 	@Override

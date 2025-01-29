@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package org.springframework.data.cassandra.config;
 
-import lombok.RequiredArgsConstructor;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -33,16 +32,17 @@ import org.springframework.data.cassandra.core.cql.keyspace.KeyspaceOption;
 import org.springframework.data.cassandra.core.cql.keyspace.KeyspaceOption.ReplicationStrategy;
 import org.springframework.data.cassandra.core.cql.keyspace.Option;
 
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+
 /**
  * Factory to create {@link CreateKeyspaceSpecification} and {@link DropKeyspaceSpecification}.
  *
  * @author Mark Paluch
  * @since 2.0
  */
-@RequiredArgsConstructor
 class KeyspaceActionSpecificationFactory {
 
-	private final KeyspaceIdentifier name;
+	private final CqlIdentifier name;
 
 	private final List<DataCenterReplication> replications;
 
@@ -52,15 +52,14 @@ class KeyspaceActionSpecificationFactory {
 
 	private final boolean durableWrites;
 
-	/**
-	 * Create a new {@link KeyspaceActionSpecificationFactoryBuilder} to configure a new
-	 * {@link KeyspaceActionSpecificationFactory}.
-	 *
-	 * @param keyspaceName must not be {@literal null} or empty.
-	 * @return the new {@link KeyspaceActionSpecificationFactoryBuilder} for {@code keyspaceName}.
-	 */
-	public static KeyspaceActionSpecificationFactoryBuilder builder(String keyspaceName) {
-		return builder(KeyspaceIdentifier.of(keyspaceName));
+	KeyspaceActionSpecificationFactory(CqlIdentifier name, List<DataCenterReplication> replications,
+			ReplicationStrategy replicationStrategy, long replicationFactor, boolean durableWrites) {
+
+		this.name = name;
+		this.replications = replications;
+		this.replicationStrategy = replicationStrategy;
+		this.replicationFactor = replicationFactor;
+		this.durableWrites = durableWrites;
 	}
 
 	/**
@@ -70,7 +69,32 @@ class KeyspaceActionSpecificationFactory {
 	 * @param keyspaceName must not be {@literal null} or empty.
 	 * @return the new {@link KeyspaceActionSpecificationFactoryBuilder} for {@code keyspaceName}.
 	 */
+	public static KeyspaceActionSpecificationFactoryBuilder builder(String keyspaceName) {
+		return builder(CqlIdentifier.fromCql(keyspaceName));
+	}
+
+	/**
+	 * Create a new {@link KeyspaceActionSpecificationFactoryBuilder} to configure a new
+	 * {@link KeyspaceActionSpecificationFactory}.
+	 *
+	 * @param keyspaceName must not be {@literal null} or empty.
+	 * @return the new {@link KeyspaceActionSpecificationFactoryBuilder} for {@code keyspaceName}.
+	 * @deprecated since 3.0, use {@link #builder(CqlIdentifier)}.
+	 */
+	@Deprecated
 	public static KeyspaceActionSpecificationFactoryBuilder builder(KeyspaceIdentifier keyspaceName) {
+		return builder(keyspaceName.toCqlIdentifier());
+	}
+
+	/**
+	 * Create a new {@link KeyspaceActionSpecificationFactoryBuilder} to configure a new
+	 * {@link KeyspaceActionSpecificationFactory}.
+	 *
+	 * @param keyspaceName must not be {@literal null} or empty.
+	 * @return the new {@link KeyspaceActionSpecificationFactoryBuilder} for {@code keyspaceName}.
+	 * @since 3.0
+	 */
+	public static KeyspaceActionSpecificationFactoryBuilder builder(CqlIdentifier keyspaceName) {
 		return new KeyspaceActionSpecificationFactoryBuilder(keyspaceName);
 	}
 
@@ -170,7 +194,7 @@ class KeyspaceActionSpecificationFactory {
 
 	static class KeyspaceActionSpecificationFactoryBuilder {
 
-		private final KeyspaceIdentifier name;
+		private final CqlIdentifier name;
 
 		private final List<DataCenterReplication> replications = new ArrayList<>();
 
@@ -180,7 +204,7 @@ class KeyspaceActionSpecificationFactory {
 
 		private boolean durableWrites = false;
 
-		private KeyspaceActionSpecificationFactoryBuilder(KeyspaceIdentifier name) {
+		private KeyspaceActionSpecificationFactoryBuilder(CqlIdentifier name) {
 			this.name = name;
 		}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,20 @@
 package org.springframework.data.cassandra.repository.support;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.junit.Assume.*;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanClassLoaderAware;
 import org.springframework.beans.factory.BeanFactory;
@@ -40,23 +44,31 @@ import org.springframework.data.cassandra.core.mapping.event.BeforeSaveEvent;
 import org.springframework.data.cassandra.core.mapping.event.CassandraMappingEvent;
 import org.springframework.data.cassandra.core.query.CassandraPageRequest;
 import org.springframework.data.cassandra.domain.User;
+import org.springframework.data.cassandra.domain.UserToken;
 import org.springframework.data.cassandra.repository.CassandraRepository;
-import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTest;
+import org.springframework.data.cassandra.support.CassandraVersion;
+import org.springframework.data.cassandra.test.util.IntegrationTestsSupport;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.repository.query.ExtensionAwareQueryMethodEvaluationContextProvider;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringRunner;
+import org.springframework.data.util.Version;
+import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import org.springframework.util.ClassUtils;
+
+import com.datastax.oss.driver.api.core.CqlSession;
 
 /**
  * Integration tests for {@link SimpleCassandraRepository}.
  *
  * @author Mark Paluch
+ * @author Jens Schauder
  */
-@RunWith(SpringRunner.class)
-@ContextConfiguration
-public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceCreatingIntegrationTest
+@SpringJUnitConfig
+public class SimpleCassandraRepositoryIntegrationTests extends IntegrationTestsSupport
 		implements BeanClassLoaderAware, BeanFactoryAware {
+
+	private static final Version CASSANDRA_3 = Version.parse("3.0");
 
 	@Configuration
 	public static class Config extends IntegrationTestConfig {
@@ -72,9 +84,11 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 		}
 	}
 
+	@Autowired private CqlSession session;
 	@Autowired private CassandraOperations operations;
 	@Autowired private CaptureEventListener eventListener;
 
+	private Version cassandraVersion;
 	private BeanFactory beanFactory;
 	private CassandraRepositoryFactory factory;
 	private ClassLoader classLoader;
@@ -92,8 +106,8 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 		this.beanFactory = beanFactory;
 	}
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		factory = new CassandraRepositoryFactory(operations);
 		factory.setRepositoryBaseClass(SimpleCassandraRepository.class);
@@ -102,6 +116,8 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 		factory.setEvaluationContextProvider(ExtensionAwareQueryMethodEvaluationContextProvider.DEFAULT);
 
 		repository = factory.getRepository(UserRepostitory.class);
+
+		cassandraVersion = CassandraVersion.get(session);
 
 		repository.deleteAll();
 
@@ -116,7 +132,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-396
-	public void existsByIdShouldReturnTrueForExistingObject() {
+	void existsByIdShouldReturnTrueForExistingObject() {
 
 		Boolean exists = repository.existsById(dave.getId());
 
@@ -124,7 +140,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-396
-	public void existsByIdShouldReturnFalseForAbsentObject() {
+	void existsByIdShouldReturnFalseForAbsentObject() {
 
 		boolean exists = repository.existsById("unknown");
 
@@ -132,7 +148,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-396
-	public void existsByMonoOfIdShouldReturnTrueForExistingObject() {
+	void existsByMonoOfIdShouldReturnTrueForExistingObject() {
 
 		boolean exists = repository.existsById(dave.getId());
 
@@ -140,7 +156,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-396
-	public void findByIdShouldReturnObject() {
+	void findByIdShouldReturnObject() {
 
 		Optional<User> User = repository.findById(dave.getId());
 
@@ -148,7 +164,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-396
-	public void findByIdShouldCompleteWithoutValueForAbsentObject() {
+	void findByIdShouldCompleteWithoutValueForAbsentObject() {
 
 		Optional<User> User = repository.findById("unknown");
 
@@ -156,7 +172,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-396, DATACASS-416
-	public void findAllShouldReturnAllResults() {
+	void findAllShouldReturnAllResults() {
 
 		List<User> Users = repository.findAll();
 
@@ -164,7 +180,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-396, DATACASS-416
-	public void findAllByIterableOfIdShouldReturnResults() {
+	void findAllByIterableOfIdShouldReturnResults() {
 
 		List<User> Users = repository.findAllById(Arrays.asList(dave.getId(), boyd.getId()));
 
@@ -172,7 +188,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-56
-	public void findAllWithPaging() {
+	void findAllWithPaging() {
 
 		Slice<User> slice = repository.findAll(CassandraPageRequest.first(2));
 
@@ -181,8 +197,40 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 		assertThat(repository.findAll(slice.nextPageable())).hasSize(2);
 	}
 
+	@Test // DATACASS-700
+	void findAllWithPagingAndSorting() {
+
+		assumeTrue(cassandraVersion.isGreaterThan(CASSANDRA_3));
+
+		UserTokenRepostitory repository = factory.getRepository(UserTokenRepostitory.class);
+		repository.deleteAll();
+
+		UUID id = UUID.randomUUID();
+		List<UserToken> users = IntStream.range(0, 100).mapToObj(value -> {
+
+			UserToken token = new UserToken();
+			token.setUserId(id);
+			token.setToken(UUID.randomUUID());
+
+			return token;
+		}).collect(Collectors.toList());
+
+		repository.saveAll(users);
+
+		List<UserToken> result = new ArrayList<>();
+		Slice<UserToken> slice = repository.findAllByUserId(id, CassandraPageRequest.first(10, Sort.by("token")));
+
+		while (!slice.isEmpty() || slice.hasNext()) {
+			result.addAll(slice.getContent());
+
+			slice = repository.findAllByUserId(id, slice.nextPageable());
+		}
+
+		assertThat(result).hasSize(100);
+	}
+
 	@Test // DATACASS-396
-	public void countShouldReturnNumberOfRecords() {
+	void countShouldReturnNumberOfRecords() {
 
 		long count = repository.count();
 
@@ -190,7 +238,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-415
-	public void insertEntityShouldInsertEntity() {
+	void insertEntityShouldInsertEntity() {
 
 		repository.deleteAll();
 
@@ -202,7 +250,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-415
-	public void insertIterableOfEntitiesShouldInsertEntity() {
+	void insertIterableOfEntitiesShouldInsertEntity() {
 
 		repository.deleteAll();
 
@@ -212,7 +260,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-396, DATACASS-573
-	public void saveEntityShouldUpdateExistingEntity() {
+	void saveEntityShouldUpdateExistingEntity() {
 
 		dave.setFirstname("Hello, Dave");
 		dave.setLastname("Bowman");
@@ -232,7 +280,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-560
-	public void saveShouldEmitEvents() {
+	void saveShouldEmitEvents() {
 
 		dave.setFirstname("Hello, Dave");
 		dave.setLastname("Bowman");
@@ -244,7 +292,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-396
-	public void saveEntityShouldInsertNewEntity() {
+	void saveEntityShouldInsertNewEntity() {
 
 		User User = new User("36", "Homer", "Simpson");
 
@@ -258,7 +306,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-396, DATACASS-416, DATACASS-573
-	public void saveIterableOfNewEntitiesShouldInsertEntity() {
+	void saveIterableOfNewEntitiesShouldInsertEntity() {
 
 		repository.deleteAll();
 
@@ -270,7 +318,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-396, DATACASS-416
-	public void saveIterableOfMixedEntitiesShouldInsertEntity() {
+	void saveIterableOfMixedEntitiesShouldInsertEntity() {
 
 		User User = new User("36", "Homer", "Simpson");
 
@@ -289,7 +337,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-396, DATACASS-416
-	public void deleteAllShouldRemoveEntities() {
+	void deleteAllShouldRemoveEntities() {
 
 		repository.deleteAll();
 
@@ -299,7 +347,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-396
-	public void deleteByIdShouldRemoveEntity() {
+	void deleteByIdShouldRemoveEntity() {
 
 		repository.deleteById(dave.getId());
 
@@ -308,8 +356,18 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 		assertThat(loaded).isEmpty();
 	}
 
+	@Test // DATACASS-825
+	void deleteAllByIdShouldRemoveEntity() {
+
+		repository.deleteAllById(Collections.singletonList(dave.getId()));
+
+		Optional<User> loaded = repository.findById(dave.getId());
+
+		assertThat(loaded).isEmpty();
+	}
+
 	@Test // DATACASS-396
-	public void deleteShouldRemoveEntity() {
+	void deleteShouldRemoveEntity() {
 
 		repository.delete(dave);
 
@@ -319,7 +377,7 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 	}
 
 	@Test // DATACASS-396
-	public void deleteIterableOfEntitiesShouldRemoveEntities() {
+	void deleteIterableOfEntitiesShouldRemoveEntities() {
 
 		repository.deleteAll(Arrays.asList(dave, boyd));
 
@@ -328,7 +386,11 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 		assertThat(loaded).isEmpty();
 	}
 
-	interface UserRepostitory extends CassandraRepository<User, String> { }
+	interface UserRepostitory extends CassandraRepository<User, String> {}
+
+	interface UserTokenRepostitory extends CassandraRepository<UserToken, UUID> {
+		Slice<UserToken> findAllByUserId(UUID id, Pageable pageRequest);
+	}
 
 	static class CaptureEventListener extends AbstractCassandraEventListener<User> {
 
@@ -348,11 +410,11 @@ public class SimpleCassandraRepositoryIntegrationTests extends AbstractKeyspaceC
 			events.clear();
 		}
 
-		List<BeforeSaveEvent<User>> getBeforeSave() {
+		private List<BeforeSaveEvent<User>> getBeforeSave() {
 			return filter(BeforeSaveEvent.class);
 		}
 
-		List<AfterSaveEvent<User>> getAfterSave() {
+		private List<AfterSaveEvent<User>> getAfterSave() {
 			return filter(AfterSaveEvent.class);
 		}
 

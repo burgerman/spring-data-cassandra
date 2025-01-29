@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 package org.springframework.data.cassandra;
 
+import java.io.Serial;
+
 import org.springframework.dao.DataAccessException;
 
 /**
@@ -24,12 +26,23 @@ import org.springframework.dao.DataAccessException;
  */
 public class CassandraInternalException extends DataAccessException {
 
-	private static final long serialVersionUID = 433061676465346338L;
+	@Serial private static final long serialVersionUID = 433061676465346338L;
 
+	/**
+	 * Constructor for {@link CassandraInternalException}.
+	 *
+	 * @param msg the detail message.
+	 */
 	public CassandraInternalException(String msg) {
 		super(msg);
 	}
 
+	/**
+	 * Constructor for {@link CassandraInternalException}.
+	 *
+	 * @param msg the detail message.
+	 * @param cause the root cause from the underlying data access API.
+	 */
 	public CassandraInternalException(String msg, Throwable cause) {
 		super(msg, cause);
 	}

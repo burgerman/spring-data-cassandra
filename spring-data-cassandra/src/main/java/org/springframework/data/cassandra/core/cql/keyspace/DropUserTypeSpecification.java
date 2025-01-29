@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,9 @@
  */
 package org.springframework.data.cassandra.core.cql.keyspace;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import org.springframework.lang.Nullable;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Object to configure a {@code DROP TYPE} specification.
@@ -25,38 +27,52 @@ import org.springframework.data.cassandra.core.cql.CqlIdentifier;
  * @since 1.5
  * @see CqlIdentifier
  */
-public class DropUserTypeSpecification extends UserTypeNameSpecification {
+public class DropUserTypeSpecification extends UserTypeNameSpecification implements CqlSpecification {
 
 	private boolean ifExists;
 
-	private DropUserTypeSpecification(CqlIdentifier name) {
-		super(name);
+	private DropUserTypeSpecification(@Nullable CqlIdentifier keyspace, CqlIdentifier name) {
+		super(keyspace, name);
 	}
 
 	/**
-	 * Entry point into the {@link DropUserTypeSpecification}'s fluent API given {@code name} to drop a type. Convenient
-	 * if imported statically.
+	 * Entry point into the {@link DropUserTypeSpecification}'s fluent API given {@code typeName} to drop a type.
+	 * Convenient if imported statically.
 	 *
-	 * @param name must not be {@link null} or empty.
+	 * @param typeName must not be {@code null} or empty.
 	 * @return a new {@link DropUserTypeSpecification}.
 	 */
-	public static DropUserTypeSpecification dropType(String name) {
-		return new DropUserTypeSpecification(CqlIdentifier.of(name));
+	public static DropUserTypeSpecification dropType(String typeName) {
+		return new DropUserTypeSpecification(null, CqlIdentifier.fromCql(typeName));
 	}
 
 	/**
-	 * Entry point into the {@link DropUserTypeSpecification}'s fluent API given {@code name} to drop a type. Convenient
-	 * if imported statically.
+	 * Entry point into the {@link DropUserTypeSpecification}'s fluent API given {@code typeName} to drop a type.
+	 * Convenient if imported statically.
 	 *
-	 * @param name must not be {@link null} or empty.
+	 * @param typeName must not be {@code null} or empty.
 	 * @return a new {@link DropUserTypeSpecification}.
 	 */
-	public static DropUserTypeSpecification dropType(CqlIdentifier name) {
-		return new DropUserTypeSpecification(name);
+	public static DropUserTypeSpecification dropType(CqlIdentifier typeName) {
+		return new DropUserTypeSpecification(null, typeName);
 	}
 
 	/**
-	 * Enables the inclusion of an{@code IF EXISTS} clause.
+	 * Entry point into the {@link DropUserTypeSpecification}'s fluent API given {@code typeName} to drop a type.
+	 * Convenient if imported statically. Uses the default keyspace if {@code keyspace} is null; otherwise, of the
+	 * {@code keyspace} is not {@link null}, then the UDT name is prefixed with {@code keyspace}.
+	 *
+	 * @param keyspace can be {@code null}.
+	 * @param typeName must not be {@code null} or empty.
+	 * @return a new {@link DropUserTypeSpecification}.
+	 * @since 4.4
+	 */
+	public static DropUserTypeSpecification dropType(@Nullable CqlIdentifier keyspace, CqlIdentifier typeName) {
+		return new DropUserTypeSpecification(keyspace, typeName);
+	}
+
+	/**
+	 * Enables the inclusion of an {@code IF EXISTS} clause.
 	 *
 	 * @return this {@link DropUserTypeSpecification}.
 	 */

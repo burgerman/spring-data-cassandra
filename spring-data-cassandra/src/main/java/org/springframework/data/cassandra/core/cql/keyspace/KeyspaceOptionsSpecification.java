@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,35 +17,34 @@ package org.springframework.data.cassandra.core.cql.keyspace;
 
 import static org.springframework.data.cassandra.core.cql.keyspace.CqlStringUtils.*;
 
-import lombok.EqualsAndHashCode;
-
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import org.springframework.data.cassandra.core.cql.KeyspaceIdentifier;
 import org.springframework.lang.Nullable;
+import org.springframework.util.ObjectUtils;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Abstract builder class to support the construction of table specifications that have table options, that is, those
  * options normally specified by {@code WITH ... AND ...}.
- * <p/>
+ * <p>
  * It is important to note that although this class depends on {@link KeyspaceOption} for convenient and typesafe use,
- * it ultimately stores its options in a <code>Map<String,Object></code> for flexibility. This means that
+ * it ultimately stores its options in a <code>Map&lt;String,Object&gt;</code> for flexibility. This means that
  * {@link #with(KeyspaceOption)} and {@link #with(KeyspaceOption, Object)} delegate to
  * {@link #with(String, Object, boolean, boolean)}. This design allows the API to support new Cassandra options as they
  * are introduced without having to update the code immediately.
  *
  * @author John McPeek
- * @param <T> The subtype of the {@link KeyspaceOptionsSpecification}.
+ * @param <T> the subtype of the {@link KeyspaceOptionsSpecification}.
  */
-@EqualsAndHashCode(callSuper = true)
 public abstract class KeyspaceOptionsSpecification<T extends KeyspaceOptionsSpecification<T>>
 		extends KeyspaceActionSpecification {
 
 	protected Map<String, Object> options = new LinkedHashMap<>();
 
-	protected KeyspaceOptionsSpecification(KeyspaceIdentifier name) {
+	protected KeyspaceOptionsSpecification(CqlIdentifier name) {
 		super(name);
 	}
 
@@ -75,7 +74,7 @@ public abstract class KeyspaceOptionsSpecification<T extends KeyspaceOptionsSpec
 
 	/**
 	 * Adds the given option by name to this keyspaces's options.
-	 * <p/>
+	 * <p>
 	 * Options that have {@literal null} values are considered single string options where the name of the option is the
 	 * string to be used. Otherwise, the result of {@link Object#toString()} is considered to be the value of the option
 	 * with the given name. The value, after conversion to string, may have embedded single quotes escaped according to
@@ -107,5 +106,31 @@ public abstract class KeyspaceOptionsSpecification<T extends KeyspaceOptionsSpec
 
 	public Map<String, Object> getOptions() {
 		return Collections.unmodifiableMap(options);
+	}
+
+	@Override
+	public boolean equals(@Nullable Object o) {
+
+		if (this == o) {
+			return true;
+		}
+
+		if (!(o instanceof KeyspaceOptionsSpecification)) {
+			return false;
+		}
+
+		if (!super.equals(o)) {
+			return false;
+		}
+
+		KeyspaceOptionsSpecification<?> that = (KeyspaceOptionsSpecification<?>) o;
+		return ObjectUtils.nullSafeEquals(options, that.options);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = super.hashCode();
+		result = 31 * result + ObjectUtils.nullSafeHashCode(options);
+		return result;
 	}
 }

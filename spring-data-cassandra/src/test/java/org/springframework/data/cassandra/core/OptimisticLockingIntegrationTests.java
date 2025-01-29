@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 the original author or authors.
+ * Copyright 2019-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,34 +15,29 @@
  */
 package org.springframework.data.cassandra.core;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.*;
 
-import lombok.Data;
-import lombok.experimental.Wither;
-
-import org.junit.Before;
-import org.junit.Test;
-
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.PersistenceConstructor;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.cassandra.core.convert.MappingCassandraConverter;
 import org.springframework.data.cassandra.repository.support.SchemaTestUtils;
-import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTest;
+import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTests;
 
 /**
  * Integration tests for optimistic locking through {@link CassandraTemplate}.
  *
  * @author Mark Paluch
  */
-public class OptimisticLockingIntegrationTests extends AbstractKeyspaceCreatingIntegrationTest {
+class OptimisticLockingIntegrationTests extends AbstractKeyspaceCreatingIntegrationTests {
 
-	CassandraTemplate template;
+	private CassandraTemplate template;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		MappingCassandraConverter converter = new MappingCassandraConverter();
 
@@ -55,7 +50,7 @@ public class OptimisticLockingIntegrationTests extends AbstractKeyspaceCreatingI
 	}
 
 	@Test // DATACASS-576
-	public void shouldInsertVersioned() {
+	void shouldInsertVersioned() {
 
 		VersionedEntity versionedEntity = new VersionedEntity(42);
 
@@ -68,7 +63,7 @@ public class OptimisticLockingIntegrationTests extends AbstractKeyspaceCreatingI
 	}
 
 	@Test // DATACASS-576
-	public void duplicateInsertShouldFail() {
+	void duplicateInsertShouldFail() {
 
 		template.insert(new VersionedEntity(42));
 
@@ -77,7 +72,7 @@ public class OptimisticLockingIntegrationTests extends AbstractKeyspaceCreatingI
 	}
 
 	@Test // DATACASS-576
-	public void shouldUpdateVersioned() {
+	void shouldUpdateVersioned() {
 
 		VersionedEntity versionedEntity = new VersionedEntity(42);
 
@@ -92,7 +87,7 @@ public class OptimisticLockingIntegrationTests extends AbstractKeyspaceCreatingI
 	}
 
 	@Test // DATACASS-576
-	public void updateForOutdatedEntityShouldFail() {
+	void updateForOutdatedEntityShouldFail() {
 
 		VersionedEntity versionedEntity = new VersionedEntity(42);
 
@@ -103,7 +98,7 @@ public class OptimisticLockingIntegrationTests extends AbstractKeyspaceCreatingI
 	}
 
 	@Test // DATACASS-576
-	public void shouldDeleteVersionedEntity() {
+	void shouldDeleteVersionedEntity() {
 
 		VersionedEntity versionedEntity = new VersionedEntity(42);
 
@@ -117,7 +112,7 @@ public class OptimisticLockingIntegrationTests extends AbstractKeyspaceCreatingI
 	}
 
 	@Test // DATACASS-576
-	public void deleteForOutdatedEntityShouldFail() {
+	void deleteForOutdatedEntityShouldFail() {
 
 		template.insert(new VersionedEntity(42));
 
@@ -129,8 +124,6 @@ public class OptimisticLockingIntegrationTests extends AbstractKeyspaceCreatingI
 		assertThat(loaded).isNotNull();
 	}
 
-	@Data
-	@Wither
 	static class VersionedEntity {
 
 		@Id final long id;
@@ -139,15 +132,39 @@ public class OptimisticLockingIntegrationTests extends AbstractKeyspaceCreatingI
 
 		final String name;
 
-		public VersionedEntity(long id) {
+		private VersionedEntity(long id) {
 			this(id, 0, null);
 		}
 
 		@PersistenceConstructor
-		public VersionedEntity(long id, long version, String name) {
+		private VersionedEntity(long id, long version, String name) {
 			this.id = id;
 			this.version = version;
 			this.name = name;
+		}
+
+		public long getId() {
+			return this.id;
+		}
+
+		public long getVersion() {
+			return this.version;
+		}
+
+		public String getName() {
+			return this.name;
+		}
+
+		public VersionedEntity withId(long id) {
+			return new VersionedEntity(id, this.version, this.name);
+		}
+
+		public VersionedEntity withVersion(long version) {
+			return new VersionedEntity(this.id, version, this.name);
+		}
+
+		public VersionedEntity withName(String name) {
+			return new VersionedEntity(this.id, this.version, name);
 		}
 	}
 }

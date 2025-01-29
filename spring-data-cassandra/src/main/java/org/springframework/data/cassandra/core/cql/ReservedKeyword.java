@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,9 @@ import org.springframework.util.StringUtils;
  *      "https://cassandra.apache.org/doc/cql3/CQL.html#appendixA">https://cassandra.apache.org/doc/cql3/CQL.html#appendixA</a>
  * @author Matthew T. Adams
  * @author Mark Paluch
+ * @deprecated since 3.0 without replacement.
  */
+@Deprecated
 public enum ReservedKeyword {
 
 	ADD, ALTER, AND, ANY, APPLY, ASC, AUTHORIZE, //

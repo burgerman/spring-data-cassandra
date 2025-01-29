@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,84 +15,91 @@
  */
 package org.springframework.data.cassandra.core.cql;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.*;
 
+import java.nio.ByteBuffer;
 import java.time.Duration;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import com.datastax.driver.core.ConsistencyLevel;
-import com.datastax.driver.core.policies.DefaultRetryPolicy;
-import com.datastax.driver.core.policies.DowngradingConsistencyRetryPolicy;
-import com.datastax.driver.core.policies.FallthroughRetryPolicy;
-import com.datastax.driver.core.policies.LoggingRetryPolicy;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.DefaultConsistencyLevel;
 
 /**
  * Unit tests for {@link QueryOptions}.
  *
  * @author Mark Paluch
+ * @author Tomasz Lelek
+ * @author Sam Lightfoot
+ * @author Seungho Kang
  */
-public class QueryOptionsUnitTests {
+class QueryOptionsUnitTests {
 
-	@Test // DATACASS-202
-	public void buildQueryOptions() {
+	@Test // DATACASS-202, GH-1220
+	void buildQueryOptions() {
 
-		QueryOptions queryOptions = QueryOptions.builder()
-				.consistencyLevel(ConsistencyLevel.ANY)
-				.retryPolicy(FallthroughRetryPolicy.INSTANCE)
-				.readTimeout(Duration.ofSeconds(1))
-				.fetchSize(10)
-				.tracing(true)
+		QueryOptions queryOptions = QueryOptions.builder() //
+				.consistencyLevel(DefaultConsistencyLevel.ANY) //
+				.timeout(Duration.ofSeconds(1)) //
+				.pageSize(10) //
+				.tracing(true) //
+				.keyspace(CqlIdentifier.fromCql("ks1")) //
+				.idempotent(true) //
+				.routingKeyspace(CqlIdentifier.fromCql("rksl")) //
+				.routingKey(ByteBuffer.allocate(1)) //
 				.build();
 
 		assertThat(queryOptions.getClass()).isEqualTo(QueryOptions.class);
-		assertThat(queryOptions.getRetryPolicy()).isEqualTo(FallthroughRetryPolicy.INSTANCE);
-		assertThat(queryOptions.getConsistencyLevel()).isEqualTo(ConsistencyLevel.ANY);
-		assertThat(queryOptions.getReadTimeout()).isEqualTo(Duration.ofSeconds(1));
-		assertThat(queryOptions.getFetchSize()).isEqualTo(10);
+		assertThat(queryOptions.getConsistencyLevel()).isEqualTo(DefaultConsistencyLevel.ANY);
+		assertThat(queryOptions.getTimeout()).isEqualTo(Duration.ofSeconds(1));
+		assertThat(queryOptions.getPageSize()).isEqualTo(10);
 		assertThat(queryOptions.getTracing()).isTrue();
+		assertThat(queryOptions.getKeyspace()).isEqualTo(CqlIdentifier.fromCql("ks1"));
+		assertThat(queryOptions.isIdempotent()).isEqualTo(true);
+		assertThat(queryOptions.getRoutingKeyspace()).isEqualTo(CqlIdentifier.fromCql("rksl"));
+		assertThat(queryOptions.getRoutingKey()).isEqualTo(ByteBuffer.allocate(1));
 	}
 
-	@Test // DATACASS-202
-	public void buildQueryOptionsWithDriverRetryPolicy() {
+	@Test // DATACASS-56, GH-1220
+	void buildQueryOptionsMutate() {
 
-		QueryOptions writeOptions = QueryOptions.builder()
-				.retryPolicy(new LoggingRetryPolicy(DefaultRetryPolicy.INSTANCE))
+		QueryOptions queryOptions = QueryOptions.builder() //
+				.consistencyLevel(DefaultConsistencyLevel.ANY) //
+				.timeout(Duration.ofSeconds(1)) //
+				.pageSize(10) //
+				.tracing(true) //
+				.keyspace(CqlIdentifier.fromCql("ks1")) //
+				.idempotent(true) //
+				.routingKeyspace(CqlIdentifier.fromCql("rksl")) //
+				.routingKey(ByteBuffer.allocate(1)) //
 				.build();
 
-		assertThat(writeOptions.getRetryPolicy()).isInstanceOf(LoggingRetryPolicy.class);
-	}
+		QueryOptions mutated = queryOptions.mutate().timeout(Duration.ofSeconds(5)).build();
 
-	@Test // DATACASS-202
-	public void buildQueryOptionsWithRetryPolicy() {
-
-		QueryOptions writeOptions = QueryOptions.builder()
-				.retryPolicy(DowngradingConsistencyRetryPolicy.INSTANCE)
-				.build();
-
-		assertThat(writeOptions.getRetryPolicy()).isEqualTo(DowngradingConsistencyRetryPolicy.INSTANCE);
-	}
-
-	@Test // DATACASS-56
-	public void buildQueryOptionsMutate() {
-
-		QueryOptions queryOptions = QueryOptions.builder()
-				.consistencyLevel(ConsistencyLevel.ANY)
-				.retryPolicy(FallthroughRetryPolicy.INSTANCE)
-				.readTimeout(Duration.ofSeconds(1))
-				.fetchSize(10)
-				.tracing(true)
-				.build();
-
-		QueryOptions mutated = queryOptions.mutate().readTimeout(Duration.ofSeconds(5)).build();
-
-		assertThat(mutated).isNotNull();
-		assertThat(mutated).isNotSameAs(queryOptions);
+		assertThat(mutated).isNotNull().isNotSameAs(queryOptions);
 		assertThat(mutated.getClass()).isEqualTo(QueryOptions.class);
-		assertThat(mutated.getRetryPolicy()).isEqualTo(FallthroughRetryPolicy.INSTANCE);
-		assertThat(mutated.getConsistencyLevel()).isEqualTo(ConsistencyLevel.ANY);
-		assertThat(mutated.getReadTimeout()).isEqualTo(Duration.ofSeconds(5));
-		assertThat(mutated.getFetchSize()).isEqualTo(10);
+		assertThat(mutated.getConsistencyLevel()).isEqualTo(DefaultConsistencyLevel.ANY);
+		assertThat(mutated.getTimeout()).isEqualTo(Duration.ofSeconds(5));
+		assertThat(mutated.getPageSize()).isEqualTo(10);
 		assertThat(mutated.getTracing()).isTrue();
+		assertThat(mutated.getKeyspace()).isEqualTo(CqlIdentifier.fromCql("ks1"));
+		assertThat(mutated.isIdempotent()).isEqualTo(true);
+		assertThat(mutated.getRoutingKeyspace()).isEqualTo(CqlIdentifier.fromCql("rksl"));
+		assertThat(mutated.getRoutingKey()).isEqualTo(ByteBuffer.allocate(1));
+	}
+
+	@Test // GH-1494
+	void buildZeroDurationTimeoutQueryOptions() {
+
+		QueryOptions queryOptions = QueryOptions.builder().timeout(Duration.ofSeconds(0)).build();
+
+		assertThat(queryOptions.getTimeout()).isEqualTo(Duration.ZERO);
+	}
+
+	@Test // GH-1494
+	void shouldRejectNegativeDurationTimeoutQueryOptions() {
+
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> QueryOptions.builder().timeout(Duration.ofSeconds(-1)).build());
 	}
 }

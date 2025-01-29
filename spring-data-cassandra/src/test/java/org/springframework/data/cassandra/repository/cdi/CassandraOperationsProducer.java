@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2019 the original author or authors.
+ * Copyright 2014-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,23 +15,22 @@
  */
 package org.springframework.data.cassandra.repository.cdi;
 
-import java.util.Collections;
-import java.util.Set;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Disposes;
+import jakarta.enterprise.inject.Produces;
+import jakarta.inject.Singleton;
 
-import javax.enterprise.context.ApplicationScoped;
-import javax.enterprise.inject.Disposes;
-import javax.enterprise.inject.Produces;
-import javax.inject.Singleton;
+import java.net.InetSocketAddress;
+import java.util.Collections;
 
 import org.springframework.data.cassandra.core.CassandraAdminTemplate;
 import org.springframework.data.cassandra.core.CassandraOperations;
 import org.springframework.data.cassandra.core.CassandraPersistentEntitySchemaCreator;
 import org.springframework.data.cassandra.core.CassandraPersistentEntitySchemaDropper;
 import org.springframework.data.cassandra.core.convert.MappingCassandraConverter;
-import org.springframework.data.cassandra.core.cql.generator.CreateKeyspaceCqlGenerator;
-import org.springframework.data.cassandra.core.cql.generator.DropKeyspaceCqlGenerator;
+import org.springframework.data.cassandra.core.cql.generator.CqlGenerator;
 import org.springframework.data.cassandra.core.cql.keyspace.CreateKeyspaceSpecification;
-import org.springframework.data.cassandra.core.cql.keyspace.DropKeyspaceSpecification;
+import org.springframework.data.cassandra.core.cql.keyspace.SpecificationBuilder;
 import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
 import org.springframework.data.cassandra.core.mapping.CassandraPersistentEntity;
 import org.springframework.data.cassandra.core.mapping.SimpleUserTypeResolver;
@@ -39,42 +38,41 @@ import org.springframework.data.cassandra.domain.User;
 import org.springframework.data.cassandra.support.CassandraConnectionProperties;
 import org.springframework.data.cassandra.support.RandomKeyspaceName;
 
-import com.datastax.driver.core.Cluster;
-import com.google.common.collect.Sets;
-import com.google.common.util.concurrent.Service;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.CqlSession;
 
 /**
  * @author Mark Paluch
  */
 class CassandraOperationsProducer {
 
-	public static final String KEYSPACE_NAME = RandomKeyspaceName.create();
+	private static final String KEYSPACE_NAME = RandomKeyspaceName.create();
 
 	@Produces
 	@Singleton
-	public Cluster createCluster() throws Exception {
+	public CqlSession createSession() throws Exception {
 		CassandraConnectionProperties properties = new CassandraConnectionProperties();
 
-		return Cluster.builder().addContactPoint(properties.getCassandraHost()).withPort(properties.getCassandraPort())
-				.build();
+		return CqlSession.builder().addContactPoint(
+				InetSocketAddress.createUnresolved(properties.getCassandraHost(), properties.getCassandraPort())).build();
 	}
 
 	@Produces
 	@ApplicationScoped
-	public CassandraOperations createCassandraOperations(Cluster cluster) throws Exception {
+	public CassandraOperations createCassandraOperations(CqlSession session) throws Exception {
 
 		CassandraMappingContext mappingContext = new CassandraMappingContext();
-		mappingContext.setUserTypeResolver(new SimpleUserTypeResolver(cluster, KEYSPACE_NAME));
+		mappingContext.setUserTypeResolver(new SimpleUserTypeResolver(session, CqlIdentifier.fromCql(KEYSPACE_NAME)));
 		mappingContext.setInitialEntitySet(Collections.singleton(User.class));
 		mappingContext.afterPropertiesSet();
 
 		MappingCassandraConverter cassandraConverter = new MappingCassandraConverter(mappingContext);
 
-		CassandraAdminTemplate cassandraTemplate = new CassandraAdminTemplate(cluster.connect(), cassandraConverter);
+		CassandraAdminTemplate cassandraTemplate = new CassandraAdminTemplate(session, cassandraConverter);
 
 		CreateKeyspaceSpecification createKeyspaceSpecification = CreateKeyspaceSpecification.createKeyspace(KEYSPACE_NAME)
 				.ifNotExists();
-		cassandraTemplate.getCqlOperations().execute(CreateKeyspaceCqlGenerator.toCql(createKeyspaceSpecification));
+		cassandraTemplate.getCqlOperations().execute(CqlGenerator.toCql(createKeyspaceSpecification));
 		cassandraTemplate.getCqlOperations().execute("USE " + KEYSPACE_NAME);
 
 		CassandraPersistentEntitySchemaDropper schemaDropper = new CassandraPersistentEntitySchemaDropper(mappingContext,
@@ -106,15 +104,10 @@ class CassandraOperationsProducer {
 	public void close(@Disposes CassandraOperations cassandraOperations) {
 
 		cassandraOperations.getCqlOperations()
-				.execute(DropKeyspaceCqlGenerator.toCql(DropKeyspaceSpecification.dropKeyspace(KEYSPACE_NAME)));
+				.execute(CqlGenerator.toCql(SpecificationBuilder.dropKeyspace(KEYSPACE_NAME)));
 	}
 
-	public void close(@Disposes Cluster cluster) {
-		cluster.close();
-	}
-
-	@Produces
-	public Set<Service> producerToSatisfyGuavaDependenciesWhenTesting() {
-		return Sets.newHashSet();
+	public void close(@Disposes CqlSession cqlSession) {
+		cqlSession.close();
 	}
 }

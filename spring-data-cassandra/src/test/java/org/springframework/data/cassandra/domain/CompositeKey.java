@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,6 @@
  */
 package org.springframework.data.cassandra.domain;
 
-import lombok.Data;
-
 import java.io.Serializable;
 
 import org.springframework.data.cassandra.core.cql.PrimaryKeyType;
@@ -27,9 +25,31 @@ import org.springframework.data.cassandra.core.mapping.PrimaryKeyColumn;
  * @author Mark Paluch
  */
 @PrimaryKeyClass
-@Data
 public class CompositeKey implements Serializable {
 
 	@PrimaryKeyColumn(type = PrimaryKeyType.PARTITIONED, ordinal = 1, name = "first_name") private String firstname;
 	@PrimaryKeyColumn(type = PrimaryKeyType.PARTITIONED, ordinal = 2) private String lastname;
+
+	public CompositeKey(String firstname, String lastname) {
+		this.firstname = firstname;
+		this.lastname = lastname;
+	}
+
+	public CompositeKey() {}
+
+	public String getFirstname() {
+		return this.firstname;
+	}
+
+	public String getLastname() {
+		return this.lastname;
+	}
+
+	public void setFirstname(String firstname) {
+		this.firstname = firstname;
+	}
+
+	public void setLastname(String lastname) {
+		this.lastname = lastname;
+	}
 }

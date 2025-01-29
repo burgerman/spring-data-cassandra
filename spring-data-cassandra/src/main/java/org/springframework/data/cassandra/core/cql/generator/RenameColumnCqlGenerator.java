@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,11 +46,8 @@ public class RenameColumnCqlGenerator extends ColumnChangeCqlGenerator<RenameCol
 		this.keyword = keyword;
 	}
 
-	/*
-	 * (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.cql.generator.ColumnChangeCqlGenerator#toCql(java.lang.StringBuilder)
-	 */
 	public StringBuilder toCql(StringBuilder cql) {
-		return cql.append(keyword).append(' ').append(spec().getName()).append(" TO ").append(spec().getTargetName());
+		return cql.append(keyword).append(' ').append(spec().getName().asCql(true)).append(" TO ")
+				.append(spec().getTargetName().asCql(true));
 	}
 }

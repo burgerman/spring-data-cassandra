@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,15 +15,13 @@
  */
 package org.springframework.data.cassandra.core.convert;
 
-import lombok.NonNull;
-
 import java.util.Collections;
 
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.core.convert.support.GenericConversionService;
 import org.springframework.data.convert.CustomConversions;
-import org.springframework.data.convert.EntityInstantiators;
+import org.springframework.data.mapping.model.EntityInstantiators;
 import org.springframework.util.Assert;
 
 /**
@@ -66,7 +64,7 @@ public abstract class AbstractCassandraConverter implements CassandraConverter, 
 		this.instantiators = instantiators;
 	}
 
-	@NonNull
+
 	@Override
 	public ConversionService getConversionService() {
 		return this.conversionService;
@@ -79,17 +77,11 @@ public abstract class AbstractCassandraConverter implements CassandraConverter, 
 		this.conversions = conversions;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.cassandra.core.convert.CassandraConverter#getCustomConversions()
-	 */
 	@Override
 	public CustomConversions getCustomConversions() {
 		return this.conversions;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.beans.factory.InitializingBean#afterPropertiesSet()
-	 */
 	@Override
 	public void afterPropertiesSet() {
 		initializeConverters();

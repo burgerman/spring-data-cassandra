@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,12 @@
  */
 package org.springframework.data.cassandra.core.cql;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.regex.Pattern;
 
+import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
-
-import com.datastax.driver.core.KeyspaceMetadata;
-import com.datastax.driver.core.TableMetadata;
 
 /**
  * This encapsulates the logic for CQL quoted and unquoted identifiers.
@@ -36,10 +35,12 @@ import com.datastax.driver.core.TableMetadata;
  * @author John Blum
  * @see #toCql()
  * @see #toString()
+ * @deprecated since 3.0, use {@link com.datastax.oss.driver.api.core.CqlIdentifier} instead.
  */
+@Deprecated
 public final class CqlIdentifier implements Comparable<CqlIdentifier>, Serializable {
 
-	private static final long serialVersionUID = -974441606330912437L;
+	@Serial private static final long serialVersionUID = -974441606330912437L;
 
 	public static final String UNQUOTED_REGEX = "(?i)[a-z][\\w]*";
 
@@ -144,6 +145,7 @@ public final class CqlIdentifier implements Comparable<CqlIdentifier>, Serializa
 	 * @see #CqlIdentifier(CharSequence, boolean)
 	 * @deprecated since 2.0, use {@link #quoted(CharSequence)}.
 	 */
+	@Deprecated
 	public static CqlIdentifier quotedCqlId(CharSequence identifier) {
 		return new CqlIdentifier(identifier, true);
 	}
@@ -184,9 +186,11 @@ public final class CqlIdentifier implements Comparable<CqlIdentifier>, Serializa
 	 * Returns the identifier <em>without</em> encasing quotes, regardless of the value of {@link #isQuoted()}. For
 	 * example, if {@link #isQuoted()} is {@code true}, then this value will be the same as {@link #toCql()} and
 	 * {@link #toString()}.
-	 * <p/>
-	 * This is needed, for example, to get the correct {@link TableMetadata} from
-	 * {@link KeyspaceMetadata#getTable(String)}: the given string must <em>not</em> be quoted.
+	 * <p>
+	 * This is needed, for example, to get the correct
+	 * {@link com.datastax.oss.driver.api.core.metadata.schema.TableMetadata} from
+	 * {@link com.datastax.oss.driver.api.core.metadata.schema.KeyspaceMetadata#getTable(String)}: the given string must
+	 * <em>not</em> be quoted.
 	 */
 	public String getUnquoted() {
 		return unquoted;
@@ -235,7 +239,7 @@ public final class CqlIdentifier implements Comparable<CqlIdentifier>, Serializa
 	 * @see java.lang.Object#equals(java.lang.Object)
 	 */
 	@Override
-	public boolean equals(Object o) {
+	public boolean equals(@Nullable Object o) {
 
 		if (this == o)
 			return true;
@@ -249,12 +253,8 @@ public final class CqlIdentifier implements Comparable<CqlIdentifier>, Serializa
 		return identifier.equals(that.identifier);
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#hashCode()
-	 */
 	@Override
 	public int hashCode() {
-
 		int result = identifier.hashCode();
 		result = 31 * result + (quoted ? 1 : 0);
 		return result;
@@ -266,5 +266,15 @@ public final class CqlIdentifier implements Comparable<CqlIdentifier>, Serializa
 	@Override
 	public String toString() {
 		return toCql();
+	}
+
+	/**
+	 * Create a Cassandra driver {@link com.datastax.oss.driver.api.core.CqlIdentifier} from this {@link CqlIdentifier}.
+	 *
+	 * @return the {@link com.datastax.oss.driver.api.core.CqlIdentifier} from this {@link CqlIdentifier}.
+	 * @since 3.0
+	 */
+	public com.datastax.oss.driver.api.core.CqlIdentifier toCqlIdentifier() {
+		return com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal(this.unquoted);
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,8 +43,11 @@ public class EntityMapping {
 
 	/**
 	 * Whether to force the table name to be quoted.
+	 *
+	 * @deprecated since 3.0. The table name gets converted into {@link com.datastax.oss.driver.api.core.CqlIdentifier}
+	 *             hence it no longer requires an indication whether the name should be quoted.
 	 */
-	private String forceQuote = "false";
+	private @Deprecated String forceQuote = "false";
 
 	/**
 	 * The name of the table to which the entity is mapped.
@@ -73,10 +76,17 @@ public class EntityMapping {
 		this.entityClassName = entityClassName;
 	}
 
+	/**
+	 * @return
+	 * @deprecated since 3.0. The type name gets converted into {@link com.datastax.oss.driver.api.core.CqlIdentifier}
+	 *             hence it no longer requires an indication whether the name should be quoted.
+	 */
+	@Deprecated
 	public String getForceQuote() {
 		return this.forceQuote;
 	}
 
+	@Deprecated
 	public void setForceQuote(String forceQuote) {
 
 		Assert.notNull(forceQuote, "Force quote must not be null or empty");
@@ -103,11 +113,8 @@ public class EntityMapping {
 		this.tableName = tableName;
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#equals(java.lang.Object)
-	 */
 	@Override
-	public boolean equals(Object obj) {
+	public boolean equals(@Nullable Object obj) {
 
 		if (this == obj) {
 			return true;
@@ -124,9 +131,6 @@ public class EntityMapping {
 				&& ObjectUtils.nullSafeEquals(this.getTableName(), that.getTableName());
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#hashCode()
-	 */
 	@Override
 	public int hashCode() {
 
@@ -139,9 +143,6 @@ public class EntityMapping {
 		return hashValue;
 	}
 
-	/* (non-Javadoc)
-	 * @see java.lang.Object#toString()
-	 */
 	@Override
 	public String toString() {
 		return String.format(

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,13 @@
  */
 package org.springframework.data.cassandra.core.mapping;
 
+import java.io.Serial;
+
 import org.springframework.dao.InvalidDataAccessApiUsageException;
 
 public class UnsupportedCassandraOperationException extends InvalidDataAccessApiUsageException {
 
-	private static final long serialVersionUID = 4921001859094231277L;
+	@Serial private static final long serialVersionUID = 4921001859094231277L;
 
 	public UnsupportedCassandraOperationException(String msg) {
 		super(msg);

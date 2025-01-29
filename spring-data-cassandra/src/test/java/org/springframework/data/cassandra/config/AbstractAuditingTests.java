@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 the original author or authors.
+ * Copyright 2019-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,28 +19,28 @@ import static org.assertj.core.api.Assertions.*;
 
 import java.time.LocalDateTime;
 
-import org.junit.Test;
-
+import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationContext;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
 import org.springframework.data.cassandra.core.mapping.Table;
 import org.springframework.data.cassandra.core.mapping.event.BeforeConvertCallback;
 import org.springframework.data.mapping.callback.EntityCallbacks;
 import org.springframework.data.mapping.callback.ReactiveEntityCallbacks;
 
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+
 /**
  * Abstract integration tests for the auditing support.
  *
  * @author Mark Paluch
  */
-public abstract class AbstractAuditingTests {
+abstract class AbstractAuditingTests {
 
 	@Test // DATACASS-4
-	public void enablesAuditingAndSetsPropertiesAccordingly() throws Exception {
+	void enablesAuditingAndSetsPropertiesAccordingly() throws Exception {
 
 		ApplicationContext context = getApplicationContext();
 
@@ -50,7 +50,7 @@ public abstract class AbstractAuditingTests {
 		EntityCallbacks callbacks = EntityCallbacks.create(context);
 
 		Entity entity = new Entity();
-		entity = callbacks.callback(BeforeConvertCallback.class, entity, CqlIdentifier.of("entity"));
+		entity = callbacks.callback(BeforeConvertCallback.class, entity, CqlIdentifier.fromCql("entity"));
 
 		assertThat(entity.created).isNotNull();
 		assertThat(entity.modified).isEqualTo(entity.created);
@@ -58,14 +58,14 @@ public abstract class AbstractAuditingTests {
 		Thread.sleep(10);
 		entity.id = 1L;
 
-		entity = callbacks.callback(BeforeConvertCallback.class, entity, CqlIdentifier.of("entity"));
+		entity = callbacks.callback(BeforeConvertCallback.class, entity, CqlIdentifier.fromCql("entity"));
 
 		assertThat(entity.created).isNotNull();
 		assertThat(entity.modified).isAfter(entity.created);
 	}
 
 	@Test // DATACASS-4
-	public void enablesReactiveAuditingAndSetsPropertiesAccordingly() throws Exception {
+	void enablesReactiveAuditingAndSetsPropertiesAccordingly() throws Exception {
 
 		ApplicationContext context = getApplicationContext();
 
@@ -75,7 +75,7 @@ public abstract class AbstractAuditingTests {
 		ReactiveEntityCallbacks callbacks = ReactiveEntityCallbacks.create(context);
 
 		Entity entity = new Entity();
-		entity = callbacks.callback(BeforeConvertCallback.class, entity, CqlIdentifier.of("entity")).block();
+		entity = callbacks.callback(BeforeConvertCallback.class, entity, CqlIdentifier.fromCql("entity")).block();
 
 		assertThat(entity.created).isNotNull();
 		assertThat(entity.modified).isEqualTo(entity.created);
@@ -83,7 +83,7 @@ public abstract class AbstractAuditingTests {
 		Thread.sleep(10);
 		entity.id = 1L;
 
-		entity = callbacks.callback(BeforeConvertCallback.class, entity, CqlIdentifier.of("entity")).block();
+		entity = callbacks.callback(BeforeConvertCallback.class, entity, CqlIdentifier.fromCql("entity")).block();
 
 		assertThat(entity.created).isNotNull();
 		assertThat(entity.modified).isAfter(entity.created);
@@ -92,11 +92,12 @@ public abstract class AbstractAuditingTests {
 	protected abstract ApplicationContext getApplicationContext();
 
 	@Table
+	private
 	class Entity {
 
-		@Id Long id;
-		@CreatedDate LocalDateTime created;
-		LocalDateTime modified;
+		@Id private Long id;
+		@CreatedDate private LocalDateTime created;
+		private LocalDateTime modified;
 
 		@LastModifiedDate
 		public LocalDateTime getModified() {

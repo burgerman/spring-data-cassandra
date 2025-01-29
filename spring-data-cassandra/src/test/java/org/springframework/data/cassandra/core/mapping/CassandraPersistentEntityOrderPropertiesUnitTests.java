@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,11 +21,12 @@ import java.io.Serializable;
 import java.util.LinkedList;
 import java.util.List;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.cassandra.core.cql.PrimaryKeyType;
 import org.springframework.data.mapping.PropertyHandler;
+import org.springframework.util.ObjectUtils;
 
 /**
  * Unit tests for {@link CassandraMappingContext}.
@@ -33,16 +34,16 @@ import org.springframework.data.mapping.PropertyHandler;
  * @author David Webb
  * @author Mark Paluch
  */
-public class CassandraPersistentEntityOrderPropertiesUnitTests {
+class CassandraPersistentEntityOrderPropertiesUnitTests {
 
 	private List<CassandraPersistentProperty> expected;
 	private CassandraMappingContext mappingContext = new CassandraMappingContext();
 
-	@Before
-	public void init() {}
+	@BeforeEach
+	void init() {}
 
 	@Test
-	public void testCompositeKeyPropertyOrder() {
+	void testCompositeKeyPropertyOrder() {
 
 		CassandraPersistentEntity<?> entity = mappingContext.getRequiredPersistentEntity(CompositePK.class);
 
@@ -56,11 +57,10 @@ public class CassandraPersistentEntityOrderPropertiesUnitTests {
 		entity.doWithProperties((PropertyHandler<CassandraPersistentProperty>) actual::add);
 
 		assertThat(actual).isEqualTo(expected);
-
 	}
 
 	@Test
-	public void testTablePropertyOrder() {
+	void testTablePropertyOrder() {
 
 		CassandraPersistentEntity<?> entity = mappingContext.getRequiredPersistentEntity(CompositeKeyEntity.class);
 
@@ -78,7 +78,7 @@ public class CassandraPersistentEntityOrderPropertiesUnitTests {
 	}
 
 	@Table
-	static class CompositeKeyEntity {
+	private static class CompositeKeyEntity {
 
 		@PrimaryKey private CompositePK key;
 
@@ -92,7 +92,7 @@ public class CassandraPersistentEntityOrderPropertiesUnitTests {
 	 * This is intentionally using dumb ordinals
 	 */
 	@PrimaryKeyClass
-	static class CompositePK implements Serializable {
+	private static class CompositePK implements Serializable {
 
 		@PrimaryKeyColumn(ordinal = 2, type = PrimaryKeyType.PARTITIONED) private String key0;
 
@@ -101,46 +101,34 @@ public class CassandraPersistentEntityOrderPropertiesUnitTests {
 		@PrimaryKeyColumn(ordinal = 1) private String key2;
 
 		@Override
-		public int hashCode() {
-			final int prime = 31;
-			int result = 1;
-			result = prime * result + ((key0 == null) ? 0 : key0.hashCode());
-			result = prime * result + ((key1 == null) ? 0 : key1.hashCode());
-			result = prime * result + ((key2 == null) ? 0 : key2.hashCode());
-			return result;
+		public boolean equals(Object o) {
+			if (this == o)
+				return true;
+			if (o == null || getClass() != o.getClass())
+				return false;
+
+			CompositePK that = (CompositePK) o;
+
+			if (!ObjectUtils.nullSafeEquals(key0, that.key0)) {
+				return false;
+			}
+			if (!ObjectUtils.nullSafeEquals(key1, that.key1)) {
+				return false;
+			}
+			return ObjectUtils.nullSafeEquals(key2, that.key2);
 		}
 
 		@Override
-		public boolean equals(Object obj) {
-			if (this == obj)
-				return true;
-			if (obj == null)
-				return false;
-			if (getClass() != obj.getClass())
-				return false;
-			CompositePK other = (CompositePK) obj;
-			if (key0 == null) {
-				if (other.key0 != null)
-					return false;
-			} else if (!key0.equals(other.key0))
-				return false;
-			if (key1 == null) {
-				if (other.key1 != null)
-					return false;
-			} else if (!key1.equals(other.key1))
-				return false;
-			if (key2 == null) {
-				if (other.key2 != null)
-					return false;
-			} else if (!key2.equals(other.key2))
-				return false;
-			return true;
+		public int hashCode() {
+			int result = ObjectUtils.nullSafeHashCode(key0);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(key1);
+			result = 31 * result + ObjectUtils.nullSafeHashCode(key2);
+			return result;
 		}
-
 	}
 
 	@Table
-	static class SimpleKeyEntity {
+	private static class SimpleKeyEntity {
 
 		@Id private String id;
 

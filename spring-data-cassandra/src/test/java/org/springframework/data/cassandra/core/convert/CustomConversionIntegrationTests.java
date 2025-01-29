@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,6 @@ package org.springframework.data.cassandra.core.convert;
 
 import static org.assertj.core.api.Assertions.*;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -29,20 +25,19 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.cassandra.core.CassandraTemplate;
 import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
 import org.springframework.data.cassandra.core.mapping.Table;
 import org.springframework.data.cassandra.repository.support.SchemaTestUtils;
-import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTest;
+import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTests;
 import org.springframework.data.convert.CustomConversions;
 import org.springframework.util.StringUtils;
 
-import com.datastax.driver.core.Row;
-import com.datastax.driver.core.querybuilder.QueryBuilder;
+import com.datastax.oss.driver.api.core.cql.Row;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
@@ -51,12 +46,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  *
  * @author Mark Paluch
  */
-public class CustomConversionIntegrationTests extends AbstractKeyspaceCreatingIntegrationTest {
+class CustomConversionIntegrationTests extends AbstractKeyspaceCreatingIntegrationTests {
 
-	CassandraTemplate cassandraOperations;
+	private CassandraTemplate cassandraOperations;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		MappingCassandraConverter converter = createConverter();
 		cassandraOperations = new CassandraTemplate(session, converter);
@@ -66,7 +61,7 @@ public class CustomConversionIntegrationTests extends AbstractKeyspaceCreatingIn
 	}
 
 	@Test // DATACASS-296
-	public void shouldInsertCustomConvertedObject() {
+	void shouldInsertCustomConvertedObject() {
 
 		Employee employee = new Employee();
 		employee.setId("employee-id");
@@ -74,14 +69,14 @@ public class CustomConversionIntegrationTests extends AbstractKeyspaceCreatingIn
 
 		cassandraOperations.insert(employee);
 
-		Row row = cassandraOperations.selectOne(QueryBuilder.select("id", "person").from("employee"), Row.class);
+		Row row = cassandraOperations.selectOne("SELECT id, person FROM employee", Row.class);
 
 		assertThat(row.getString("id")).isEqualTo("employee-id");
 		assertThat(row.getString("person")).contains("\"firstname\":\"Homer\"");
 	}
 
 	@Test // DATACASS-296
-	public void shouldUpdateCustomConvertedObject() {
+	void shouldUpdateCustomConvertedObject() {
 
 		Employee employee = new Employee();
 		employee.setId("employee-id");
@@ -91,14 +86,14 @@ public class CustomConversionIntegrationTests extends AbstractKeyspaceCreatingIn
 		employee.setPerson(new Person("Homer", "Simpson"));
 		cassandraOperations.update(employee);
 
-		Row row = cassandraOperations.selectOne(QueryBuilder.select("id", "person").from("employee"), Row.class);
+		Row row = cassandraOperations.selectOne("SELECT id, person FROM employee", Row.class);
 
 		assertThat(row.getString("id")).isEqualTo("employee-id");
 		assertThat(row.getString("person")).contains("\"firstname\":\"Homer\"");
 	}
 
 	@Test // DATACASS-296
-	public void shouldInsertCustomConvertedObjectWithCollections() {
+	void shouldInsertCustomConvertedObjectWithCollections() {
 
 		Employee employee = new Employee();
 		employee.setId("employee-id");
@@ -108,8 +103,7 @@ public class CustomConversionIntegrationTests extends AbstractKeyspaceCreatingIn
 		employee.setPeople(Collections.singleton(new Person("Apu", "Nahasapeemapetilon")));
 		cassandraOperations.update(employee);
 
-		Row row = cassandraOperations.selectOne(QueryBuilder.select("id", "person", "friends", "people").from("employee"),
-				Row.class);
+		Row row = cassandraOperations.selectOne("SELECT id, person, friends, people FROM employee", Row.class);
 
 		assertThat(row.getObject("friends")).isInstanceOf(List.class);
 		assertThat(row.getList("friends", String.class)).hasSize(2);
@@ -119,7 +113,7 @@ public class CustomConversionIntegrationTests extends AbstractKeyspaceCreatingIn
 	}
 
 	@Test // DATACASS-296
-	public void shouldUpdateCustomConvertedObjectWithCollections() {
+	void shouldUpdateCustomConvertedObjectWithCollections() {
 
 		Employee employee = new Employee();
 		employee.setId("employee-id");
@@ -128,8 +122,7 @@ public class CustomConversionIntegrationTests extends AbstractKeyspaceCreatingIn
 
 		cassandraOperations.insert(employee);
 
-		Row row = cassandraOperations.selectOne(QueryBuilder.select("id", "person", "friends", "people").from("employee"),
-				Row.class);
+		Row row = cassandraOperations.selectOne("SELECT id, person, friends, people FROM employee", Row.class);
 
 		assertThat(row.getObject("friends")).isInstanceOf(List.class);
 		assertThat(row.getList("friends", String.class)).hasSize(2);
@@ -139,13 +132,12 @@ public class CustomConversionIntegrationTests extends AbstractKeyspaceCreatingIn
 	}
 
 	@Test // DATACASS-296
-	public void shouldLoadCustomConvertedObject() {
+	void shouldLoadCustomConvertedObject() {
 
-		cassandraOperations.getCqlOperations().execute(QueryBuilder.insertInto("employee").value("id", "employee-id")
-				.value("person", "{\"firstname\":\"Homer\",\"lastname\":\"Simpson\"}"));
+		cassandraOperations.getCqlOperations().execute(
+				"INSERT INTO employee (id, person) VALUES('employee-id', '{\"firstname\":\"Homer\",\"lastname\":\"Simpson\"}')");
 
-		Employee employee = cassandraOperations.selectOne(QueryBuilder.select("id", "person").from("employee"),
-				Employee.class);
+		Employee employee = cassandraOperations.selectOne("SELECT id, person FROM employee", Employee.class);
 
 		assertThat(employee.getId()).isEqualTo("employee-id");
 		assertThat(employee.getPerson()).isNotNull();
@@ -154,13 +146,12 @@ public class CustomConversionIntegrationTests extends AbstractKeyspaceCreatingIn
 	}
 
 	@Test // DATACASS-296
-	public void shouldLoadCustomConvertedWithCollectionsObject() {
+	void shouldLoadCustomConvertedWithCollectionsObject() {
 
-		cassandraOperations.getCqlOperations().execute(QueryBuilder.insertInto("employee").value("id", "employee-id")
-				.value("people", Collections.singleton("{\"firstname\":\"Apu\",\"lastname\":\"Nahasapeemapetilon\"}")));
+		cassandraOperations.getCqlOperations().execute(
+				"INSERT INTO employee (id, people) VALUES('employee-id', {'{\"firstname\":\"Apu\",\"lastname\":\"Nahasapeemapetilon\"}'})");
 
-		Employee employee = cassandraOperations.selectOne(QueryBuilder.select("id", "people").from("employee"),
-				Employee.class);
+		Employee employee = cassandraOperations.selectOne("SELECT id, people FROM employee", Employee.class);
 
 		assertThat(employee.getId()).isEqualTo("employee-id");
 		assertThat(employee.getPeople()).isNotNull();
@@ -169,7 +160,7 @@ public class CustomConversionIntegrationTests extends AbstractKeyspaceCreatingIn
 	}
 
 	@Test // DATACASS-607
-	public void shouldApplyCustomReadConverterIfOnlyReadIsCustomized() {
+	void shouldApplyCustomReadConverterIfOnlyReadIsCustomized() {
 
 		MappingCassandraConverter converter = createConverter(converters -> {
 			converters.add(new PersonReadConverter());
@@ -177,17 +168,15 @@ public class CustomConversionIntegrationTests extends AbstractKeyspaceCreatingIn
 
 		cassandraOperations = new CassandraTemplate(session, converter);
 
-		cassandraOperations.getCqlOperations().execute(QueryBuilder.insertInto("employee").value("id", "employee-id")
-				.value("people", Collections.singleton("{\"firstname\":\"Apu\",\"lastname\":\"Nahasapeemapetilon\"}")));
+		cassandraOperations.getCqlOperations().execute(
+				"INSERT INTO employee (id, people) VALUES('employee-id', {'{\"firstname\":\"Apu\",\"lastname\":\"Nahasapeemapetilon\"}'})");
 
-		Employee employee = cassandraOperations.selectOne(QueryBuilder.select("id", "people").from("employee"),
-				Employee.class);
+		Employee employee = cassandraOperations.selectOne("SELECT id, people FROM employee", Employee.class);
 
 		assertThat(employee.getId()).isEqualTo("employee-id");
 		assertThat(employee.getPeople()).isNotNull().hasSize(1);
 
 		assertThat(employee.getPeople()).extracting(Person::getFirstname).contains("Apu");
-
 	}
 
 	private static MappingCassandraConverter createConverter() {
@@ -217,7 +206,6 @@ public class CustomConversionIntegrationTests extends AbstractKeyspaceCreatingIn
 		return converter;
 	}
 
-	@Data
 	@Table
 	static class Employee {
 
@@ -226,21 +214,77 @@ public class CustomConversionIntegrationTests extends AbstractKeyspaceCreatingIn
 		Person person;
 		List<Person> friends;
 		Set<Person> people;
+
+		public Employee() {}
+
+		public String getId() {
+			return this.id;
+		}
+
+		public Person getPerson() {
+			return this.person;
+		}
+
+		public List<Person> getFriends() {
+			return this.friends;
+		}
+
+		public Set<Person> getPeople() {
+			return this.people;
+		}
+
+		public void setId(String id) {
+			this.id = id;
+		}
+
+		public void setPerson(Person person) {
+			this.person = person;
+		}
+
+		public void setFriends(List<Person> friends) {
+			this.friends = friends;
+		}
+
+		public void setPeople(Set<Person> people) {
+			this.people = people;
+		}
+
 	}
 
-	@Data
-	@AllArgsConstructor
-	@NoArgsConstructor
 	static class Person {
 
 		String firstname;
 		String lastname;
+
+		public Person(String firstname, String lastname) {
+			this.firstname = firstname;
+			this.lastname = lastname;
+		}
+
+		public Person() {}
+
+		public String getFirstname() {
+			return this.firstname;
+		}
+
+		public String getLastname() {
+			return this.lastname;
+		}
+
+		public void setFirstname(String firstname) {
+			this.firstname = firstname;
+		}
+
+		public void setLastname(String lastname) {
+			this.lastname = lastname;
+		}
+
 	}
 
 	/**
 	 * @author Mark Paluch
 	 */
-	static class PersonReadConverter implements Converter<String, Person> {
+	private static class PersonReadConverter implements Converter<String, Person> {
 
 		public Person convert(String source) {
 
@@ -259,7 +303,7 @@ public class CustomConversionIntegrationTests extends AbstractKeyspaceCreatingIn
 	/**
 	 * @author Mark Paluch
 	 */
-	static class PersonWriteConverter implements Converter<Person, String> {
+	private static class PersonWriteConverter implements Converter<Person, String> {
 
 		public String convert(Person source) {
 

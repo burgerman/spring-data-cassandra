@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,18 +15,12 @@
  */
 package org.springframework.data.cassandra.core.convert;
 
-import com.datastax.driver.core.Row;
-
 /**
- * {@link CassandraValueProvider} providing values based on a {@link Row}.
+ * {@link CassandraValueProvider} providing values based on a {@link com.datastax.oss.driver.api.core.cql.Row}.
  *
  * @author Matthew T. Adams
  * @author Mark Paluch
  */
 public interface CassandraRowValueProvider extends CassandraValueProvider {
 
-	/**
-	 * @return the underlying {@link Row}.
-	 */
-	Row getRow();
 }

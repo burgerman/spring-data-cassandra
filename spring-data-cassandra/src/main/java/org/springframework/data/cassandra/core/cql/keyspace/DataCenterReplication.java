@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,11 @@
  */
 package org.springframework.data.cassandra.core.cql.keyspace;
 
-import lombok.ToString;
-
 /**
  * Value object representing replication factor for a given data center.
  *
  * @author Mark Paluch
  */
-@ToString
 public class DataCenterReplication {
 
 	private final String dataCenter;
@@ -58,5 +55,11 @@ public class DataCenterReplication {
 	 */
 	public long getReplicationFactor() {
 		return replicationFactor;
+	}
+
+	@Override
+	public String toString() {
+		return "DataCenterReplication(dataCenter=" + this.getDataCenter() + ", replicationFactor="
+				+ this.getReplicationFactor() + ")";
 	}
 }

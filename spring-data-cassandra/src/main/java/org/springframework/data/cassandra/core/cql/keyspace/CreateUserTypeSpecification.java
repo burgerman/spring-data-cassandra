@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,9 @@
  */
 package org.springframework.data.cassandra.core.cql.keyspace;
 
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
+import org.springframework.lang.Nullable;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Object to configure a {@code CREATE TYPE} specification.
@@ -25,34 +27,49 @@ import org.springframework.data.cassandra.core.cql.CqlIdentifier;
  * @since 1.5
  * @see CqlIdentifier
  */
-public class CreateUserTypeSpecification extends UserTypeSpecification<CreateUserTypeSpecification> {
+public class CreateUserTypeSpecification extends UserTypeSpecification<CreateUserTypeSpecification>
+		implements CqlSpecification {
 
 	private boolean ifNotExists;
 
-	private CreateUserTypeSpecification(CqlIdentifier name) {
-		super(name);
+	private CreateUserTypeSpecification(@Nullable CqlIdentifier keyspace, CqlIdentifier name) {
+		super(keyspace, name);
 	}
 
 	/**
-	 * Entry point into the {@link CreateUserTypeSpecification}'s fluent API given {@code name} to create a type.
+	 * Entry point into the {@link CreateUserTypeSpecification}'s fluent API given {@code typeName} to create a type.
 	 * Convenient if imported statically.
 	 *
-	 * @param name must not {@literal null} or empty.
+	 * @param typeName must not {@literal null} or empty.
 	 * @return a new {@link CreateUserTypeSpecification}.
 	 */
-	public static CreateUserTypeSpecification createType(String name) {
-		return new CreateUserTypeSpecification(CqlIdentifier.of(name));
+	public static CreateUserTypeSpecification createType(String typeName) {
+		return new CreateUserTypeSpecification(null, CqlIdentifier.fromCql(typeName));
 	}
 
 	/**
-	 * Entry point into the {@link CreateUserTypeSpecification}'s fluent API given {@code name} to create a type.
+	 * Entry point into the {@link CreateUserTypeSpecification}'s fluent API given {@code typeName} to create a type.
 	 * Convenient if imported statically.
 	 *
-	 * @param name must not {@literal null}.
+	 * @param typeName must not {@literal null}.
 	 * @return a new {@link CreateUserTypeSpecification}.
 	 */
-	public static CreateUserTypeSpecification createType(CqlIdentifier name) {
-		return new CreateUserTypeSpecification(name);
+	public static CreateUserTypeSpecification createType(CqlIdentifier typeName) {
+		return new CreateUserTypeSpecification(null, typeName);
+	}
+
+	/**
+	 * Entry point into the {@link CreateUserTypeSpecification}'s fluent API given {@code typeName} to create a type.
+	 * Convenient if imported statically. Uses the default keyspace if {@code keyspace} is null; otherwise, of the
+	 * {@code keyspace} is not {@link null}, then the UDT name is prefixed with {@code keyspace}.
+	 *
+	 * @param keyspace can be {@literal null}.
+	 * @param typeName must not {@literal null}.
+	 * @return a new {@link CreateUserTypeSpecification}.
+	 * @since 4.4
+	 */
+	public static CreateUserTypeSpecification createType(@Nullable CqlIdentifier keyspace, CqlIdentifier typeName) {
+		return new CreateUserTypeSpecification(keyspace, typeName);
 	}
 
 	/**

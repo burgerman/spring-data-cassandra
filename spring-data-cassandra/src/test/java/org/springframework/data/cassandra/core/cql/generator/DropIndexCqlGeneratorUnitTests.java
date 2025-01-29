@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,11 @@ package org.springframework.data.cassandra.core.cql.generator;
 
 import static org.assertj.core.api.Assertions.*;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+
 import org.springframework.data.cassandra.core.cql.keyspace.DropIndexSpecification;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Unit tests for {@link DropIndexCqlGenerator}.
@@ -31,19 +34,28 @@ public class DropIndexCqlGeneratorUnitTests {
 	/**
 	 * Asserts that the preamble is first & correctly formatted in the given CQL string.
 	 */
-	public static void assertStatement(String indexName, boolean ifExists, String cql) {
-		assertThat(cql.equals("DROP INDEX " + (ifExists ? "IF EXISTS " : "") + indexName + ";")).isTrue();
+	private static void assertStatement(String indexName, boolean ifExists, String cql) {
+		assertThat(cql).isEqualTo("DROP INDEX " + (ifExists ? "IF EXISTS " : "") + indexName + ";");
+	}
+
+	@Test // GH-921
+	void shouldConsiderKeyspace() {
+
+		DropIndexSpecification spec = DropIndexSpecification.dropIndex(CqlIdentifier.fromCql("foo"),
+				CqlIdentifier.fromCql("bar"));
+
+		assertThat(CqlGenerator.toCql(spec)).isEqualTo("DROP INDEX foo.bar;");
 	}
 
 	/**
 	 * Convenient base class that other test classes can use so as not to repeat the generics declarations.
 	 */
-	public static abstract class DropIndexTest
+	static abstract class DropIndexTest
 			extends AbstractIndexOperationCqlGeneratorTest<DropIndexSpecification, DropIndexCqlGenerator> {}
 
-	public static class BasicTest extends DropIndexTest {
+	static class BasicTest extends DropIndexTest {
 
-		public String name = "myindex";
+		private String name = "myindex";
 
 		public DropIndexSpecification specification() {
 			return DropIndexSpecification.dropIndex(name);
@@ -54,7 +66,7 @@ public class DropIndexCqlGeneratorUnitTests {
 		}
 
 		@Test
-		public void test() {
+		void test() {
 			prepare();
 
 			assertStatement(name, false, cql);
@@ -62,9 +74,9 @@ public class DropIndexCqlGeneratorUnitTests {
 
 	}
 
-	public static class IfExistsTest extends DropIndexTest {
+	static class IfExistsTest extends DropIndexTest {
 
-		public String name = "myindex";
+		private String name = "myindex";
 
 		public DropIndexSpecification specification() {
 			return DropIndexSpecification.dropIndex(name)
@@ -77,7 +89,7 @@ public class DropIndexCqlGeneratorUnitTests {
 		}
 
 		@Test
-		public void test() {
+		void test() {
 			prepare();
 
 			// assertStatement(name, true, cql);

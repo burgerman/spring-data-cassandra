@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,27 +18,28 @@ package org.springframework.data.cassandra.core.mapping.event;
 import static org.assertj.core.api.Assertions.*;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.data.cassandra.core.CassandraTemplate;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.query.Query;
 import org.springframework.data.cassandra.domain.User;
 
-import com.datastax.driver.core.Statement;
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
 
 /**
  * Integration test for mapping events via {@link CassandraTemplate}.
  *
  * @author Mark Paluch
  */
-public class CassandraTemplateEventIntegrationTests extends EventListenerIntegrationTestSupport {
+class CassandraTemplateEventIntegrationTests extends EventListenerIntegrationTestSupport {
 
-	CassandraTemplate template;
+	private CassandraTemplate template;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		template = new CassandraTemplate(session);
 		template.setApplicationEventPublisher(getApplicationEventPublisher());
@@ -47,22 +48,32 @@ public class CassandraTemplateEventIntegrationTests extends EventListenerIntegra
 	}
 
 	@Test // DATACASS-106
-	public void streamShouldEmitEvents() {
+	void streamShouldEmitEvents() {
 
-		template.stream("SELECT * FROM users;", User.class).count(); // Just load entire stream.
+		template.stream("SELECT * FROM users;", User.class).collect(Collectors.toList()); // Just load entire stream.
 
 		assertThat(getListener().getAfterLoad()).extracting(CassandraMappingEvent::getTableName)
-				.contains(CqlIdentifier.of("users"));
+				.contains(CqlIdentifier.fromCql("users"));
 		assertThat(getListener().getAfterConvert()).extracting(CassandraMappingEvent::getSource).containsOnly(firstUser);
 	}
 
+	@Test // GH-1286
+	void disablingEventsShouldSuppressEvents() {
+
+		template.setEntityLifecycleEventsEnabled(false);
+		template.stream("SELECT * FROM users;", User.class).collect(Collectors.toList()); // Just load entire stream.
+
+		assertThat(getListener().getAfterLoad()).isEmpty();
+		assertThat(getListener().getAfterConvert()).isEmpty();
+	}
+
 	@Test // DATACASS-106
-	public void sliceShouldEmitEvents() {
+	void sliceShouldEmitEvents() {
 
 		template.slice(Query.empty(), User.class).getSize(); // Force load entire collection.
 
 		assertThat(getListener().getAfterLoad()).extracting(CassandraMappingEvent::getTableName)
-				.contains(CqlIdentifier.of("users"));
+				.contains(CqlIdentifier.fromCql("users"));
 		assertThat(getListener().getAfterConvert()).extracting(CassandraMappingEvent::getSource).containsOnly(firstUser);
 	}
 
@@ -111,7 +122,7 @@ public class CassandraTemplateEventIntegrationTests extends EventListenerIntegra
 			}
 
 			@Override
-			public <T> List<T> select(Statement statement, Class<T> entityClass) {
+			public <T> List<T> select(SimpleStatement statement, Class<T> entityClass) {
 				return template.select(statement, entityClass);
 			}
 		};

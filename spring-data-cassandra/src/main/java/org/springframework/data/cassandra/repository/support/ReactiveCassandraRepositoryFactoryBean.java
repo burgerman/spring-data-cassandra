@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2019 the original author or authors.
+ * Copyright 2016-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,16 @@
  */
 package org.springframework.data.cassandra.repository.support;
 
+import java.util.Optional;
+
+import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.data.cassandra.core.ReactiveCassandraOperations;
 import org.springframework.data.mapping.context.MappingContext;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.core.support.RepositoryFactoryBeanSupport;
 import org.springframework.data.repository.core.support.RepositoryFactorySupport;
+import org.springframework.data.repository.query.QueryMethodEvaluationContextProvider;
+import org.springframework.data.repository.query.ReactiveExtensionAwareQueryMethodEvaluationContextProvider;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
@@ -30,7 +35,6 @@ import org.springframework.util.Assert;
  * @author Mark Paluch
  * @since 2.0
  * @see org.springframework.data.repository.reactive.ReactiveSortingRepository
- * @see org.springframework.data.repository.reactive.RxJava2SortingRepository
  */
 public class ReactiveCassandraRepositoryFactoryBean<T extends Repository<S, ID>, S, ID>
 		extends RepositoryFactoryBeanSupport<T, S, ID> {
@@ -58,9 +62,6 @@ public class ReactiveCassandraRepositoryFactoryBean<T extends Repository<S, ID>,
 		this.operations = operations;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.core.support.RepositoryFactoryBeanSupport#setMappingContext(org.springframework.data.mapping.context.MappingContext)
-	 */
 	@Override
 	protected void setMappingContext(MappingContext<?, ?> mappingContext) {
 
@@ -69,15 +70,18 @@ public class ReactiveCassandraRepositoryFactoryBean<T extends Repository<S, ID>,
 		this.mappingContextConfigured = true;
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.core.support.RepositoryFactoryBeanSupport#createRepositoryFactory()
-	 */
 	@Override
 	protected final RepositoryFactorySupport createRepositoryFactory() {
 
 		Assert.state(operations != null, "ReactiveCassandraOperations must not be null");
 
 		return getFactoryInstance(operations);
+	}
+
+	@Override
+	protected Optional<QueryMethodEvaluationContextProvider> createDefaultQueryMethodEvaluationContextProvider(
+			ListableBeanFactory beanFactory) {
+		return Optional.of(new ReactiveExtensionAwareQueryMethodEvaluationContextProvider(beanFactory));
 	}
 
 	/**
@@ -90,15 +94,12 @@ public class ReactiveCassandraRepositoryFactoryBean<T extends Repository<S, ID>,
 		return new ReactiveCassandraRepositoryFactory(operations);
 	}
 
-	/* (non-Javadoc)
-	 * @see org.springframework.data.repository.core.support.RepositoryFactoryBeanSupport#afterPropertiesSet()
-	 */
 	@Override
 	public void afterPropertiesSet() {
 
 		super.afterPropertiesSet();
 
-		Assert.notNull(operations, "ReactiveCassandraOperations must not be null!");
+		Assert.notNull(operations, "ReactiveCassandraOperations must not be null");
 
 		if (!mappingContextConfigured) {
 			setMappingContext(operations.getConverter().getMappingContext());

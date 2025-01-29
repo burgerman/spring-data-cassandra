@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,45 +15,43 @@
  */
 package org.springframework.data.cassandra.core;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.data.cassandra.core.query.Criteria.where;
-import static org.springframework.data.cassandra.core.query.Query.query;
+import static org.assertj.core.api.Assertions.*;
+import static org.springframework.data.cassandra.core.query.Criteria.*;
+import static org.springframework.data.cassandra.core.query.Query.*;
 
 import java.util.Collections;
 
-import lombok.Data;
-
-import org.junit.Before;
-import org.junit.Test;
-
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.cassandra.core.convert.MappingCassandraConverter;
-import org.springframework.data.cassandra.core.cql.CqlIdentifier;
 import org.springframework.data.cassandra.core.mapping.Column;
 import org.springframework.data.cassandra.core.mapping.Indexed;
 import org.springframework.data.cassandra.core.mapping.Table;
 import org.springframework.data.cassandra.core.query.Query;
-import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTest;
+import org.springframework.data.cassandra.test.util.AbstractKeyspaceCreatingIntegrationTests;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 
 /**
  * Integration tests for {@link ExecutableDeleteOperationSupport}.
  *
  * @author Mark Paluch
  */
-public class ExecutableDeleteOperationSupportIntegrationTests extends AbstractKeyspaceCreatingIntegrationTest {
+class ExecutableDeleteOperationSupportIntegrationTests extends AbstractKeyspaceCreatingIntegrationTests {
 
-	CassandraAdminTemplate template;
+	private CassandraAdminTemplate template;
 
-	Person han;
-	Person luke;
+	private Person han;
+	private Person luke;
 
-	@Before
-	public void setUp() {
+	@BeforeEach
+	void setUp() {
 
 		template = new CassandraAdminTemplate(session, new MappingCassandraConverter());
-		template.dropTable(true, CqlIdentifier.of("person"));
-		template.createTable(true, CqlIdentifier.of("person"), ExecutableInsertOperationSupportIntegrationTests.Person.class,
-				Collections.emptyMap());
+		template.dropTable(true, CqlIdentifier.fromCql("person"));
+		template.createTable(true, CqlIdentifier.fromCql("person"),
+				ExecutableInsertOperationSupportIntegrationTests.Person.class, Collections.emptyMap());
 
 		han = new Person();
 		han.firstname = "han";
@@ -68,40 +66,50 @@ public class ExecutableDeleteOperationSupportIntegrationTests extends AbstractKe
 	}
 
 	@Test // DATACASS-485
-	public void removeAllMatching() {
+	void removeAllMatching() {
 
-		WriteResult deleteResult = this.template
-				.delete(Person.class)
-				.matching(query(where("id").is(han.id)))
-				.all();
+		WriteResult deleteResult = this.template.delete(Person.class).matching(query(where("id").is(han.id))).all();
 
 		assertThat(deleteResult).isNotNull();
 		assertThat(deleteResult.wasApplied()).isTrue();
 	}
 
 	@Test // DATACASS-485
-	public void removeAllMatchingWithAlternateDomainTypeAndCollection() {
+	void removeAllMatchingWithAlternateDomainTypeAndCollection() {
 
-		WriteResult deleteResult = this.template
-				.delete(Jedi.class)
-				.inTable("person")
-				.matching(query(where("id").in(han.id, luke.id)))
-				.all();
+		WriteResult deleteResult = this.template.delete(Jedi.class).inTable("person")
+				.matching(query(where("id").in(han.id, luke.id))).all();
 
 		assertThat(deleteResult).isNotNull();
 		assertThat(deleteResult.wasApplied()).isTrue();
 		assertThat(this.template.select(Query.empty(), Person.class)).isEmpty();
 	}
 
-	@Data
 	@Table
 	static class Person {
 		@Id String id;
 		@Indexed String firstname;
+
+		public Person() {}
+
+		public String getId() {
+			return this.id;
+		}
+
+		public String getFirstname() {
+			return this.firstname;
+		}
+
+		public void setId(String id) {
+			this.id = id;
+		}
+
+		public void setFirstname(String firstname) {
+			this.firstname = firstname;
+		}
+
 	}
 
-	@Data
-	static class Jedi {
-		@Column("firstname") String name;
+	record Jedi(@Column("firstname") String name) {
 	}
 }

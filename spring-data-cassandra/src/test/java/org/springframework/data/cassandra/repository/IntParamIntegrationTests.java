@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,10 @@ package org.springframework.data.cassandra.repository;
 
 import static org.assertj.core.api.Assertions.*;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
 import java.util.Collections;
 import java.util.Set;
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.ComponentScan.Filter;
 import org.springframework.context.annotation.Configuration;
@@ -37,16 +32,14 @@ import org.springframework.data.cassandra.core.mapping.Table;
 import org.springframework.data.cassandra.repository.config.EnableCassandraRepositories;
 import org.springframework.data.cassandra.repository.support.AbstractSpringDataEmbeddedCassandraIntegrationTest;
 import org.springframework.data.cassandra.repository.support.IntegrationTestConfig;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
 /**
  * @author Matthew T. Adams
  * @author Mark Paluch
  */
-@RunWith(SpringJUnit4ClassRunner.class)
-@ContextConfiguration
-public class IntParamIntegrationTests extends AbstractSpringDataEmbeddedCassandraIntegrationTest {
+@SpringJUnitConfig
+class IntParamIntegrationTests extends AbstractSpringDataEmbeddedCassandraIntegrationTest {
 
 	@Configuration
 	@EnableCassandraRepositories(basePackageClasses = IntThingRepo.class, considerNestedRepositories = true,
@@ -67,7 +60,7 @@ public class IntParamIntegrationTests extends AbstractSpringDataEmbeddedCassandr
 	@Autowired IntThingRepo repo;
 
 	@Test
-	public void testQueryWithIntPrimitiveAndReference() {
+	void testQueryWithIntPrimitiveAndReference() {
 
 		int number = 42;
 		IntThing saved = new IntThing(42);
@@ -81,12 +74,23 @@ public class IntParamIntegrationTests extends AbstractSpringDataEmbeddedCassandr
 	}
 
 	@Table
-	@Data
-	@AllArgsConstructor
-	@NoArgsConstructor
 	static class IntThing {
 
 		@PrimaryKeyColumn(ordinal = 0, type = PrimaryKeyType.PARTITIONED) private int number;
+
+		public IntThing(int number) {
+			this.number = number;
+		}
+
+		public IntThing() {}
+
+		public int getNumber() {
+			return this.number;
+		}
+
+		public void setNumber(int number) {
+			this.number = number;
+		}
 	}
 
 	interface IntThingRepo extends MapIdCassandraRepository<IntThing> {

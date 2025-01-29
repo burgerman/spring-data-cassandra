@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,10 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+
+import com.datastax.oss.driver.api.core.CqlIdentifier;
+import com.datastax.oss.driver.api.core.DefaultConsistencyLevel;
 
 /**
  * Unit tests for {@link InsertOptions}.
@@ -30,22 +33,30 @@ import org.junit.Test;
  * @author Mark Paluch
  * @author Lukasz Antoniak
  */
-public class InsertOptionsUnitTests {
+class InsertOptionsUnitTests {
 
-	@Test // DATACASS-250, DATACASS-155
-	public void shouldConfigureInsertOptions() {
+	@Test // DATACASS-250, DATACASS-155, DATACASS-708, DATACASS-767
+	void shouldConfigureInsertOptions() {
 
 		Instant now = LocalDateTime.now().toInstant(ZoneOffset.UTC);
 
-		InsertOptions insertOptions = InsertOptions.builder().ttl(10).timestamp(now).withIfNotExists().build();
+		InsertOptions insertOptions = InsertOptions.builder() //
+				.ttl(10) //
+				.timestamp(now) //
+				.withIfNotExists() //
+				.executionProfile("foo") //
+				.serialConsistencyLevel(DefaultConsistencyLevel.LOCAL_ONE) //
+				.keyspace(CqlIdentifier.fromCql("my_keyspace"))
+				.build();
 
 		assertThat(insertOptions.getTtl()).isEqualTo(Duration.ofSeconds(10));
 		assertThat(insertOptions.getTimestamp()).isEqualTo(now.toEpochMilli() * 1000);
 		assertThat(insertOptions.isIfNotExists()).isTrue();
+		assertThat(insertOptions.getKeyspace()).isEqualTo(CqlIdentifier.fromCql("my_keyspace"));
 	}
 
 	@Test // DATACASS-56
-	public void buildInsertOptionsMutate() {
+	void buildInsertOptionsMutate() {
 
 		InsertOptions insertOptions = InsertOptions.builder().ttl(10).timestamp(1519222753).withIfNotExists().build();
 
